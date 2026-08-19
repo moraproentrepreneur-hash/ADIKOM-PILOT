@@ -591,7 +591,7 @@ ADIKOM-PILOT/
 
 ├── 00 Documentation/
 
-├── 01 Développement/
+├── 01\_Developpement/
 
 ├── CLAUDE.md
 
@@ -786,9 +786,11 @@ Les références externes peuvent servir d'inspiration ou de comparaison mais ne
 
 Le dossier :
 
-`01 Développement/`
+`01\_Developpement/`
 
 est destiné au code source et aux éléments techniques du projet.
+
+Ce dossier a été renommé (initialement `01 Développement/`) : Vercel dérive le nom de ses fonctions serverless du chemin de l'application, et ces noms n'admettent aucun espace. Voir `00 Documentation/08\_Decisions/01\_Journal\_des\_Decisions.md` — DEC-016.
 
 Le code doit être développé progressivement et proprement.
 

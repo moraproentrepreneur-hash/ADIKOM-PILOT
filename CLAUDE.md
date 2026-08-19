@@ -62,7 +62,7 @@ Le projet est organisé volontairement autour de deux grands dossiers :
 
 &#x20;   │
 
-&#x20;   ├── 01 Développement/
+&#x20;   ├── 01\_Developpement/
 
 &#x20;   │
 

@@ -16,7 +16,7 @@ Code source du SaaS interne d'ADIKOM Technology & Travel.
 | Styles | Tailwind CSS v4, tokens issus de la charte ADIKOM |
 | Données | Supabase **Cloud** — PostgreSQL, Auth, Storage |
 | Tests | Vitest |
-| Déploiement | Vercel (*Root Directory* : `01 Développement/adikom-pilot`) |
+| Déploiement | Vercel (*Root Directory* : `01_Developpement/adikom-pilot`) |
 
 Flux de développement (DEC-015) :
 

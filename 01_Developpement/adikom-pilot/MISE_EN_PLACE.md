@@ -166,7 +166,12 @@ L'application locale travaille sur la base Supabase Cloud.
 ## 7. Déployer sur Vercel
 
 1. Importer le dépôt GitHub `ADIKOM-PILOT`
-2. **Root Directory** : `01 Développement/adikom-pilot` ← indispensable
+2. **Root Directory** : `01_Developpement/adikom-pilot` ← indispensable
+
+   > Ce chemin ne doit contenir **aucun espace** : Vercel en dérive le nom de
+   > ses fonctions serverless, et ces noms n'en admettent pas. Le build
+   > réussirait, mais le déploiement échouerait sur `invalid_function_name`
+   > (DEC-016).
 3. Variables d'environnement du projet Vercel :
 
 | Variable | Portée | Remarque |

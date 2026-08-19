@@ -49,6 +49,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-013 | Effet comptable d'une imputation | Décision technique | Validée | 2026-08-19 |
 | DEC-014 | Fuseau horaire et taxes | Information manquante | En attente ADIKOM | 2026-08-19 |
 | DEC-015 | Portée de « SaaS 100 % interne » | Clarification ADIKOM | Validée | 2026-08-20 |
+| DEC-016 | Nom du dossier de développement | Contrainte technique | Validée — **révise DEC-004** | 2026-08-20 |
 
 ---
 
@@ -186,21 +187,14 @@ Une page de présentation n'est pas un espace client. Elle ne crée aucun compte
 
 `README.md` §26 et §36 placent le code dans `01 Développement/`. Ce chemin contient un espace et un caractère accentué, ce qui peut compliquer l'outillage et la configuration de déploiement.
 
-## Décision
+## Décision initiale
 
-Le code source est placé dans :
+Le code source est placé dans `01 Développement/adikom-pilot/`, ce qui respecte
+l'architecture documentée sans modifier le README.
 
-```
-01 Développement/adikom-pilot/
-```
-
-L'architecture documentée est respectée sans modification du README.
-
-## Conséquences
-
-- Vercel : *Root Directory* = `01 Développement/adikom-pilot`.
-- Les commandes locales référencent le chemin **entre guillemets**.
-- La documentation reste dans `00 Documentation/`, à la racine du dépôt.
+> ⚠ **Cette décision a été révisée par DEC-016.** Le chemin retenu s'est révélé
+> incompatible avec le déploiement Vercel. Voir DEC-016 pour le chemin en
+> vigueur.
 
 ---
 
@@ -521,6 +515,63 @@ plutôt qu'il ne l'assouplit : l'application devient accessible depuis Internet.
 Les garanties déjà en place restent la référence — permissions vérifiées côté
 serveur, RLS sur toutes les tables, aucun accès pour le rôle `anon`, journal
 d'audit infalsifiable (**DEC-011**, **DEC-012**).
+
+---
+
+# DEC-016 — Nom du dossier de développement
+
+*Révise DEC-004.*
+
+## Contrainte constatée
+
+Le premier déploiement Vercel a échoué après un build pourtant réussi :
+
+```
+A Serverless Function has an invalid name:
+  "'01 Développement/adikom-pilot/___next_launcher.cjs'"
+They must be less than 128 characters long and must not contain any space.
+```
+
+Vercel dérive le nom de ses fonctions serverless du chemin du *Root Directory*.
+Ces noms n'admettent pas d'espace. Le build se terminait normalement en 20
+secondes, puis le déploiement échouait à l'étape de création des fonctions.
+
+Aucun contournement n'existe : ni `vercel.json`, ni configuration monorepo ne
+modifient cette dérivation. **Le chemin menant à l'application ne peut pas
+contenir d'espace.**
+
+Ce n'est pas l'accent qui posait problème, mais bien l'espace.
+
+## Décision
+
+Le dossier de développement est renommé :
+
+```
+01 Développement/   →   01_Developpement/
+```
+
+Le code source réside donc dans `01_Developpement/adikom-pilot/`.
+
+`00 Documentation/` **reste inchangé** : ce dossier n'est jamais un répertoire
+de build, l'espace n'y pose aucune difficulté, et le conserver limite l'écart
+avec la structure documentée.
+
+## Conséquences
+
+- Vercel : *Root Directory* = `01_Developpement/adikom-pilot`.
+- `README.md` §26 et §36 mis à jour pour refléter le nouveau nom.
+- Le renommage a été effectué avec `git mv` : l'historique des 56 fichiers
+  concernés est préservé.
+- Effet secondaire favorable : les chemins deviennent purement ASCII, ce qui
+  supprime les échappements `01 D\303\251veloppement` dans les sorties Git et
+  la nécessité de guillemets dans les commandes.
+
+## Enseignement
+
+Le risque avait été identifié et signalé lors de DEC-004, mais considéré comme
+acceptable. Il s'est avéré bloquant. Pour les décisions d'infrastructure, une
+contrainte de plateforme signalée mérite d'être vérifiée avant d'être acceptée,
+plutôt qu'après le premier déploiement.
 
 ---
 
