@@ -123,9 +123,23 @@ create table public.numbering_rules (
 comment on table public.numbering_rules is
   'Formats de numérotation paramétrables (DEC-005). Génération atomique côté serveur.';
 
+-- Seules les modifications de FORMAT sont auditées.
+-- L'incrément du compteur est une opération technique déclenchée à chaque
+-- numéro généré : la journaliser noierait le journal d'audit sous des milliers
+-- d'entrées sans valeur de contrôle, au détriment des événements réellement
+-- sensibles (05_Regles_Metier/06_Audit.md §80 — ne conserver que ce qui est
+-- nécessaire à la traçabilité).
 create trigger numbering_rules_audit
   after update on public.numbering_rules
-  for each row execute function public.fn_audit_row('settings');
+  for each row
+  when (
+    old.prefix       is distinct from new.prefix
+    or old.include_year is distinct from new.include_year
+    or old.padding      is distinct from new.padding
+    or old.separator    is distinct from new.separator
+    or old.reset_yearly is distinct from new.reset_yearly
+  )
+  execute function public.fn_audit_row('settings');
 
 
 -- Génération atomique du numéro suivant.

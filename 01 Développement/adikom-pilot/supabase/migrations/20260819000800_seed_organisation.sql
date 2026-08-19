@@ -61,7 +61,10 @@ from public.groups g
 join public.permissions p on
   p.code in ('dashboard.view', 'dashboard.financial.view', 'dashboard.fleet.view',
              'notifications.view', 'users.hierarchy.view')
-  or p.action = 'VIEW' and p.module_code in ('parties', 'rental', 'billing', 'treasury', 'projects')
+  or (
+    p.action = 'VIEW'
+    and p.module_code in ('parties', 'rental', 'billing', 'treasury', 'projects')
+  )
 where g.code = 'DIRECTION'
 on conflict do nothing;
 

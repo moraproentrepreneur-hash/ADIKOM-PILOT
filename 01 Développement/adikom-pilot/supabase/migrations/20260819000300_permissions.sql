@@ -313,24 +313,33 @@ as $$
 declare
   v_actor  uuid := public.current_actor();
   v_target uuid;
+  v_row    jsonb;
 begin
+  -- NEW et OLD sont des enregistrements : ils sont convertis explicitement en
+  -- jsonb selon l'opération. `coalesce(new, old)` sur des types record n'est
+  -- pas une construction fiable en PL/pgSQL.
+  if tg_op = 'DELETE' then
+    v_row := to_jsonb(old);
+  else
+    v_row := to_jsonb(new);
+  end if;
+
   -- Opération système (migration, seed, tâche planifiée) : autorisée.
-  if v_actor is null then
-    return coalesce(new, old);
+  if v_actor is not null then
+    v_target := (v_row ->> 'user_id')::uuid;
+
+    if v_target = v_actor then
+      raise exception
+        'Opération refusée : un utilisateur ne peut pas modifier ses propres droits d''accès.'
+        using errcode = 'insufficient_privilege';
+    end if;
   end if;
 
-  v_target := coalesce(
-    (to_jsonb(coalesce(new, old)) ->> 'user_id')::uuid,
-    (to_jsonb(coalesce(new, old)) ->> 'id')::uuid
-  );
-
-  if v_target = v_actor then
-    raise exception
-      'Opération refusée : un utilisateur ne peut pas modifier ses propres droits d''accès.'
-      using errcode = 'insufficient_privilege';
+  if tg_op = 'DELETE' then
+    return old;
   end if;
 
-  return coalesce(new, old);
+  return new;
 end;
 $$;
 

@@ -55,12 +55,30 @@ async function main() {
   const serviceRoleKey = required('SUPABASE_SERVICE_ROLE_KEY')
   const email = required('ADIKOM_ADMIN_EMAIL')
   const password = required('ADIKOM_ADMIN_PASSWORD')
+  const username = process.env.ADIKOM_ADMIN_USERNAME ?? null
   const firstName = process.env.ADIKOM_ADMIN_FIRSTNAME ?? 'Super'
   const lastName = process.env.ADIKOM_ADMIN_LASTNAME ?? 'Admin'
 
-  if (password.length < 12) {
-    console.error('\n✖ Le mot de passe du Super Admin doit contenir au moins 12 caractères.\n')
+  // Aucune politique de mot de passe n'est définie dans la documentation
+  // fonctionnelle. Le plancher retenu est un minimum de sécurité, pas une règle
+  // métier inventée : il reste au-dessus du défaut Supabase (6 caractères).
+  const MINIMUM_LENGTH = 8
+  const RECOMMENDED_LENGTH = 12
+
+  if (password.length < MINIMUM_LENGTH) {
+    console.error(
+      `\n✖ Le mot de passe doit contenir au moins ${MINIMUM_LENGTH} caractères.\n`
+    )
     process.exit(1)
+  }
+
+  if (password.length < RECOMMENDED_LENGTH) {
+    console.warn(
+      `\n⚠ Mot de passe de ${password.length} caractères.\n` +
+        `  Ce compte détient l'accès complet au système, y compris aux données\n` +
+        `  financières. Au moins ${RECOMMENDED_LENGTH} caractères sont recommandés\n` +
+        `  avant toute mise en production.`
+    )
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, {
@@ -108,6 +126,7 @@ async function main() {
         id: userId,
         first_name: firstName,
         last_name: lastName,
+        username,
         email,
         job_title: 'Administrateur système',
         status: 'ACTIVE',
