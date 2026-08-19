@@ -223,10 +223,19 @@ end $$;
 
 
 -- --- 7. Super Admin : accès complet et protection -----------------------------
+--
+-- La protection ne se déclenche que sur le DERNIER Super Admin actif. Le test
+-- doit donc maîtriser cet état plutôt que le supposer : il vérifie d'abord que
+-- la rétrogradation est permise tant qu'un autre Super Admin actif subsiste,
+-- puis qu'elle est refusée lorsqu'il n'en reste qu'un.
+--
+-- Tout se déroule dans la transaction annulée : les comptes réels ne sont pas
+-- affectés.
 do $$
 declare
-  v_user uuid := gen_random_uuid();
-  v_all  int;
+  v_user  uuid := gen_random_uuid();
+  v_other uuid := gen_random_uuid();
+  v_all   int;
   v_granted int;
   blocked boolean := false;
 begin
@@ -247,7 +256,26 @@ begin
   end if;
   raise notice '[OK] 7a. Super Admin : accès complet (% permissions).', v_granted;
 
-  -- 7b. Le dernier Super Admin actif ne peut pas être rétrogradé
+  -- 7b. Tant qu'un autre Super Admin actif existe, la rétrogradation est permise.
+  insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at)
+  values (v_other, '00000000-0000-0000-0000-000000000000', 'authenticated',
+          'authenticated', 'superadmin2@adikom.test', now(), now());
+
+  insert into public.app_users (id, first_name, last_name, email, status, is_super_admin)
+  values (v_other, 'Second', 'Recette', 'superadmin2@adikom.test', 'ACTIVE', true);
+
+  update public.app_users set is_super_admin = false where id = v_other;
+  raise notice '[OK] 7b. Rétrogradation permise tant qu''un autre Super Admin actif subsiste.';
+
+  -- 7c. Le dernier Super Admin actif ne peut pas être rétrogradé.
+  -- Tous les autres sont désactivés dans la transaction pour rendre le test
+  -- déterministe, quel que soit le contenu réel de la base.
+  update public.app_users
+     set status = 'INACTIVE', deactivated_at = now()
+   where is_super_admin
+     and status = 'ACTIVE'
+     and id <> v_user;
+
   begin
     update public.app_users set is_super_admin = false where id = v_user;
   exception when others then
@@ -257,7 +285,20 @@ begin
   if not blocked then
     raise exception 'Le dernier Super Admin actif a pu être rétrogradé.';
   end if;
-  raise notice '[OK] 7b. Le dernier Super Admin est protégé.';
+  raise notice '[OK] 7c. Le dernier Super Admin actif est protégé.';
+
+  -- 7d. Il ne peut pas non plus être supprimé.
+  blocked := false;
+  begin
+    delete from public.app_users where id = v_user;
+  exception when others then
+    blocked := true;
+  end;
+
+  if not blocked then
+    raise exception 'Le dernier Super Admin actif a pu être supprimé.';
+  end if;
+  raise notice '[OK] 7d. Le dernier Super Admin actif ne peut pas être supprimé.';
 end $$;
 
 
