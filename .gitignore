@@ -1,0 +1,59 @@
+# ADIKOM PILOT — fichiers exclus du versionnement
+
+# --- Secrets et variables d'environnement (règle absolue : jamais commités) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# --- Dépendances ---
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# --- Build et cache ---
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+.turbo/
+.swc/
+
+# --- Tests et couverture ---
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# --- Supabase (local) ---
+.branches/
+.temp/
+supabase/.temp/
+supabase/.branches/
+
+# --- Déploiement ---
+.vercel/
+
+# --- Système et éditeurs ---
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

@@ -1,0 +1,106 @@
+@import 'tailwindcss';
+
+/* =============================================================================
+   ADIKOM PILOT — Tokens du Design System
+   Source : 00 Documentation/06_Design/Design_System.md et Charte ADIKOM.png
+
+   Couleurs officielles de la charte, à utiliser telles quelles :
+     Bleu principal  #1E5AA8   → adikom-500
+     Bleu clair      #7FAEE3   → adikom-400
+     Bleu très clair #F2F6FB   → adikom-50
+     Gris foncé      #1F2937   → ink
+     Gris moyen      #6B7280   → muted
+     Blanc           #FFFFFF   → surface
+
+   Les autres nuances (100 à 300, 600 à 900) sont des dérivations destinées aux
+   états d'interaction (survol, bordures, éléments actifs). Ce ne sont pas de
+   nouvelles couleurs de marque : la charte reste la référence (§11).
+   ============================================================================= */
+
+@theme {
+  /* --- Typographie (§14) ------------------------------------------------- */
+  --font-display: var(--font-montserrat), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* --- Bleu ADIKOM ------------------------------------------------------- */
+  --color-adikom-50: #f2f6fb;
+  --color-adikom-100: #e4edf7;
+  --color-adikom-200: #c9dcef;
+  --color-adikom-300: #a6c5e7;
+  --color-adikom-400: #7faee3;
+  --color-adikom-500: #1e5aa8;
+  --color-adikom-600: #1a4f93;
+  --color-adikom-700: #16427b;
+  --color-adikom-800: #123664;
+  --color-adikom-900: #0e2a4e;
+
+  /* --- Neutres ----------------------------------------------------------- */
+  --color-ink: #1f2937;
+  --color-muted: #6b7280;
+  --color-surface: #ffffff;
+  --color-line: #e5e7eb;
+  --color-canvas: #f7f9fc;
+
+  /* --- Couleurs fonctionnelles (§12) -------------------------------------
+     Servent uniquement à communiquer un état. Elles ne remplacent jamais les
+     couleurs de marque et restent sobres (§13). */
+  --color-success: #15803d;
+  --color-success-soft: #dcfce7;
+  --color-warning: #b45309;
+  --color-warning-soft: #fef3c7;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fee2e2;
+  --color-info: #1e5aa8;
+  --color-info-soft: #e4edf7;
+
+  /* --- Rayons (§30) : modernes sans excès --------------------------------- */
+  --radius-card: 0.625rem;
+  --radius-control: 0.5rem;
+  --radius-badge: 9999px;
+}
+
+/* =============================================================================
+   Base
+   L'interface est volontairement claire et sobre. Le Design System ne prévoit
+   pas de thème sombre : le contraste et la lisibilité du logo officiel sont
+   garantis sur fond clair (§57, §58, §76).
+   ============================================================================= */
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--color-ink);
+  line-height: 1.25;
+}
+
+/* Focus visible sur tout élément interactif (§60 — accessibilité). */
+:focus-visible {
+  outline: 2px solid var(--color-adikom-500);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Les montants restent alignés et lisibles dans les tableaux financiers. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

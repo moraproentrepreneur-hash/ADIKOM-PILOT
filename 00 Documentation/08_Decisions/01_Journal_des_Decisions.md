@@ -1,0 +1,483 @@
+# ADIKOM PILOT
+
+## Journal des décisions
+
+**Version :** 1.0
+**Statut :** Document de référence — décisions arbitrées
+**Entreprise :** ADIKOM Technology & Travel
+**Projet :** ADIKOM PILOT
+
+---
+
+# 1. Objet du document
+
+Ce document consigne les décisions prises lorsque la documentation fonctionnelle présentait :
+
+- une contradiction entre deux documents ;
+- une ambiguïté ;
+- une information manquante ;
+- une décision technique structurante non définie.
+
+Il applique la procédure prévue par le projet :
+
+**Identifier → Signaler → Proposer → Faire valider → Documenter**
+
+*(README §48 · CLAUDE.md §6 et §52)*
+
+Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le code, les commits et les revues.
+
+**Règle d'usage :** en cas de divergence entre un document fonctionnel et une décision consignée ici, la décision consignée ici prévaut, car elle est postérieure et plus spécifique. Les documents d'origine ne sont pas réécrits : ils reçoivent une note de renvoi vers la décision concernée.
+
+---
+
+# 2. Index des décisions
+
+| Réf. | Sujet | Nature | Statut | Date |
+|---|---|---|---|---|
+| DEC-001 | Unité du tarif de location | Contradiction documentaire | Validée | 2026-08-19 |
+| DEC-002 | Ordre de priorité tarifaire | Contradiction documentaire | Validée | 2026-08-19 |
+| DEC-003 | Landing page publique | Contradiction documentaire | Validée | 2026-08-19 |
+| DEC-004 | Emplacement du code source | Décision technique | Validée | 2026-08-19 |
+| DEC-005 | Formats de numérotation | Contradiction documentaire | Traitement neutre | 2026-08-19 |
+| DEC-006 | Statuts réservation / location | Incohérence documentaire | Traitement neutre | 2026-08-19 |
+| DEC-007 | Nature du montant dû au fournisseur | Information manquante | En attente ADIKOM | 2026-08-19 |
+| DEC-008 | Règles de calcul de la durée et des frais | Information manquante | En attente ADIKOM | 2026-08-19 |
+| DEC-009 | Résolution des permissions multi-groupes | Décision à confirmer | Appliquée par défaut | 2026-08-19 |
+| DEC-010 | Stockage et arithmétique des montants | Décision technique | Validée | 2026-08-19 |
+| DEC-011 | Application des permissions côté serveur | Décision technique | Validée | 2026-08-19 |
+| DEC-012 | Garantie de non-collision des véhicules | Décision technique | Validée | 2026-08-19 |
+| DEC-013 | Effet comptable d'une imputation | Décision technique | Validée | 2026-08-19 |
+| DEC-014 | Fuseau horaire et taxes | Information manquante | En attente ADIKOM | 2026-08-19 |
+
+---
+
+# DEC-001 — Unité du tarif de location
+
+## Contradiction constatée
+
+Deux lectures incompatibles du tarif coexistent dans la documentation :
+
+**Lecture « forfait »**
+
+`03_Modules/05_Gestion_de_Location.md` §69 et `04_Workflows/02_Reservation.md` §61 :
+une réservation du 20/08/2026 au 23/08/2026 avec un tarif appliqué de **450 000 KMF** est facturée **450 000 KMF**.
+La durée n'a aucun effet sur le montant.
+
+**Lecture « tarif journalier »**
+
+`03_Modules/07_Facturation_et_Paiement.md` §11 :
+ligne de facture « Location Toyota T5 · 3 jours · **300 000 KMF** ».
+Le montant dépend de la durée.
+
+Un moteur de calcul ne peut pas appliquer les deux règles simultanément.
+
+## Décision
+
+**Chaque tarif porte sa propre unité.**
+
+```
+tarif = { montant, unité }
+unité ∈ { JOUR, FORFAIT }
+
+unité = JOUR     → montant à payer = montant × durée facturable
+unité = FORFAIT  → montant à payer = montant (durée sans effet)
+```
+
+## Justification
+
+Les deux passages de la documentation deviennent valides sans en contredire aucun. ADIKOM peut pratiquer un tarif journalier sur certains véhicules et un forfait sur d'autres, ce qui correspond à une activité mêlant location courante et prestations de mobilité.
+
+## Conséquences
+
+- Les tables de tarifs (standard véhicule, standard catégorie, préférentiel client) portent les colonnes `amount` **et** `unit`.
+- La réservation, la location et la facture conservent en snapshot : le montant unitaire, **l'unité**, la source du tarif et le montant calculé.
+- La règle de calcul de la durée facturable reste à définir → voir **DEC-008**.
+
+---
+
+# DEC-002 — Ordre de priorité tarifaire
+
+## Contradiction constatée
+
+**Ordre A — le véhicule d'abord**
+
+`03_Modules/05_Gestion_de_Location.md` §20 et `03_Modules/04_Tiers.md` §6.6 :
+
+```
+Tarif spécifique véhicule → Tarif spécifique catégorie → Tarif préférentiel client → Tarif standard
+```
+
+Le tarif préférentiel du client passe **après** un tarif posé sur un véhicule.
+
+**Ordre B — le client d'abord**
+
+`05_Regles_Metier/01_Location.md` §40 :
+
+```
+1. Tarif applicable spécifiquement au client
+2. Tarif standard
+3. Autre règle tarifaire explicitement configurée
+```
+
+Le tarif préférentiel du client passe **en premier**.
+
+Les deux ordres produisent des montants différents dès qu'un client privilégié loue un véhicule porteur d'un tarif spécifique.
+
+## Décision
+
+**Le tarif le plus spécifique gagne.**
+
+```
+1. Tarif client + véhicule précis
+2. Tarif client + catégorie
+3. Tarif client (général)
+4. Tarif standard du véhicule
+5. Tarif standard de la catégorie
+6. Tarif standard global
+```
+
+À égalité de spécificité, le tarif **le plus récemment créé** s'applique.
+
+## Justification
+
+Cet ordre est déterministe, ne contredit ni l'ordre A ni l'ordre B dans leur intention respective (la précision commande, et un accord client reste un accord client), et se lit comme une règle unique plutôt que comme un arbitrage entre deux documents.
+
+## Conséquences
+
+- Un **résolveur de tarif unique et centralisé** implémente cette règle. Elle ne doit jamais être réécrite écran par écran *(CLAUDE.md — la règle tarifaire doit être centralisée)*.
+- Le système n'applique **jamais** deux tarifs simultanément.
+- Un tarif préférentiel expiré n'est plus candidat.
+- Le résolveur renvoie toujours la **source** du tarif retenu, affichée à l'utilisateur avant validation *(Workflow 02 §8)*.
+
+---
+
+# DEC-003 — Landing page publique
+
+## Contradiction constatée
+
+`06_Design/Design_System.md` §56 exige une **landing page professionnelle** présentant ADIKOM PILOT, sa mission et ses fonctionnalités.
+
+`README.md` §65 et `01_Vision_et_Objectifs/01_Vision_ADIKOM_PILOT.md` §4 imposent un SaaS **strictement interne**, sans connexion publique ni espace externe.
+
+## Décision
+
+**Landing page publique institutionnelle + page de connexion.**
+
+- `/` : page publique de présentation (mission, bénéfices, modules, identité ADIKOM).
+- `/connexion` : authentification des utilisateurs internes.
+- Toute route applicative reste protégée par session et permissions.
+
+## Justification
+
+Une page de présentation n'est pas un espace client. Elle ne crée aucun compte externe et n'expose aucune donnée métier, ce qui préserve la règle « SaaS 100 % interne ».
+
+## Conséquences
+
+- La landing ne contient **aucune donnée métier** : ni chiffre réel, ni nom de client, fournisseur, véhicule ou utilisateur.
+- Aucun formulaire d'inscription. Aucune création de compte publique *(Module 08 §6)*.
+- Le logo officiel y est utilisé sans transformation, sur fond clair *(Design System §82)*.
+
+---
+
+# DEC-004 — Emplacement du code source
+
+## Question
+
+`README.md` §26 et §36 placent le code dans `01 Développement/`. Ce chemin contient un espace et un caractère accentué, ce qui peut compliquer l'outillage et la configuration de déploiement.
+
+## Décision
+
+Le code source est placé dans :
+
+```
+01 Développement/adikom-pilot/
+```
+
+L'architecture documentée est respectée sans modification du README.
+
+## Conséquences
+
+- Vercel : *Root Directory* = `01 Développement/adikom-pilot`.
+- Les commandes locales référencent le chemin **entre guillemets**.
+- La documentation reste dans `00 Documentation/`, à la racine du dépôt.
+
+---
+
+# DEC-005 — Formats de numérotation
+
+## Contradiction constatée
+
+| Objet | Formats trouvés | Sources |
+|---|---|---|
+| Facture client | `FAC-2026-000001` / `FAC-C-2026-000001` | Module 07 §7 · Règles finance §9 |
+| Facture fournisseur | `FF-2026-000001` / `FAC-F-2026-000001` / `FOU-FAC-001` | Module 07 §30 · Règles finance §9 · Règles fournisseurs §33 |
+| Véhicule | `VEH-000001` / `VEH-2026-000001` | Module 05 §12 · Règles parc §3 |
+| Fournisseur | `FOU-000001` / `FOU-2026-000001` | Module 04 §9.3 · Règles fournisseurs §3 |
+| Client | `CLI-000001` | Module 04 §5.5 |
+| Compte financier | `COMP-000001` | Module 06 §9 |
+
+## Décision — traitement neutre
+
+Aucun format n'est codé en dur. Une table `numbering_rules` **paramétrable** définit par type d'objet : préfixe, présence de l'année, longueur du compteur, périodicité de remise à zéro.
+
+Valeurs par défaut retenues (formats les plus explicites, issus des règles métier finance) :
+
+```
+Client                → CLI-000001
+Fournisseur           → FOU-000001
+Véhicule              → VEH-000001
+Réservation           → RES-2026-000001
+Location              → LOC-2026-000001
+Maintenance           → MNT-2026-000001
+Imputation            → IMP-2026-000001
+Facture client        → FAC-C-2026-000001
+Facture fournisseur   → FAC-F-2026-000001
+Compte financier      → COMP-000001
+```
+
+## Conséquences
+
+- Les formats sont modifiables dans **Paramètres** sans redéploiement *(Module 09 §15)*.
+- La génération est **atomique et côté serveur** : aucun doublon, aucune collision, aucune réutilisation *(Module 09 §16)*.
+- La règle de remise à zéro annuelle reste à confirmer *(Module 09 §17)* — par défaut : remise à zéro au changement d'année civile pour les objets datés.
+
+---
+
+# DEC-006 — Statuts réservation / location
+
+## Incohérence constatée
+
+`03_Modules/05_Gestion_de_Location.md` §23 (statuts de réservation) et §52 (statuts de location) partagent des valeurs (`En cours`, `Terminée`), alors que `05_Regles_Metier/01_Location.md` §11 et §80.4 imposent : **une réservation n'est pas une location**.
+
+## Décision — traitement neutre
+
+Deux entités distinctes, deux jeux de statuts séparés, reliées par une référence.
+
+```
+Réservation : Brouillon · En attente · Confirmée · En préparation
+              · Convertie en location · Annulée · Expirée
+
+Location    : En préparation · Confirmée · En cours · Prolongée
+              · En retard · Retournée · À contrôler · À facturer
+              · Facturée · Clôturée · Annulée
+```
+
+Une réservation se termine sur `Convertie en location` et ne porte jamais l'état d'exécution de la location.
+
+## Conséquences
+
+- Le statut **opérationnel** de la location reste distinct de son statut **financier** *(Règles location §67)*.
+- Une réservation annulée ne bloque plus la disponibilité du véhicule *(Règles location §13)*.
+
+---
+
+# DEC-007 — Nature du montant dû au fournisseur
+
+## Information manquante
+
+L'exemple de référence du projet mentionne un « montant fournisseur » de **500 000 KMF** pour une Toyota T5 mise à disposition, sans jamais préciser sa nature :
+
+- forfait de mise à disposition du véhicule ?
+- loyer périodique (mensuel) ?
+- montant dû par location réalisée ?
+- valeur contractuelle du véhicule ?
+
+Aucun document ne tranche.
+
+## Traitement retenu, sans invention de règle
+
+La **facture fournisseur est saisie manuellement**, avec son montant brut, sa date, son échéance et sa référence externe. Elle peut être rattachée à un véhicule et à des maintenances.
+
+Ce modèle fonctionne quelle que soit la nature réelle du montant, et ne présuppose aucune périodicité ni aucun calcul automatique.
+
+## Question ouverte pour ADIKOM
+
+Le système doit-il, à terme, **générer** le montant dû au fournisseur (contrat de mise à disposition, loyer périodique, part par location) ou la saisie manuelle de la facture reçue reste-t-elle la règle ?
+
+Aucun automatisme ne sera développé avant réponse.
+
+---
+
+# DEC-008 — Règles de calcul de la durée et des frais
+
+## Informations manquantes
+
+Explicitement renvoyées à ADIKOM par la documentation :
+
+| Sujet | Source | État |
+|---|---|---|
+| Arrondi de durée, jour entamé, heure de retour | Règles location §35 | Non défini |
+| Franchise et traitement du retard | Règles location §62 | Non défini |
+| Barème carburant manquant | Règles location §41–42 | Non défini |
+| Barème kilométrage supplémentaire | Périmètre MVP §10.13 | Non défini |
+| Valorisation des dommages | Module 05 §37 | Non défini |
+| Caution et acompte | Périmètre MVP §10.5 | Champs cités, aucune règle |
+| Période de préparation entre deux locations | Règles location §60 | Durée non définie |
+| Seuils de validation des imputations | Workflow 06 §47 | Montants non fixés |
+
+## Traitement retenu
+
+- **Durée facturable** : calculée à partir des dates et heures réelles ; la règle d'arrondi est un **paramètre** (par défaut : jour entamé = jour dû), modifiable sans redéploiement.
+- **Frais supplémentaires** : saisis manuellement, obligatoirement **justifiés et rattachés** à l'événement constaté au retour. Aucun frais n'est ajouté automatiquement *(Règles finance §17)*.
+- **Caution / acompte** : champs prévus dans le modèle, aucun workflow automatisé.
+- **Période de préparation** : paramétrable, **désactivée par défaut**.
+- **Seuils d'imputation** : le workflow de validation est implémenté ; les seuils sont configurables, aucun seuil n'est codé en dur *(Workflow 06 §47 : « ne doivent être automatisés qu'après validation par ADIKOM »)*.
+
+Le système signale ces valeurs comme non configurées plutôt que d'appliquer un barème inventé.
+
+---
+
+# DEC-009 — Résolution des permissions multi-groupes
+
+## Point à confirmer
+
+`03_Modules/08_Utilisateurs_et_Groupes.md` §32 recommande une règle pour le MVP.
+`05_Regles_Metier/05_Permissions.md` §47 exige qu'une règle claire soit **fixée avant** l'implémentation du multi-groupes, sans la fixer.
+
+## Décision appliquée par défaut
+
+```
+Refus explicite       → accès refusé   (prioritaire sur tout)
+Autorisation accordée → accès autorisé
+Aucune permission     → accès refusé
+```
+
+Un utilisateur peut appartenir à plusieurs groupes ; ses permissions sont l'union des autorisations de ses groupes et de ses permissions individuelles, **moins** tout refus explicite.
+
+## Justification
+
+C'est la règle recommandée par le Module 08 §32, et la seule compatible avec le principe de confiance minimale *(Règles permissions §87 : l'absence de permission entraîne un refus)* et le principe de moindre privilège.
+
+## Conséquences
+
+- Le système distingue et affiche l'**origine** de chaque permission : héritée d'un groupe, individuelle, ou refus explicite *(Règles permissions §45–46, Module 08 §48)*.
+- Le Super Admin n'est pas soumis à cette résolution : son accès est un **rôle système** *(Module 08 §33)*.
+- Un compte désactivé ou suspendu perd tout accès, **quelles que soient** ses permissions *(Règles permissions §48)*.
+
+---
+
+# DEC-010 — Stockage et arithmétique des montants
+
+## Décision
+
+Tous les montants monétaires sont stockés en **entiers** (`BIGINT`), exprimés en **KMF**, devise sans sous-unité en usage.
+
+Aucun type flottant n'est utilisé pour un montant, à aucun niveau (base, API, interface).
+
+## Justification
+
+`CLAUDE.md` §58 : « Évite les approximations ou calculs flottants inadaptés aux montants monétaires. »
+
+## Conséquences
+
+- Les calculs de solde, d'imputation et de remise sont exacts, sans erreur d'arrondi cumulée.
+- Le formatage d'affichage (`500 000 KMF`) est séparé du stockage *(Module 09 §19)*.
+- L'architecture reste ouverte à une devise à sous-unité : le montant serait alors exprimé en unités mineures.
+
+---
+
+# DEC-011 — Application des permissions côté serveur
+
+## Décision
+
+Double barrière, systématique :
+
+1. **Garde applicative serveur** — chaque action sensible vérifie la permission requise avant exécution.
+2. **RLS Postgres** — chaque table porte des policies s'appuyant sur les fonctions `has_permission(uid, code)` et `is_super_admin(uid)`.
+
+L'interface masque ou désactive les éléments non autorisés, mais **jamais comme mesure de sécurité**.
+
+## Justification
+
+`CLAUDE.md` §19 et §44 · `README.md` §56 · Règles permissions §50, §85, §86 · Module 08 §4 et §46 : masquer un bouton ne constitue pas une protection ; un utilisateur ne doit pas contourner une restriction par une URL ou un appel direct.
+
+## Conséquences
+
+- La clé de service Supabase est utilisée **exclusivement côté serveur** et n'est jamais exposée au navigateur *(CLAUDE.md §25)*.
+- Le retrait d'une permission prend effet à la vérification suivante *(Règles permissions §44)*.
+- Une action refusée ne modifie aucune donnée et peut être journalisée comme refus *(Règles permissions §84, Règles audit §60–61)*.
+
+---
+
+# DEC-012 — Garantie de non-collision des véhicules
+
+## Décision
+
+Toute période durant laquelle un véhicule est indisponible — réservation confirmée, location en cours, maintenance immobilisante, immobilisation — est enregistrée dans une table unique d'**occupations**, protégée par une contrainte d'exclusion sur `(véhicule, période)`.
+
+La non-collision est donc garantie **par la base de données**, pas par du code applicatif.
+
+## Justification
+
+`05_Regles_Metier/01_Location.md` §57 et §80.1 : « Un véhicule ne doit jamais être attribué simultanément à deux locations incompatibles. Cette règle constitue une contrainte fondamentale. »
+`CLAUDE.md` §31 et README §55 : les règles importantes doivent être protégées au niveau des données.
+
+## Conséquences
+
+- Un conflit est impossible, même en cas de saisies simultanées par deux utilisateurs.
+- La recherche de disponibilité, la confirmation de réservation, la création de location, la prolongation et le changement de véhicule interrogent la même source *(Règles location §56, Règles parc §67 et §70)*.
+- Le statut affiché d'un véhicule ne suffit jamais à conclure à sa disponibilité *(Règles parc §67 et §69)*.
+
+---
+
+# DEC-013 — Effet comptable d'une imputation
+
+## Ambiguïté constatée
+
+`04_Workflows/06_Imputation_Maintenance_Fournisseur.md` distingue les statuts `Validée` (§16) et `Imputée` (§17), et prévoit une **imputation en attente de facture** (§31), sans préciser à quel moment le montant dû au fournisseur est réellement réduit.
+
+## Décision
+
+Le montant dû est réduit **uniquement** lorsque l'imputation est au statut `Imputée`, c'est-à-dire **validée et rattachée à une facture fournisseur**.
+
+Une imputation en `Brouillon`, `À valider`, `Validée` sans facture rattachée, ou `Annulée` **n'affecte aucun solde**.
+
+## Justification
+
+Workflow 06 §12 : « Une imputation non validée ne doit pas être considérée comme définitivement déduite du montant fournisseur. »
+Workflow 06 §31 : une imputation en attente de facture « ne doit pas être considérée comme un paiement ».
+
+## Conséquences
+
+- `Net à payer = Montant brut − Σ imputations imputées`.
+- `Solde = Net à payer − Σ paiements validés` *(Module 07 §57)*.
+- L'annulation d'une imputation réintègre le montant et conserve l'historique *(Workflow 06 §40)*.
+- Les quatre montants — **brut, imputé, payé, solde** — sont conservés et affichés séparément *(règle non négociable du projet)*.
+
+---
+
+# DEC-014 — Fuseau horaire et taxes
+
+## Informations manquantes
+
+- **Fuseau horaire** : `Module 09` §21 exige un fuseau de référence cohérent, sans le nommer.
+- **Taxes** : la documentation mentionne systématiquement « taxes **lorsqu'elles sont applicables** » sans définir ni taux ni règle.
+
+## Traitement retenu
+
+- **Dates** : stockage en `timestamptz` (UTC), affichage sur le fuseau des Comores (`Indian/Comoro`, UTC+3). **À confirmer par ADIKOM.**
+- **Taxes** : non implémentées dans le MVP. La structure des factures prévoit l'emplacement nécessaire, mais aucun taux n'est appliqué tant qu'ADIKOM n'a pas défini le régime applicable.
+
+## Question ouverte pour ADIKOM
+
+ADIKOM applique-t-elle une taxe sur ses prestations de location ? Si oui, laquelle, à quel taux, et sur quelles lignes ?
+
+---
+
+# 3. Décisions restant à arbitrer par ADIKOM
+
+Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
+
+1. **DEC-007** — Le montant dû au fournisseur doit-il être généré par le système (contrat, loyer, part par location) ou saisi manuellement à réception de la facture ?
+2. **DEC-008** — Règles d'arrondi de la durée, traitement du retard, barèmes carburant / kilométrage / dommages, gestion de la caution et de l'acompte, période de préparation, seuils de validation des imputations.
+3. **DEC-009** — Confirmation de la règle de résolution des permissions multi-groupes.
+4. **DEC-014** — Fuseau horaire de référence et régime de taxes applicable.
+5. **DEC-005** — Confirmation des formats de numérotation par défaut et de la règle de remise à zéro annuelle.
+
+---
+
+**ADIKOM PILOT — Journal des décisions**
+
+> Une décision prise doit être retrouvable.
+> Une règle métier ne s'invente pas.
+> Une ambiguïté se signale avant de se coder.
