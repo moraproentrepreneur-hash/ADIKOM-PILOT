@@ -215,7 +215,15 @@ begin
     v_id     := (to_jsonb(new) ->> 'id');
 
     -- Rien de significatif n'a changé : ne pas polluer le journal.
-    if v_before = v_after then
+    --
+    -- Les champs purement techniques sont exclus de la comparaison. Sans cela,
+    -- chaque connexion produirait une entrée UPDATE (last_login_at) en plus de
+    -- son entrée LOGIN, et le journal se remplirait d'événements sans valeur de
+    -- contrôle au détriment des opérations réellement sensibles
+    -- (05_Regles_Metier/06_Audit.md §80).
+    if (v_before - 'last_login_at' - 'updated_at' - 'updated_by')
+       = (v_after - 'last_login_at' - 'updated_at' - 'updated_by')
+    then
       return new;
     end if;
 
