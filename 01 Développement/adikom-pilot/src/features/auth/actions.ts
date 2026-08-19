@@ -83,19 +83,10 @@ export async function signInAction(
     }
   }
 
-  // Traçabilité des connexions (05_Regles_Metier/06_Audit.md §25).
-  await supabase.rpc('log_audit', {
-    p_action: 'LOGIN',
-    p_entity_type: 'app_users',
-    p_entity_id: data.user.id,
-    p_entity_label: `${profile.first_name} ${profile.last_name}`,
-    p_module_code: 'users',
-  })
-
-  await supabase
-    .from('app_users')
-    .update({ last_login_at: new Date().toISOString() })
-    .eq('id', data.user.id)
+  // Horodatage et traçabilité de la connexion (05_Regles_Metier/06_Audit.md §25).
+  // Passe par une fonction dédiée : un utilisateur n'a aucun droit d'écriture
+  // sur sa propre fiche.
+  await supabase.rpc('record_login')
 
   redirect(safeRedirectTarget(formData.get('suite')))
 }

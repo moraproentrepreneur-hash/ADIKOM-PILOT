@@ -63,12 +63,20 @@ create policy app_users_insert on public.app_users
   for insert to authenticated
   with check (public.is_super_admin());
 
--- Modification par un administrateur autorisé, ou de son propre profil.
--- Les triggers empêchent l'auto-promotion et l'auto-changement de statut.
+-- Modification réservée aux administrateurs autorisés.
+--
+-- Un utilisateur ne modifie PAS sa propre fiche : poste, département,
+-- responsable hiérarchique et statut relèvent de la gestion des utilisateurs
+-- (03_Modules/08_Utilisateurs_et_Groupes.md §23). Aucune auto-édition de profil
+-- n'est prévue par la documentation, et modifier son email désynchroniserait la
+-- fiche du compte d'authentification.
+--
+-- La seule écriture légitime déclenchée par l'utilisateur lui-même est
+-- l'horodatage de connexion, assuré par record_login() en SECURITY DEFINER.
 create policy app_users_update on public.app_users
   for update to authenticated
-  using (id = auth.uid() or public.has_permission('users.users.update'))
-  with check (id = auth.uid() or public.has_permission('users.users.update'));
+  using (public.has_permission('users.users.update'))
+  with check (public.has_permission('users.users.update'));
 
 -- Aucune policy DELETE : un utilisateur ne se supprime pas, il se désactive
 -- (05_Regles_Metier/05_Permissions.md §8).

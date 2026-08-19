@@ -128,6 +128,52 @@ comment on function public.log_audit is
   'Enregistre un événement d''audit applicatif (validation, annulation, refus, changement de droits).';
 
 
+-- Enregistrement d'une connexion réussie.
+--
+-- SECURITY DEFINER pour une raison précise : la fiche utilisateur n'est
+-- modifiable que par un administrateur autorisé. Un utilisateur ordinaire ne
+-- doit pas pouvoir écrire dans sa propre fiche — ni son poste, ni son
+-- responsable, ni son email, dont la divergence avec le compte
+-- d'authentification romprait le lien.
+--
+-- Cette fonction met à jour la seule donnée qu'une connexion produit
+-- légitimement, et journalise l'événement (05_Regles_Metier/06_Audit.md §25).
+create or replace function public.record_login()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_actor uuid := public.current_actor();
+  v_label text;
+begin
+  if v_actor is null then
+    return;
+  end if;
+
+  update public.app_users
+     set last_login_at = now()
+   where id = v_actor
+   returning first_name || ' ' || last_name into v_label;
+
+  if not found then
+    return;
+  end if;
+
+  insert into public.audit_log (
+    actor_id, actor_label, action, result, module_code, entity_type, entity_id, entity_label
+  )
+  values (
+    v_actor, v_label, 'LOGIN', 'SUCCESS', 'users', 'app_users', v_actor::text, v_label
+  );
+end;
+$$;
+
+comment on function public.record_login() is
+  'Horodate la connexion de l''utilisateur courant et la journalise. Seule écriture autorisée sur sa propre fiche.';
+
+
 -- --- Journalisation automatique des tables sensibles ------------------------
 
 -- Champs à ne jamais recopier dans le journal (§79 et §80).
