@@ -6,12 +6,12 @@
 -- s'arrête à la première règle non respectée.
 --
 -- Exécution :
---   docker exec -i supabase_db_adikom-pilot \
---     psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f - < supabase/tests/socle.sql
+--   npm run db:verify
+--
+-- Le script est exécuté par `scripts/run-sql.mjs` sur la base Supabase Cloud.
+-- Il ne contient aucune méta-commande psql : toutes les instructions sont du
+-- SQL standard, exécutable par n'importe quel client PostgreSQL.
 -- =============================================================================
-
-\set ON_ERROR_STOP on
-\timing off
 
 -- La recette s'exécute dans une transaction annulée en fin de script.
 -- Deux bénéfices : elle ne laisse aucun résidu en base, et elle peut être

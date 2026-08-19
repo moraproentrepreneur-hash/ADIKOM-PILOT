@@ -1,94 +1,128 @@
 # ADIKOM PILOT — Mise en place
 
-Procédure d'installation de l'environnement de développement et de l'environnement cloud.
+Procédure d'installation et de déploiement.
 
-Configuration retenue :
+## Architecture de développement
 
-| Environnement | Rôle | Outil |
-|---|---|---|
-| **Local** | Développement et tests. Base rejouable à volonté. | Docker + Supabase CLI |
-| **Cloud** | Recette et production. | Projet Supabase + Vercel |
+```
+Code  →  Supabase Cloud  →  Tests  →  GitHub  →  Vercel  →  Recette en ligne
+```
 
-Les migrations de `supabase/migrations/` font foi des deux côtés : le schéma
-n'est **jamais** modifié à la main dans une interface d'administration.
+| Élément | Rôle |
+|---|---|
+| **Next.js** | Application (interface et logique serveur) |
+| **Supabase Cloud** | Base de données PostgreSQL, authentification, stockage |
+| **GitHub** | Versionnement |
+| **Vercel** | Déploiement |
+
+> **Docker n'est pas requis** (DEC-015). La pile Supabase locale reste possible
+> pour qui le souhaite, mais elle ne fait pas partie de l'architecture du projet
+> et aucune étape ne l'exige.
+
+ADIKOM PILOT est une application **hébergée en ligne**, dont l'usage est
+**strictement réservé aux collaborateurs autorisés d'ADIKOM**. Aucun compte
+client, fournisseur ou partenaire. Aucune inscription publique. Seule la landing
+page est publique, et elle ne présente que le produit.
 
 ---
 
-## Partie 1 — Environnement local
+## 1. Créer le projet Supabase
 
-### 1.1 Installer Docker Desktop
+1. <https://supabase.com> → **New project**
+2. Nom : `adikom-pilot`
+3. Région : la plus proche des Comores (`eu-central-1` ou `ap-south-1`)
+4. **Conserver le mot de passe de la base** dans un gestionnaire de mots de
+   passe : il est nécessaire pour appliquer les migrations et n'est affiché
+   qu'une seule fois.
 
-<https://www.docker.com/products/docker-desktop/>
+---
 
-Après installation, **démarrer Docker Desktop** et attendre que l'icône passe au
-vert. Vérification :
-
-```bash
-docker info
-```
-
-### 1.2 Démarrer la pile Supabase locale
-
-Depuis `01 Développement/adikom-pilot` :
-
-```bash
-npm run db:start
-```
-
-Le premier lancement télécharge plusieurs images : comptez quelques minutes.
-
-La commande affiche à la fin les informations de connexion locales :
-
-```
-API URL: http://127.0.0.1:54321
-Studio URL: http://127.0.0.1:54323
-anon key: eyJhb...
-service_role key: eyJhb...
-```
-
-### 1.3 Renseigner `.env.local`
+## 2. Renseigner `.env.local`
 
 ```bash
 cp .env.example .env.local
 ```
 
-Reporter dans `.env.local` les valeurs affichées à l'étape précédente :
+Valeurs à récupérer dans le tableau de bord Supabase
+(**Project Settings → API**, puis **Database**) :
 
-| Variable | Valeur locale |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | l'`API URL` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | l'`anon key` |
-| `SUPABASE_SERVICE_ROLE_KEY` | la `service_role key` |
-| `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` |
+| Variable | Où la trouver | Nature |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Settings → API → Project URL | publique |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Settings → API → clé `anon` / publishable | publique |
+| `SUPABASE_SERVICE_ROLE_KEY` | Settings → API → clé `service_role` | **secret** |
+| `SUPABASE_DB_URL` | Settings → Database → Connection string (URI) | **secret** |
+| `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` en développement | publique |
 
-> `.env.local` est ignoré par Git et ne doit jamais être commité.
+`SUPABASE_DB_URL` contient le mot de passe de la base : il remplace le
+`[YOUR-PASSWORD]` du modèle fourni par Supabase.
 
-### 1.4 Appliquer le schéma
+> `.env.local` est ignoré par Git et ne doit **jamais** être commité.
+> La clé `service_role` contourne RLS : usage strictement serveur.
+
+---
+
+## 3. Appliquer le schéma
 
 ```bash
-npm run db:reset
+npm run db:push
 ```
 
-Repart d'une base vierge et rejoue les 8 migrations, y compris le catalogue des
-permissions et l'organisation de départ. Cette commande est **rejouable autant
-de fois que nécessaire** — c'est l'intérêt principal de l'environnement local.
+Applique les migrations de `supabase/migrations/` sur le projet cloud, dans
+l'ordre, en ne rejouant que celles qui manquent.
 
-### 1.5 Créer le Super Admin
+Pour vérifier ce qui serait appliqué sans rien modifier :
 
-Les identifiants passent par des variables d'environnement, jamais en argument
-de ligne de commande : ils resteraient dans l'historique du terminal.
+```bash
+npm run db:status
+```
+
+> Le schéma se modifie **uniquement** par migration versionnée, jamais à la main
+> dans l'interface Supabase. Une modification manuelle serait perdue au
+> déploiement suivant et romprait la reproductibilité.
+
+---
+
+## 4. Créer le Super Admin
+
+Seul compte créé hors de l'application : il n'existe aucune inscription
+publique, et c'est lui qui crée ensuite tous les autres utilisateurs.
+
+Les identifiants passent par des variables d'environnement, **jamais** en
+argument de ligne de commande — ils resteraient dans l'historique du terminal.
 
 PowerShell :
 
 ```powershell
 $env:ADIKOM_ADMIN_EMAIL="prenom.nom@adikom.km"
-$env:ADIKOM_ADMIN_PASSWORD="<mot de passe d'au moins 12 caractères>"
+$env:ADIKOM_ADMIN_USERNAME="identifiant"
+$env:ADIKOM_ADMIN_PASSWORD="<mot de passe>"
 $env:ADIKOM_ADMIN_FIRSTNAME="Prénom"
 $env:ADIKOM_ADMIN_LASTNAME="Nom"
 npm run bootstrap:admin
 ```
 
-### 1.6 Lancer l'application
+Le script est idempotent : relancé, il met à jour le profil sans dupliquer le
+compte.
+
+---
+
+## 5. Vérifier le schéma déployé
+
+```bash
+npm run db:verify
+```
+
+Exécute `supabase/tests/socle.sql` : tables, RLS, journal d'audit en écriture
+seule, catalogue des permissions, moteur d'autorisation, protection du Super
+Admin, numérotation, organisation de départ, paramètres.
+
+La recette s'exécute dans une transaction annulée : elle ne laisse aucune donnée
+en base et peut être rejouée à volonté.
+
+---
+
+## 6. Lancer l'application
 
 ```bash
 npm run dev
@@ -96,78 +130,54 @@ npm run dev
 
 <http://localhost:3000> — la landing publique, puis la connexion.
 
+L'application locale travaille sur la base Supabase Cloud.
+
 ---
 
-## Partie 2 — Environnement cloud
-
-### 2.1 Créer le projet Supabase
-
-1. <https://supabase.com> → **New project**
-2. Nom : `adikom-pilot`
-3. Région : la plus proche des Comores (`eu-central-1` ou `ap-south-1`)
-4. Conserver le mot de passe de la base dans un gestionnaire de mots de passe
-
-### 2.2 Lier et déployer le schéma
-
-La référence du projet figure dans son URL :
-`https://supabase.com/dashboard/project/<REFERENCE>`
-
-```bash
-npx supabase link --project-ref <REFERENCE>
-npm run db:push
-```
-
-`db:push` applique les migrations non encore déployées. Il ne réinitialise
-jamais la base : `db:reset` reste réservé au local.
-
-### 2.3 Créer le Super Admin de production
-
-Même procédure qu'en 1.5, avec un `.env.local` pointant sur le projet cloud, ou
-en surchargeant ponctuellement `NEXT_PUBLIC_SUPABASE_URL` et
-`SUPABASE_SERVICE_ROLE_KEY`.
-
-> Utiliser un mot de passe **différent** de celui de l'environnement local.
-
-### 2.4 Déployer sur Vercel
+## 7. Déployer sur Vercel
 
 1. Importer le dépôt GitHub `ADIKOM-PILOT`
 2. **Root Directory** : `01 Développement/adikom-pilot` ← indispensable
 3. Variables d'environnement du projet Vercel :
 
-| Variable | Portée |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | toutes |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | toutes |
-| `SUPABASE_SERVICE_ROLE_KEY` | **serveur uniquement** — jamais préfixée `NEXT_PUBLIC_` |
-| `NEXT_PUBLIC_SITE_URL` | l'URL de déploiement |
+| Variable | Portée | Remarque |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | toutes | |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | toutes | |
+| `SUPABASE_SERVICE_ROLE_KEY` | toutes | **secret** — jamais préfixé `NEXT_PUBLIC_` |
+| `NEXT_PUBLIC_SITE_URL` | toutes | URL de déploiement |
+
+`SUPABASE_DB_URL` n'est **pas** nécessaire sur Vercel : les migrations sont
+appliquées depuis le poste de développement, pas par l'application.
 
 ---
 
-## Vérification
-
-Une fois la base en place, ces contrôles doivent tous passer :
+## Recette
 
 ```bash
 npm run verify        # lint + typecheck + tests + build
 ```
 
-Puis, dans l'application :
+Puis, dans l'application déployée :
 
 | Contrôle | Résultat attendu |
 |---|---|
-| Connexion avec le Super Admin | Accès au tableau de bord |
+| Landing publique | Accessible sans session, aucune donnée métier |
+| Connexion du Super Admin | Accès au tableau de bord |
 | Barre latérale | Tous les modules visibles (accès complet) |
 | Réduction de la barre latérale | État conservé après rechargement |
-| Accès direct à `/acces-refuse` | Page lisible, sans détail technique |
-| Table `permissions` dans Studio | 130 lignes |
+| `/tableau-de-bord` sans session | Redirection vers la connexion |
+| Table `permissions` | 135 lignes |
 | Table `audit_log` | Une entrée `LOGIN` après connexion |
-| `update audit_log set ...` dans Studio | **Refusé** — table en écriture seule |
+| `update audit_log …` dans le SQL Editor | **Refusé** — table en écriture seule |
 
 ---
 
 ## Rappels de sécurité
 
 - Aucun secret dans le code, la documentation ou un message de commit.
-- `SUPABASE_SERVICE_ROLE_KEY` contourne RLS : usage strictement serveur.
-- Le schéma se modifie **uniquement** par migration versionnée.
+- `SUPABASE_SERVICE_ROLE_KEY` et `SUPABASE_DB_URL` contournent RLS.
+- Le schéma se modifie uniquement par migration versionnée.
 - Vérifier `git status` avant chaque commit.
+- L'application étant accessible depuis Internet, le contrôle serveur des
+  permissions n'est pas une précaution : c'est la seule protection réelle.

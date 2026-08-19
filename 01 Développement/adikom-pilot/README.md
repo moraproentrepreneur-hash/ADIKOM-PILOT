@@ -14,9 +14,17 @@ Code source du SaaS interne d'ADIKOM Technology & Travel.
 |---|---|
 | Framework | Next.js 16 (App Router, Turbopack) · React 19.2 · TypeScript |
 | Styles | Tailwind CSS v4, tokens issus de la charte ADIKOM |
-| Données | Supabase — PostgreSQL, Auth, Storage |
+| Données | Supabase **Cloud** — PostgreSQL, Auth, Storage |
 | Tests | Vitest |
 | Déploiement | Vercel (*Root Directory* : `01 Développement/adikom-pilot`) |
+
+Flux de développement (DEC-015) :
+
+```
+Code  →  Supabase Cloud  →  Tests  →  GitHub  →  Vercel  →  Recette en ligne
+```
+
+Docker n'est **pas** requis.
 
 ---
 
@@ -27,14 +35,17 @@ Code source du SaaS interne d'ADIKOM Technology & Travel.
 npm install
 
 # 2. Variables d'environnement
-cp .env.example .env.local     # puis renseigner les valeurs réelles
+cp .env.example .env.local     # puis renseigner les valeurs du projet Supabase
 
-# 3. Base de données (nécessite Docker pour la pile locale)
-npm run db:reset               # applique migrations + seed sur une base vierge
+# 3. Schéma de base de données
+npm run db:push                # applique les migrations sur Supabase Cloud
+npm run db:verify              # recette du schéma
 
 # 4. Développement
 npm run dev
 ```
+
+Procédure détaillée : [MISE_EN_PLACE.md](./MISE_EN_PLACE.md)
 
 `.env.local` n'est **jamais** commité. Aucun secret ne doit apparaître dans le
 code, la documentation ou un message de commit.
@@ -51,8 +62,11 @@ code, la documentation ou un message de commit.
 | `npm run typecheck` | Vérification TypeScript |
 | `npm run test` | Tests unitaires |
 | `npm run verify` | lint + typecheck + tests + build — **à passer avant chaque commit** |
-| `npm run db:reset` | Rejoue le schéma complet sur une base vierge |
-| `npm run db:push` | Applique les migrations sur le projet Supabase lié |
+| `npm run db:push` | Applique les migrations manquantes sur Supabase Cloud |
+| `npm run db:status` | Liste les migrations à appliquer, sans rien modifier |
+| `npm run db:verify` | Recette du schéma déployé (transaction annulée) |
+| `npm run db:inspect` | État des lieux du schéma : tables, RLS, policies, triggers |
+| `npm run bootstrap:admin` | Crée ou met à jour le Super Admin |
 
 ---
 

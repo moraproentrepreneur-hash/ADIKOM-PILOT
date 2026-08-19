@@ -48,6 +48,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-012 | Garantie de non-collision des véhicules | Décision technique | Validée | 2026-08-19 |
 | DEC-013 | Effet comptable d'une imputation | Décision technique | Validée | 2026-08-19 |
 | DEC-014 | Fuseau horaire et taxes | Information manquante | En attente ADIKOM | 2026-08-19 |
+| DEC-015 | Portée de « SaaS 100 % interne » | Clarification ADIKOM | Validée | 2026-08-20 |
 
 ---
 
@@ -461,6 +462,65 @@ Workflow 06 §31 : une imputation en attente de facture « ne doit pas être con
 ## Question ouverte pour ADIKOM
 
 ADIKOM applique-t-elle une taxe sur ses prestations de location ? Si oui, laquelle, à quel taux, et sur quelles lignes ?
+
+---
+
+# DEC-015 — Portée de « SaaS 100 % interne »
+
+## Ambiguïté constatée
+
+L'expression « SaaS 100 % interne » (`README.md` §48 et §65,
+`01_Vision_et_Objectifs/01_Vision_ADIKOM_PILOT.md` §4) a été comprise à tort
+comme impliquant un fonctionnement en local.
+
+Cette lecture avait conduit à faire de Docker et de la pile Supabase locale un
+prérequis de développement.
+
+## Clarification apportée par ADIKOM
+
+« 100 % interne » qualifie **les utilisateurs**, pas l'hébergement.
+
+Cela signifie :
+
+- seuls les collaborateurs autorisés d'ADIKOM utilisent le SaaS ;
+- aucun client, fournisseur, partenaire ou tiers ne possède de compte d'accès ;
+- l'accès est contrôlé par authentification et permissions.
+
+Cela **ne signifie pas** que l'application doit fonctionner en local.
+
+**ADIKOM PILOT est une application hébergée en ligne.**
+
+## Décision
+
+Le flux de développement officiel devient :
+
+```
+Code → Supabase Cloud → Tests → GitHub → Vercel → Recette de l'application déployée
+```
+
+Docker et la pile Supabase locale deviennent **optionnels et non bloquants**.
+Ils ne font plus partie de l'architecture de développement du projet.
+
+## Conséquences
+
+- Les migrations sont appliquées sur le **projet Supabase Cloud**
+  (`supabase db push`), et non plus rejouées localement (`supabase db reset`).
+- La procédure de mise en place est réécrite autour du cloud.
+- Aucune règle métier n'est modifiée. Le schéma, le système de permissions, la
+  logique Super Admin, l'imputation fournisseur, les tarifs préférentiels et le
+  Design System restent inchangés.
+- La règle d'accès reste entière : aucun portail client, fournisseur ou
+  partenaire, aucune inscription publique, aucun accès externe aux données
+  métier. Seule la landing page est publique, et elle ne présente que le
+  produit (voir **DEC-003**).
+
+## Portée sur la sécurité
+
+Le passage à un hébergement en ligne **renforce** l'exigence de contrôle serveur
+plutôt qu'il ne l'assouplit : l'application devient accessible depuis Internet.
+Les garanties déjà en place restent la référence — permissions vérifiées côté
+serveur, RLS sur toutes les tables, aucun accès pour le rôle `anon`, journal
+d'audit infalsifiable (**DEC-011**, **DEC-012**).
 
 ---
 
