@@ -54,8 +54,37 @@ Valeurs à récupérer dans le tableau de bord Supabase
 | `SUPABASE_DB_URL` | Settings → Database → Connection string (URI) | **secret** |
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` en développement | publique |
 
-`SUPABASE_DB_URL` contient le mot de passe de la base : il remplace le
-`[YOUR-PASSWORD]` du modèle fourni par Supabase.
+### Deux pièges sur `SUPABASE_DB_URL`
+
+La chaîne affichée dans le tableau de bord ne fonctionne pas telle quelle.
+
+**1. Le mot de passe doit être encodé.**
+Les caractères `@`, `:`, `/`, `?`, `#` ont une signification dans une URL. Un
+mot de passe commençant par `@` serait interprété comme un séparateur d'hôte, et
+la connexion échouerait sur un nom de domaine incohérent.
+
+| Caractère | À écrire |
+|---|---|
+| `@` | `%40` |
+| `:` | `%3A` |
+| `/` | `%2F` |
+| `#` | `%23` |
+| `?` | `%3F` |
+
+**2. La connexion directe est en IPv6 uniquement.**
+`db.<ref>.supabase.co` ne publie plus d'adresse IPv4. Sur un réseau sans IPv6,
+la résolution échoue avec `getaddrinfo ENOTFOUND`.
+
+Utiliser le **pooler**, joignable en IPv4 :
+
+```
+postgresql://postgres.<REF>:<MOT_DE_PASSE_ENCODE>@aws-0-<REGION>.pooler.supabase.com:5432/postgres
+```
+
+- l'identifiant devient `postgres.<REF>` et non `postgres` ;
+- le **port 5432** correspond au mode session, requis pour les migrations
+  (le port 6543, en mode transaction, ne convient pas au DDL) ;
+- la région figure dans *Project Settings → Database → Connection pooling*.
 
 > `.env.local` est ignoré par Git et ne doit **jamais** être commité.
 > La clé `service_role` contourne RLS : usage strictement serveur.
