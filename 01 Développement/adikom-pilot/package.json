@@ -15,6 +15,7 @@
     "db:status": "node scripts/db-push.mjs --dry-run",
     "db:verify": "node scripts/run-sql.mjs supabase/tests/socle.sql",
     "db:inspect": "node scripts/db-inspect.mjs",
+    "verify:auth": "node scripts/verify-auth.mjs",
     "bootstrap:admin": "node scripts/bootstrap-super-admin.mjs",
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
