@@ -188,9 +188,11 @@ create policy company_settings_update on public.company_settings
 
 -- Vue publique interne : informations non sensibles nécessaires à l'affichage
 -- (en-tête, documents, formats). Accessible à tout utilisateur authentifié.
--- security_invoker = off : la vue expose délibérément un sous-ensemble sûr.
+-- security_invoker = false : la vue s'exécute sous son propriétaire et expose
+-- délibérément un sous-ensemble sûr, sans exiger la permission de lecture
+-- complète des paramètres.
 create view public.company_profile
-with (security_invoker = off) as
+with (security_invoker = false) as
   select
     legal_name,
     trade_name,

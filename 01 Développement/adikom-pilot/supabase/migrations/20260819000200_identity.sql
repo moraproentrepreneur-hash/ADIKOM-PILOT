@@ -24,7 +24,7 @@ create table public.app_users (
   first_name        text        not null check (length(btrim(first_name)) > 0),
   last_name         text        not null check (length(btrim(last_name)) > 0),
   username          text        unique,
-  email             citext      not null unique,
+  email             text        not null,
   phone             text,
 
   -- Informations professionnelles
@@ -65,6 +65,9 @@ comment on column public.app_users.is_super_admin is
   'Rôle système : accès complet, non soumis aux permissions de groupe.';
 comment on column public.app_users.status is
   'Un compte INACTIVE/SUSPENDED/ARCHIVED ne peut plus se connecter, mais son historique est conservé.';
+
+-- Unicité de l'email insensible à la casse, sans extension.
+create unique index app_users_email_unique_idx on public.app_users (lower(email));
 
 create index app_users_status_idx     on public.app_users (status);
 create index app_users_manager_idx    on public.app_users (manager_id);

@@ -12,10 +12,13 @@
 
 -- btree_gist : indispensable pour les contraintes EXCLUDE combinant une égalité
 -- (vehicle_id) et un chevauchement de période (DEC-012 — non-collision véhicule).
-create extension if not exists btree_gist;
+-- Installée dans le schéma `extensions`, conformément à la convention Supabase.
+create schema if not exists extensions;
+create extension if not exists btree_gist with schema extensions;
 
--- citext : comparaison d'emails insensible à la casse.
-create extension if not exists citext;
+-- Aucune extension n'est utilisée pour les emails : l'unicité insensible à la
+-- casse est obtenue par un index sur lower(email). Une contrainte native se
+-- déploie partout, sans dépendre d'une extension ni d'un search_path.
 
 
 -- --- Types partagés ---------------------------------------------------------

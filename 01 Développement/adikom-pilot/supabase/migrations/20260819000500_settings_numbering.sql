@@ -29,7 +29,7 @@ create table public.company_settings (
   city                  text,
   country               text default 'Comores',
   phone                 text,
-  email                 citext,
+  email                 text,
   website               text,
 
   -- Section Administratif (§34) — accès restreint par permission dédiée
