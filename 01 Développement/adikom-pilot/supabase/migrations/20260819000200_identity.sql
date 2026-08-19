@@ -120,7 +120,14 @@ begin
     end if;
   end if;
 
-  return case when tg_op = 'DELETE' then old else new end;
+  -- Retour explicite : un CASE référençant OLD et NEW ferait échouer le
+  -- trigger sur DELETE, où NEW n'est pas assigné (PL/pgSQL lie toutes les
+  -- variables d'une expression avant de l'évaluer).
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+
+  return new;
 end;
 $$;
 

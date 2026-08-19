@@ -243,7 +243,15 @@ begin
     p_after       => v_after
   );
 
-  return case when tg_op = 'DELETE' then old else new end;
+  -- Retour explicite plutôt qu'un CASE : PL/pgSQL lie toutes les variables
+  -- référencées par une expression avant de l'évaluer. Un CASE mentionnant à
+  -- la fois OLD et NEW échouerait donc sur INSERT comme sur DELETE, où l'une
+  -- des deux n'est pas assignée.
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+
+  return new;
 end;
 $$;
 
@@ -279,36 +287,62 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
-  v_code   text;
-  v_label  text;
-  v_target text;
+  v_code    text;
+  v_label   text;
+  v_target  uuid;
+  v_perm    uuid;
+  v_before  jsonb;
+  v_after   jsonb;
+  v_row     jsonb;
 begin
+  -- NEW et OLD ne sont assignés que selon l'opération : sur INSERT, OLD ne
+  -- l'est pas ; sur DELETE, NEW ne l'est pas. Les référencer hors de leur
+  -- contexte lève « record is not assigned yet ». coalesce(new.x, old.x) est
+  -- donc à proscrire : il évalue ses deux arguments.
+  if tg_op = 'DELETE' then
+    v_before := to_jsonb(old);
+    v_row    := v_before;
+  elsif tg_op = 'INSERT' then
+    v_after  := to_jsonb(new);
+    v_row    := v_after;
+  else
+    v_before := to_jsonb(old);
+    v_after  := to_jsonb(new);
+    v_row    := v_after;
+  end if;
+
+  v_perm := (v_row ->> 'permission_id')::uuid;
+
   select p.code into v_code
   from public.permissions p
-  where p.id = coalesce(new.permission_id, old.permission_id);
+  where p.id = v_perm;
 
   if tg_table_name = 'user_permissions' then
-    v_target := coalesce(new.user_id, old.user_id)::text;
+    v_target := (v_row ->> 'user_id')::uuid;
     select u.first_name || ' ' || u.last_name into v_label
-    from public.app_users u where u.id = coalesce(new.user_id, old.user_id);
+    from public.app_users u where u.id = v_target;
   else
-    v_target := coalesce(new.group_id, old.group_id)::text;
+    v_target := (v_row ->> 'group_id')::uuid;
     select g.name into v_label
-    from public.groups g where g.id = coalesce(new.group_id, old.group_id);
+    from public.groups g where g.id = v_target;
   end if;
 
   perform public.log_audit(
     p_action       => 'PERMISSION_CHANGE',
     p_entity_type  => tg_table_name,
-    p_entity_id    => v_target,
+    p_entity_id    => v_target::text,
     p_entity_label => v_label,
     p_module_code  => 'users',
-    p_before       => case when tg_op = 'INSERT' then null else to_jsonb(old) end,
-    p_after        => case when tg_op = 'DELETE' then null else to_jsonb(new) end,
+    p_before       => v_before,
+    p_after        => v_after,
     p_comment      => 'Permission : ' || coalesce(v_code, 'inconnue')
   );
 
-  return case when tg_op = 'DELETE' then old else new end;
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+
+  return new;
 end;
 $$;
 
