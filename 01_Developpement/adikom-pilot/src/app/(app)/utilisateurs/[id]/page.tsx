@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, Pencil, ShieldCheck } from 'lucide-react'
 
 import { Badge, Card, Empty, InfoRow, PageHeader } from '@/components/ui/primitives'
-import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
+import { can, getCurrentUser, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import {
   getPermissionOverview,
@@ -267,6 +267,23 @@ async function PermissionsTab({
   userId: string
   isSuperAdmin: boolean
 }) {
-  const overview = await getPermissionOverview(userId)
-  return <PermissionsPanel overview={overview} isSuperAdmin={isSuperAdmin} />
+  const [overview, canEditPermissions, actor] = await Promise.all([
+    getPermissionOverview(userId),
+    can(PERMISSIONS.USER_PERMISSIONS_UPDATE),
+    getCurrentUser(),
+  ])
+
+  // Les droits du Super Admin viennent du rôle système : aucune règle
+  // individuelle ne s'y applique. Nul ne modifie non plus ses propres droits.
+  const editable = canEditPermissions && !isSuperAdmin && actor?.id !== userId
+
+  return (
+    <PermissionsPanel
+      userId={userId}
+      overview={overview}
+      isSuperAdmin={isSuperAdmin}
+      editable={editable}
+      isSelf={actor?.id === userId}
+    />
+  )
 }

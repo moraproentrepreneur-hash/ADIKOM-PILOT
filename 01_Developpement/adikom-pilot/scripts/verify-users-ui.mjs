@@ -147,10 +147,13 @@ async function main() {
     else ko('Arborescence des modules présente')
     if (/Non défini/.test(perms)) ok('État « non défini » distingué')
     else ko('État « non défini » distingué')
-    if ((await page.locator('input[type="checkbox"]').count()) === 0) {
-      ok('Aucun contrôle de modification', 'lecture seule respectée')
+    // Le Super Admin dispose du droit de modifier les permissions individuelles :
+    // l'onglet expose un sélecteur à trois états par permission du catalogue.
+    const selectorCount = await page.locator('main form fieldset').count()
+    if (selectorCount === 135) {
+      ok('Permissions individuelles modifiables', `${selectorCount} sélecteurs`)
     } else {
-      ko('Aucun contrôle de modification', 'des cases à cocher sont présentes')
+      ko('Permissions individuelles modifiables', `${selectorCount} sélecteurs`)
     }
 
     // --------------------------------------------------- 5. Modification --

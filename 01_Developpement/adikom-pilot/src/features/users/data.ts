@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import type { PermissionSource, UserStatus } from './constants'
+import type { PermissionEffect, PermissionSource, UserStatus } from './constants'
 import type { PermissionAction } from '@/lib/auth/permissions'
 import { ACTION_LABELS } from '@/lib/auth/permissions'
 
@@ -21,7 +21,7 @@ import { ACTION_LABELS } from '@/lib/auth/permissions'
 // Les libellés et types partagés vivent dans constants.ts : ils sont
 // consommés par des composants clients, qui ne peuvent pas importer ce module.
 export { STATUS_LABELS, STATUS_TONES, SOURCE_LABELS } from './constants'
-export type { UserStatus, PermissionSource } from './constants'
+export type { UserStatus, PermissionSource, PermissionEffect } from './constants'
 
 export type UserListItem = {
   id: string
@@ -283,6 +283,13 @@ export type PermissionEntry = {
   isSensitive: boolean
   granted: boolean
   source: PermissionSource
+  /**
+   * Règle individuelle réellement enregistrée dans `user_permissions`.
+   * `null` signifie « non définie » : seul l'héritage des groupes s'applique.
+   * À distinguer de `granted`, qui est le résultat effectif toutes origines
+   * confondues.
+   */
+  userEffect: PermissionEffect | null
 }
 
 export type PermissionBranch = {
@@ -320,17 +327,23 @@ export type PermissionOverview = {
 export async function getPermissionOverview(userId: string): Promise<PermissionOverview> {
   const supabase = await createSupabaseServerClient()
 
-  const [catalogResult, effectiveResult] = await Promise.all([
+  const [catalogResult, effectiveResult, individualResult] = await Promise.all([
     supabase
       .from('permissions')
       .select(
-        'code, module_code, module_label, menu_label, submenu_label, action, label, is_sensitive, module_order, menu_order, submenu_order, action_order'
+        'id, code, module_code, module_label, menu_label, submenu_label, action, label, is_sensitive, module_order, menu_order, submenu_order, action_order'
       )
       .order('module_order')
       .order('menu_order')
       .order('submenu_order')
       .order('action_order'),
     supabase.rpc('effective_permissions', { p_user_id: userId }),
+    // Règles individuelles réellement enregistrées : elles seules sont
+    // modifiables ici, l'héritage relevant des groupes.
+    supabase
+      .from('user_permissions')
+      .select('permission_id, effect')
+      .eq('user_id', userId),
   ])
 
   const empty: PermissionOverview = {
@@ -350,6 +363,15 @@ export async function getPermissionOverview(userId: string): Promise<PermissionO
   type EffectiveRow = { permission_code: string; granted: boolean; source: PermissionSource }
   const effective = new Map<string, EffectiveRow>(
     ((effectiveResult.data ?? []) as EffectiveRow[]).map((row) => [row.permission_code, row])
+  )
+
+  // Une erreur ici ne doit pas faire passer une règle existante pour absente :
+  // l'interface proposerait « non défini » et l'enregistrement l'effacerait.
+  if (individualResult.error) {
+    reportQueryFailure('permissions individuelles', individualResult.error)
+  }
+  const individual = new Map<string, PermissionEffect>(
+    (individualResult.data ?? []).map((row) => [row.permission_id, row.effect as PermissionEffect])
   )
 
   const modules = new Map<string, PermissionModuleTree>()
@@ -399,6 +421,7 @@ export async function getPermissionOverview(userId: string): Promise<PermissionO
       isSensitive: row.is_sensitive,
       granted: isGranted,
       source,
+      userEffect: individual.get(row.id) ?? null,
     })
 
     moduleTree.total += 1

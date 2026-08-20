@@ -8,6 +8,7 @@ import { PERMISSIONS } from '@/lib/auth/permissions'
 import { can, requirePermission, requireUser } from '@/lib/auth/dal'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { PERMISSION_FIELD_PREFIX } from './constants'
 
 /**
  * Actions du module Utilisateurs.
@@ -427,6 +428,145 @@ async function setUserStatusInner(
   revalidatePath('/utilisateurs')
   revalidatePath(`/utilisateurs/${userId}`)
   return { success: 'Le statut a été mis à jour.' }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Permissions individuelles                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Applique les règles individuelles d'un utilisateur.
+ *
+ * Seule la table `user_permissions` est touchée : l'héritage reste défini par
+ * les groupes (Module 08 §46). Trois états sont possibles pour chaque
+ * permission — `ALLOW`, `DENY`, ou aucune règle, ce qui laisse l'héritage
+ * s'appliquer.
+ *
+ * Barrières successives, aucune n'étant supprimée au profit d'une autre :
+ *   1. `requirePermission` refuse l'appel sans `users.users.permissions.update`,
+ *      y compris lorsqu'il est émis directement, sans passer par l'interface ;
+ *   2. le client porteur de la session soumet l'écriture aux policies RLS ;
+ *   3. le trigger `user_permissions_no_self_change` interdit en base qu'un
+ *      utilisateur modifie ses propres droits ;
+ *   4. le trigger d'audit journalise chaque changement en `PERMISSION_CHANGE`,
+ *      avec l'état avant et après.
+ */
+export async function updateUserPermissionsAction(
+  prevState: UserFormState,
+  formData: FormData
+): Promise<UserFormState> {
+  return guarded('permissions', () => updateUserPermissionsInner(prevState, formData))
+}
+
+async function updateUserPermissionsInner(
+  _prevState: UserFormState,
+  formData: FormData
+): Promise<UserFormState> {
+  const actor = await requirePermission(PERMISSIONS.USER_PERMISSIONS_UPDATE)
+
+  const userId = String(formData.get('userId') ?? '')
+  if (!userId) return { error: 'Utilisateur introuvable.' }
+
+  // Contrôlé aussi en base ; répété ici pour renvoyer un message clair plutôt
+  // qu'une erreur technique (05_Regles_Metier/05_Permissions.md §42).
+  if (userId === actor.id) {
+    return { error: 'Vous ne pouvez pas modifier vos propres droits d’accès.' }
+  }
+
+  const supabase = await createSupabaseServerClient()
+
+  const { data: target, error: targetError } = await supabase
+    .from('app_users')
+    .select('is_super_admin')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (targetError) return { error: friendlyError(targetError.message) }
+  if (!target) return { error: 'Utilisateur introuvable.' }
+
+  // Le Super Admin tient ses droits du rôle système : une règle individuelle
+  // n'aurait aucun effet et laisserait croire à une restriction inexistante.
+  if (target.is_super_admin) {
+    return {
+      error:
+        'Ce compte détient le rôle Super Admin : ses droits ne dépendent pas des permissions individuelles.',
+    }
+  }
+
+  // Le formulaire soumet un choix par permission du catalogue ; on ne retient
+  // que les codes réellement existants pour ignorer toute valeur injectée.
+  const { data: catalog, error: catalogError } = await supabase
+    .from('permissions')
+    .select('id, code')
+
+  if (catalogError) return { error: friendlyError(catalogError.message) }
+
+  const { data: current, error: currentError } = await supabase
+    .from('user_permissions')
+    .select('permission_id, effect')
+    .eq('user_id', userId)
+
+  if (currentError) return { error: friendlyError(currentError.message) }
+
+  const existing = new Map((current ?? []).map((row) => [row.permission_id, row.effect as string]))
+
+  const toUpsert: { user_id: string; permission_id: string; effect: string; granted_by: string }[] =
+    []
+  const toDelete: string[] = []
+
+  for (const permission of catalog ?? []) {
+    const raw = formData.get(`${PERMISSION_FIELD_PREFIX}${permission.code}`)
+    // Une permission absente du formulaire n'est pas une permission effacée :
+    // seule une valeur explicite est prise en compte.
+    if (typeof raw !== 'string') continue
+
+    const choice = raw === 'ALLOW' || raw === 'DENY' ? raw : 'INHERIT'
+    const before = existing.get(permission.id) ?? null
+
+    if (choice === 'INHERIT') {
+      if (before !== null) toDelete.push(permission.id)
+      continue
+    }
+
+    if (before !== choice) {
+      toUpsert.push({
+        user_id: userId,
+        permission_id: permission.id,
+        effect: choice,
+        granted_by: actor.id,
+      })
+    }
+  }
+
+  if (toUpsert.length === 0 && toDelete.length === 0) {
+    return { success: 'Aucune modification à enregistrer.' }
+  }
+
+  if (toDelete.length > 0) {
+    const { error } = await supabase
+      .from('user_permissions')
+      .delete()
+      .eq('user_id', userId)
+      .in('permission_id', toDelete)
+
+    if (error) return { error: friendlyError(error.message) }
+  }
+
+  if (toUpsert.length > 0) {
+    const { error } = await supabase
+      .from('user_permissions')
+      .upsert(toUpsert, { onConflict: 'user_id,permission_id' })
+
+    if (error) return { error: friendlyError(error.message) }
+  }
+
+  revalidatePath(`/utilisateurs/${userId}`)
+  revalidatePath('/utilisateurs')
+
+  const changed = toUpsert.length + toDelete.length
+  return {
+    success: `${changed} permission${changed > 1 ? 's' : ''} mise${changed > 1 ? 's' : ''} à jour.`,
+  }
 }
 
 /** Garde utilisée par les pages : redirige plutôt que de lever une erreur. */

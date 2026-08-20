@@ -128,7 +128,7 @@ export function Sidebar({
               isSection(entry) ? (
                 <li key={entry.label} className="pt-3 first:pt-0">
                   {showLabels ? (
-                    <p className="px-2.5 pb-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">
+                    <p className="px-2.5 pb-1.5 text-[11px] font-semibold tracking-wide text-adikom-500 uppercase">
                       {entry.label}
                     </p>
                   ) : (
@@ -139,6 +139,7 @@ export function Sidebar({
                       <SidebarLink
                         key={item.href}
                         item={item}
+                        level="submenu"
                         collapsed={collapsed}
                         active={pathname === item.href}
                         onNavigate={() => setMobileOpen(false)}
@@ -150,6 +151,7 @@ export function Sidebar({
                 <SidebarLink
                   key={entry.href}
                   item={entry}
+                  level="menu"
                   collapsed={collapsed}
                   active={pathname === entry.href}
                   onNavigate={() => setMobileOpen(false)}
@@ -205,13 +207,25 @@ export function Sidebar({
   )
 }
 
+/**
+ * Trois niveaux de lecture, obtenus avec les seules couleurs du Design System :
+ *
+ *   menu accessible     → bleu ADIKOM, poids moyen
+ *   sous-menu accessible→ encre (texte foncé), poids moyen
+ *   entrée inaccessible → gris atténué, curseur interdit, badge « à venir »
+ *
+ * L'entrée sélectionnée ajoute à cela un fond bleu très clair et un repère
+ * vertical, visible aussi bien en mode développé qu'en mode rétracté.
+ */
 function SidebarLink({
   item,
+  level,
   collapsed,
   active,
   onNavigate,
 }: {
   item: NavItem
+  level: 'menu' | 'submenu'
   collapsed: boolean
   active: boolean
   onNavigate: () => void
@@ -253,11 +267,14 @@ function SidebarLink({
         aria-current={active ? 'page' : undefined}
         title={collapsed ? item.label : undefined}
         className={cn(
-          'flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm transition-colors',
+          'relative flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm font-medium transition-colors',
           collapsed && 'justify-center',
-          active
-            ? 'bg-adikom-50 font-medium text-adikom-500'
-            : 'text-ink hover:bg-adikom-50 hover:text-adikom-500'
+          // Le repère vertical est posé en surcouche : il signale l'entrée
+          // sélectionnée sans décaler le libellé.
+          active &&
+            'bg-adikom-50 text-adikom-500 before:absolute before:inset-y-1.5 before:left-0 before:w-1 before:rounded-full before:bg-adikom-500',
+          !active && level === 'menu' && 'text-adikom-500 hover:bg-adikom-50',
+          !active && level === 'submenu' && 'text-ink hover:bg-adikom-50 hover:text-adikom-500'
         )}
       >
         <Icon className="size-4 shrink-0" aria-hidden />
