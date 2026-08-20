@@ -20,6 +20,8 @@
     "verify:users": "node scripts/verify-users.mjs",
     "verify:users:ui": "node scripts/verify-users-ui.mjs",
     "verify:permissions": "node scripts/verify-permissions-ui.mjs",
+    "verify:corrections": "node scripts/verify-corrections.mjs",
+    "cleanup:test-users": "node scripts/cleanup-test-users.mjs",
     "bootstrap:admin": "node scripts/bootstrap-super-admin.mjs",
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
   },

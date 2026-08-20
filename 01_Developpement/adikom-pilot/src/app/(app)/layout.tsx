@@ -21,7 +21,16 @@ export default async function AppLayout({ children }: LayoutProps<'/'>) {
   const collapsed = cookieStore.get('adikom-sidebar')?.value === 'collapsed'
 
   return (
-    <div className="flex min-h-screen flex-col bg-canvas lg:flex-row">
+    /*
+     * Sur desktop, l'enveloppe occupe exactement la hauteur de la fenêtre et ne
+     * défile pas : chaque colonne porte son propre conteneur de défilement. La
+     * barre latérale reste donc stable pendant que le contenu défile, et
+     * inversement.
+     *
+     * Sur mobile, la barre latérale est un panneau superposé : la page conserve
+     * son défilement naturel, sans hauteur imposée.
+     */
+    <div className="flex min-h-screen flex-col bg-canvas lg:fixed lg:inset-0 lg:min-h-0 lg:flex-row lg:overflow-hidden">
       <Sidebar
         grantedCodes={[...granted]}
         isSuperAdmin={user.isSuperAdmin}
@@ -33,7 +42,7 @@ export default async function AppLayout({ children }: LayoutProps<'/'>) {
         }}
       />
 
-      <main className="min-w-0 flex-1">
+      <main className="min-w-0 flex-1 lg:overflow-x-hidden lg:overflow-y-auto">
         <div className="mx-auto max-w-7xl px-5 py-6 sm:px-8 sm:py-8">{children}</div>
       </main>
     </div>

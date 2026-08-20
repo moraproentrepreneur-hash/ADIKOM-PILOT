@@ -41,7 +41,8 @@ function ko(label, detail = '') {
 const SUFFIX = Date.now().toString().slice(-6)
 const TEST_USERNAME = `recette.perm.${SUFFIX}`
 const TEST_EMAIL = `${TEST_USERNAME}@adikom.test`
-const TEST_PASSWORD = 'recette-permissions-2026'
+/** Renseigné à la création : le mot de passe est désormais généré par l'interface. */
+let TEST_PASSWORD = ''
 
 /** Déplie tous les modules : sans droits, ils sont repliés par défaut. */
 async function expandAll(page) {
@@ -147,17 +148,29 @@ async function main() {
     // ---------------------------------------- 2. Compte de recette --------
     console.log('\n2. Préparation d’un compte de recette')
     await page.goto(`${base}/utilisateurs/nouveau`, { waitUntil: 'load' })
-    await page.waitForFunction(() => document.querySelector('#password') !== null)
+    await page.waitForFunction(() => document.querySelector('#username') !== null)
     await page.fill('#firstName', 'Recette')
     await page.fill('#lastName', 'Permissions')
     await page.fill('#username', TEST_USERNAME)
     await page.fill('#email', TEST_EMAIL)
-    await page.fill('#password', TEST_PASSWORD)
-    await page.locator('form:has(#password) button[type="submit"]').click()
+
+    // Le mot de passe initial n'est plus saisi : il est généré par l'interface.
+    await page.getByRole('button', { name: 'Générer un mot de passe' }).click()
+    TEST_PASSWORD = await page.locator('#password-visible').inputValue()
+
+    await page.locator('form:has(#username) button[type="submit"]').click()
     await page.waitForURL(/\/utilisateurs\/[0-9a-f-]{36}/, { timeout: 30000 })
     testUserId = page.url().match(/utilisateurs\/([0-9a-f-]{36})/)?.[1] ?? null
     if (testUserId) ok('Compte de recette créé', TEST_USERNAME)
     else ko('Compte de recette créé')
+
+    // Le compte naît avec un changement de mot de passe obligatoire, vérifié
+    // par `verify-corrections.mjs`. Il est levé ici pour que cette recette
+    // porte sur les permissions et non sur le parcours de première connexion.
+    await service
+      .from('app_users')
+      .update({ must_change_password: false })
+      .eq('id', testUserId)
 
     // ------------------------------------ 3. Onglet Permissions -----------
     console.log('\n3. Onglet Permissions')

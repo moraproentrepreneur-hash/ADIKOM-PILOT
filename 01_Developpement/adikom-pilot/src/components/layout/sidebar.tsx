@@ -88,7 +88,10 @@ export function Sidebar({
       <aside
         className={cn(
           'z-50 flex shrink-0 flex-col border-r border-line bg-white transition-[width] duration-200',
-          'fixed inset-y-0 left-0 lg:static',
+          // `lg:h-full` : la barre latérale épouse la hauteur de la fenêtre,
+          // jamais celle du contenu principal. Sans cela, une page longue
+          // l'étirerait et le défilement redeviendrait commun aux deux zones.
+          'fixed inset-y-0 left-0 lg:static lg:h-full',
           mobileOpen ? 'flex' : 'hidden lg:flex',
           collapsed ? 'w-[76px]' : 'w-[264px]'
         )}
@@ -96,7 +99,7 @@ export function Sidebar({
         {/* En-tête : logo + bascule */}
         <div
           className={cn(
-            'flex items-center gap-2.5 border-b border-line px-4 py-4',
+            'flex shrink-0 items-center gap-2.5 border-b border-line px-4 py-4',
             collapsed && 'justify-center px-2'
           )}
         >
@@ -122,7 +125,12 @@ export function Sidebar({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-2.5 py-4" aria-label="Navigation principale">
+        {/* `min-h-0` est indispensable : sans lui, un enfant de colonne flex
+            refuse de rétrécir sous sa hauteur de contenu et ne défile pas. */}
+        <nav
+          className="min-h-0 flex-1 overflow-y-auto px-2.5 py-4"
+          aria-label="Navigation principale"
+        >
           <ul className="space-y-0.5">
             {entries.map((entry) =>
               isSection(entry) ? (
@@ -161,8 +169,10 @@ export function Sidebar({
           </ul>
         </nav>
 
-        {/* Pied : utilisateur, bascule, déconnexion */}
-        <div className="border-t border-line px-2.5 py-3">
+        {/* Pied : utilisateur, bascule, déconnexion.
+            `shrink-0` garantit que « Se déconnecter » reste toujours atteignable,
+            même lorsque la navigation dépasse la hauteur de l'écran. */}
+        <div className="shrink-0 border-t border-line px-2.5 py-3">
           {showLabels && (
             <div className="mb-2 px-2.5">
               <p className="truncate text-sm font-medium text-ink">{user.fullName}</p>

@@ -36,7 +36,8 @@ function ko(label, detail = '') {
 
 const NEW_USERNAME = `recette.ui.${Date.now().toString().slice(-6)}`
 const NEW_EMAIL = `${NEW_USERNAME}@adikom.test`
-const NEW_PASSWORD = 'recette-interface-2026'
+/** Renseigné à la création : le mot de passe est désormais généré par l'interface. */
+let NEW_PASSWORD = ''
 
 async function main() {
   loadEnvFile()
@@ -92,21 +93,24 @@ async function main() {
     // ------------------------------------------------------ 3. Création ---
     console.log('\n3. Création d’un utilisateur')
     await page.goto(`${base}/utilisateurs/nouveau`, { waitUntil: 'load' })
-    await page.waitForFunction(() => document.querySelector('#password') !== null)
+    await page.waitForFunction(() => document.querySelector('#username') !== null)
 
     await page.fill('#firstName', 'Recette')
     await page.fill('#lastName', 'Interface')
     await page.fill('#username', NEW_USERNAME)
     await page.fill('#email', NEW_EMAIL)
-    await page.fill('#password', NEW_PASSWORD)
     await page.fill('#jobTitle', 'Testeur')
+
+    // Le mot de passe initial n'est plus saisi : il est généré par l'interface.
+    await page.getByRole('button', { name: 'Générer un mot de passe' }).click()
+    NEW_PASSWORD = await page.locator('#password-visible').inputValue()
 
     const department = page.locator('input[name="departmentIds"]').first()
     if (await department.count()) await department.check()
 
     // Le sélecteur doit viser le formulaire de création : l'en-tête applicatif
     // contient lui aussi un formulaire dont le bouton est de type « submit ».
-    await page.locator('form:has(#password) button[type="submit"]').click()
+    await page.locator('form:has(#username) button[type="submit"]').click()
     await page.waitForURL(/\/utilisateurs\/[0-9a-f-]{36}/, { timeout: 30000 })
 
     const detailUrl = page.url()

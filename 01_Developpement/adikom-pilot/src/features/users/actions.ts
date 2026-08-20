@@ -181,8 +181,9 @@ async function createUserInner(
   const input = parsed.data
   const admin = createSupabaseAdminClient()
 
-  // 1. Compte d'authentification. Le mot de passe est transmis à Supabase Auth
-  //    et n'est conservé nulle part ailleurs.
+  // 1. Compte d'authentification. Le mot de passe temporaire, généré dans le
+  //    navigateur de l'administrateur, est transmis à Supabase Auth et n'est
+  //    conservé nulle part ailleurs : ni journalisé, ni renvoyé, ni stocké.
   const { data: created, error: authError } = await admin.auth.admin.createUser({
     email: input.email,
     password: input.password,
@@ -215,6 +216,9 @@ async function createUserInner(
     notes: orNull(input.notes),
     status: 'ACTIVE',
     created_by: actor.id,
+    // Le mot de passe remis à la création est temporaire : son titulaire devra
+    // le remplacer avant d'accéder à la moindre fonctionnalité métier.
+    must_change_password: true,
   })
 
   if (profileError) {

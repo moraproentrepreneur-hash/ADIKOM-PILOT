@@ -637,6 +637,81 @@ tables financières portant à la fois un émetteur et un valideur.
 
 ---
 
+## DEC-019 — Mot de passe temporaire et changement obligatoire
+
+**Date :** 21 août 2026
+**Portée :** fonctionnelle et technique
+**Statut :** appliquée
+
+### Contexte
+
+Le Super Admin saisissait lui-même le mot de passe initial d'un collaborateur.
+Il en avait donc connaissance de façon durable, sans que rien n'oblige le
+titulaire à le remplacer.
+
+### Décision
+
+Le mot de passe initial est **généré**, jamais saisi. Il est produit dans le
+navigateur de l'administrateur — il n'existe donc à aucun moment côté serveur
+autrement qu'en transit vers Supabase Auth, et n'apparaît ni dans un résultat
+d'action, ni dans un journal.
+
+Il est **temporaire** : `app_users.must_change_password` est levé à la création
+et bloque l'accès à toute fonctionnalité métier tant que le titulaire n'a pas
+défini le sien.
+
+### Points de contrôle
+
+- Le détournement est placé dans `requireUser()`, la garde traversée par toutes
+  les pages et toutes les actions : aucune route ne peut l'oublier, et l'accès
+  direct par URL aboutit au même détournement.
+- L'indicateur n'est levé qu'après un changement accepté par Supabase Auth, et
+  seulement par le client d'administration. Aucune policy ne permet à
+  l'utilisateur de le lever, et `fn_prevent_self_promotion` le refuse en base.
+- Le changement est journalisé par le trigger d'audit d'`app_users`
+  (avant / après). Aucune colonne applicative ne contient de mot de passe.
+
+---
+
+## DEC-020 — Anonymisation de l'auteur dans le journal d'audit
+
+**Date :** 21 août 2026
+**Portée :** technique
+**Statut :** appliquée
+
+### Contradiction constatée
+
+Deux règles du socle s'annulaient :
+
+- `audit_log.actor_id` est déclarée `references app_users (id) **on delete set
+  null**` : le schéma prévoit explicitement la suppression d'un compte et la
+  mise à NULL de la référence ;
+- le trigger `audit_log_no_update` interdisait **tout** UPDATE, y compris cette
+  cascade.
+
+Conséquence : la clause était inopérante, et aucun compte ayant agi ne pouvait
+être supprimé — pas même par le rôle de service.
+
+### Décision
+
+Une seule modification est tolérée sur le journal : passer `actor_id` de sa
+valeur à NULL, sans qu'aucune autre colonne ne change. C'est exactement ce que
+la clé étrangère déclare, et rien de plus.
+
+Le journal reste lisible : `actor_label` fige le nom de l'auteur au moment de
+l'action, précisément pour que l'historique survive à la disparition du compte.
+
+Toute autre écriture — action, motif, valeurs avant/après, horodatage — reste
+refusée, ainsi que **toute** suppression.
+
+### Portée
+
+Cette décision ne change pas la règle métier : un utilisateur se **désactive**,
+il ne se supprime pas (CLAUDE.md §22). La suppression reste réservée aux
+opérations d'environnement, hors interface.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.

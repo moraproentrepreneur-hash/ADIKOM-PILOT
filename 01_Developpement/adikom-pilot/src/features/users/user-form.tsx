@@ -3,14 +3,23 @@
 import { useActionState, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import Link from 'next/link'
-import { AlertCircle, CheckCircle2, Eye, EyeOff, Info, LoaderCircle } from 'lucide-react'
+import {
+  AlertCircle,
+  CheckCircle2,
+  Copy,
+  Eye,
+  EyeOff,
+  Info,
+  LoaderCircle,
+  RefreshCw,
+} from 'lucide-react'
 
 import { CheckboxOption, Field, FormSection, Input, Select, Textarea } from '@/components/ui/form'
+import { generateTemporaryPassword, PASSWORD_MIN_LENGTH } from '@/lib/auth/password'
 import { createUserAction, updateUserAction, type UserFormState } from './actions'
 import type { Option, UserDetail } from './data'
 
 const INITIAL_STATE: UserFormState = {}
-const PASSWORD_MIN_LENGTH = 8
 
 function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus()
@@ -51,23 +60,53 @@ export function UserForm({
   const [passwordVisible, setPasswordVisible] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
 
+  /**
+   * Mot de passe temporaire.
+   *
+   * Généré dans le navigateur sur action explicite, jamais demandé à
+   * l'administrateur. Il n'est conservé nulle part : il vit dans cet état le
+   * temps de la création, est transmis une fois au serveur, et disparaît avec
+   * la page.
+   *
+   * La génération n'est pas automatique au montage : elle produirait une valeur
+   * absente du rendu serveur, donc une divergence d'hydratation.
+   */
+  const [password, setPassword] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  function regenerate() {
+    setPassword(generateTemporaryPassword())
+    setCopied(false)
+    setLocalError(null)
+  }
+
+  async function copyPassword() {
+    try {
+      await navigator.clipboard.writeText(password)
+      setCopied(true)
+    } catch {
+      // Le presse-papiers peut être refusé (contexte non sécurisé, permission) :
+      // l'administrateur peut alors afficher le mot de passe et le recopier.
+      setLocalError(
+        'La copie automatique a été refusée par le navigateur. Affichez le mot de passe pour le recopier.'
+      )
+    }
+  }
+
   const errors = state.fieldErrors ?? {}
 
   /**
-   * Contrôle du mot de passe initial avant soumission.
-   *
-   * Lu depuis le FormData plutôt qu'un état contrôlé : un champ rempli avant
-   * l'hydratation resterait sinon invisible pour React. Ce n'est pas une
-   * mesure de sécurité — la même règle s'applique côté serveur.
+   * Dernier filet avant envoi : sans mot de passe généré, la création échouerait
+   * côté serveur avec un message moins clair. Ce n'est pas une mesure de
+   * sécurité — la même règle est appliquée par l'action serveur.
    */
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     if (mode !== 'create') return
 
-    const password = String(new FormData(event.currentTarget).get('password') ?? '')
     if (password.length < PASSWORD_MIN_LENGTH) {
       event.preventDefault()
       setLocalError(
-        `Le mot de passe initial doit contenir au moins ${PASSWORD_MIN_LENGTH} caractères.`
+        'Aucun mot de passe temporaire n’a été généré. Utilisez « Générer un mot de passe ».'
       )
       return
     }
@@ -162,37 +201,81 @@ export function UserForm({
 
         {mode === 'create' && (
           <Field
-            label="Mot de passe initial"
+            label="Mot de passe temporaire"
             name="password"
-            required
             error={errors.password}
-            hint={`Au moins ${PASSWORD_MIN_LENGTH} caractères. Communiquez-le au collaborateur par un canal sûr : il ne sera plus affiché ensuite.`}
+            hint="Ce mot de passe ne sera plus affiché après la création du compte. Communiquez-le au collaborateur par un canal sûr : il devra le remplacer à sa première connexion."
             wide
           >
-            <div className="relative">
-              <Input
-                name="password"
-                type={passwordVisible ? 'text' : 'password'}
-                error={errors.password}
-                autoComplete="new-password"
-                className="pr-11"
-                required
-              />
+            {/* Le champ est toujours présent — il porte la valeur envoyée —
+                mais reste vide tant que la génération n'a pas été demandée. */}
+            <input type="hidden" name="password" value={password} />
+
+            {password ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <input
+                    id="password-visible"
+                    type={passwordVisible ? 'text' : 'password'}
+                    value={password}
+                    readOnly
+                    aria-label="Mot de passe temporaire"
+                    className="w-full rounded-control border border-line bg-canvas px-3.5 py-2.5 pr-11 font-mono text-sm text-ink outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPasswordVisible((visible) => !visible)}
+                    aria-label={
+                      passwordVisible ? 'Masquer le mot de passe' : 'Afficher le mot de passe'
+                    }
+                    className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center rounded-r-control text-muted transition-colors hover:text-adikom-500"
+                  >
+                    {passwordVisible ? (
+                      <EyeOff className="size-4" aria-hidden />
+                    ) : (
+                      <Eye className="size-4" aria-hidden />
+                    )}
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={copyPassword}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-control border border-line px-3 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
+                >
+                  {copied ? (
+                    <CheckCircle2 className="size-4 text-success" aria-hidden />
+                  ) : (
+                    <Copy className="size-4" aria-hidden />
+                  )}
+                  {copied ? 'Copié' : 'Copier'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={regenerate}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-control border border-line px-3 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
+                >
+                  <RefreshCw className="size-4" aria-hidden />
+                  Régénérer
+                </button>
+              </div>
+            ) : (
               <button
                 type="button"
-                onClick={() => setPasswordVisible((visible) => !visible)}
-                aria-label={
-                  passwordVisible ? 'Masquer le mot de passe' : 'Afficher le mot de passe'
-                }
-                className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center rounded-r-control text-muted transition-colors hover:text-adikom-500"
+                onClick={regenerate}
+                className="inline-flex items-center gap-2 rounded-control border border-adikom-400 bg-adikom-50 px-4 py-2.5 text-sm font-medium text-adikom-500 transition-colors hover:bg-adikom-100"
               >
-                {passwordVisible ? (
-                  <EyeOff className="size-4" aria-hidden />
-                ) : (
-                  <Eye className="size-4" aria-hidden />
-                )}
+                <RefreshCw className="size-4" aria-hidden />
+                Générer un mot de passe
               </button>
-            </div>
+            )}
+
+            <p className="mt-2 flex items-start gap-2 rounded-control bg-canvas px-3.5 py-2.5 text-xs text-muted">
+              <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              Généré dans votre navigateur. Il n’est enregistré ni dans la fiche, ni dans le
+              journal d’audit, et n’est plus consultable après la création.
+            </p>
           </Field>
         )}
       </FormSection>

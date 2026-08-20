@@ -290,6 +290,12 @@ export type PermissionEntry = {
    * confondues.
    */
   userEffect: PermissionEffect | null
+  /**
+   * Verdict des groupes seuls, indépendamment de la règle individuelle.
+   * Permet à l'interface de recalculer le résultat effectif pendant la saisie,
+   * sans réinterroger le serveur ni deviner l'héritage.
+   */
+  inheritedEffect: PermissionEffect | null
 }
 
 export type PermissionBranch = {
@@ -327,7 +333,7 @@ export type PermissionOverview = {
 export async function getPermissionOverview(userId: string): Promise<PermissionOverview> {
   const supabase = await createSupabaseServerClient()
 
-  const [catalogResult, effectiveResult, individualResult] = await Promise.all([
+  const [catalogResult, effectiveResult, individualResult, groupResult] = await Promise.all([
     supabase
       .from('permissions')
       .select(
@@ -343,6 +349,13 @@ export async function getPermissionOverview(userId: string): Promise<PermissionO
     supabase
       .from('user_permissions')
       .select('permission_id, effect')
+      .eq('user_id', userId),
+    // Règles héritées des groupes actifs. Lues séparément pour que l'interface
+    // puisse distinguer l'héritage de la décision individuelle, y compris
+    // lorsque celle-ci vient d'être modifiée et pas encore enregistrée.
+    supabase
+      .from('user_groups')
+      .select('groups!inner ( is_active, group_permissions ( permission_id, effect ) )')
       .eq('user_id', userId),
   ])
 
@@ -373,6 +386,25 @@ export async function getPermissionOverview(userId: string): Promise<PermissionO
   const individual = new Map<string, PermissionEffect>(
     (individualResult.data ?? []).map((row) => [row.permission_id, row.effect as PermissionEffect])
   )
+
+  if (groupResult.error) reportQueryFailure('permissions héritées', groupResult.error)
+
+  /*
+   * Verdict des groupes seuls. Un refus hérité prime sur une autorisation
+   * héritée, conformément à `effective_permissions` : DENY l'emporte toujours.
+   */
+  type GroupRow = {
+    groups: { is_active: boolean; group_permissions: { permission_id: string; effect: string }[] }
+  }
+  const inherited = new Map<string, PermissionEffect>()
+  for (const row of (groupResult.data ?? []) as unknown as GroupRow[]) {
+    if (!row.groups?.is_active) continue
+    for (const rule of row.groups.group_permissions ?? []) {
+      if (rule.effect === 'DENY' || !inherited.has(rule.permission_id)) {
+        inherited.set(rule.permission_id, rule.effect as PermissionEffect)
+      }
+    }
+  }
 
   const modules = new Map<string, PermissionModuleTree>()
   let granted = 0
@@ -422,6 +454,7 @@ export async function getPermissionOverview(userId: string): Promise<PermissionO
       granted: isGranted,
       source,
       userEffect: individual.get(row.id) ?? null,
+      inheritedEffect: inherited.get(row.id) ?? null,
     })
 
     moduleTree.total += 1

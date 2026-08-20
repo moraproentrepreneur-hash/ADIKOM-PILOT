@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 
+import { requireSession } from '@/lib/auth/dal'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
@@ -151,6 +152,108 @@ export async function signInAction(
   await supabase.rpc('record_login')
 
   redirect(safeRedirectTarget(formData.get('suite')))
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Changement du mot de passe temporaire                                      */
+/* -------------------------------------------------------------------------- */
+
+export type PasswordChangeState = {
+  error?: string
+  fieldErrors?: { password?: string; confirmation?: string }
+}
+
+const passwordChangeSchema = z
+  .object({
+    password: z
+      .string()
+      .min(
+        PASSWORD_MIN_LENGTH,
+        `Le mot de passe doit contenir au moins ${PASSWORD_MIN_LENGTH} caractères.`
+      ),
+    confirmation: z.string().min(1, 'Veuillez confirmer le nouveau mot de passe.'),
+  })
+  .refine((values) => values.password === values.confirmation, {
+    path: ['confirmation'],
+    message: 'Les deux mots de passe ne correspondent pas.',
+  })
+
+/**
+ * Remplace le mot de passe temporaire par celui choisi par l'utilisateur.
+ *
+ * Deux écritures, dans cet ordre et sous condition :
+ *
+ *   1. Supabase Auth enregistre le nouveau mot de passe. Le temporaire cesse
+ *      immédiatement d'être valable — c'est Auth qui le garantit, aucune copie
+ *      applicative n'existe.
+ *   2. L'indicateur `must_change_password` n'est levé qu'ensuite, et par le
+ *      client d'administration. Aucune policy ne permet à l'utilisateur de le
+ *      lever lui-même, et le trigger `app_users_no_self_promotion` le refuse
+ *      en base : l'étape ne peut donc pas être sautée.
+ *
+ * Le mot de passe ne quitte jamais cette fonction : il n'est ni journalisé, ni
+ * renvoyé, ni écrit dans une table applicative.
+ */
+export async function changePasswordAction(
+  _prevState: PasswordChangeState,
+  formData: FormData
+): Promise<PasswordChangeState> {
+  // Session exigée, sans imposer la redirection : c'est précisément l'écran
+  // vers lequel `requireUser` détourne.
+  const user = await requireSession()
+
+  const parsed = passwordChangeSchema.safeParse({
+    password: formData.get('password'),
+    confirmation: formData.get('confirmation'),
+  })
+
+  if (!parsed.success) {
+    const flat = z.flattenError(parsed.error).fieldErrors
+    return {
+      fieldErrors: {
+        password: flat.password?.[0],
+        confirmation: flat.confirmation?.[0],
+      },
+    }
+  }
+
+  const supabase = await createSupabaseServerClient()
+  const { error } = await supabase.auth.updateUser({ password: parsed.data.password })
+
+  if (error) {
+    return {
+      error:
+        'Le mot de passe n’a pas pu être enregistré. Choisissez-en un autre, puis réessayez.',
+    }
+  }
+
+  // La mise à jour de la fiche journalise l'événement par le trigger d'audit
+  // (avant / après sur `must_change_password`). Le mot de passe lui-même n'y
+  // figure pas : aucune colonne d'`app_users` ne le contient.
+  const admin = createSupabaseAdminClient()
+  const { error: flagError } = await admin
+    .from('app_users')
+    .update({ must_change_password: false })
+    .eq('id', user.id)
+
+  if (flagError) {
+    return {
+      error:
+        'Votre mot de passe a été modifié, mais la validation n’a pas abouti. Reconnectez-vous, puis réessayez.',
+    }
+  }
+
+  // Journalisé avec la session de l'utilisateur, afin que l'auteur de
+  // l'opération soit correctement identifié dans le journal.
+  await supabase.rpc('log_audit', {
+    p_action: 'UPDATE',
+    p_entity_type: 'app_users',
+    p_entity_id: user.id,
+    p_module_code: 'users',
+    p_reason: 'Définition du mot de passe personnel à la première connexion.',
+  })
+
+  redirect('/tableau-de-bord')
 }
 
 export async function signOutAction(): Promise<void> {

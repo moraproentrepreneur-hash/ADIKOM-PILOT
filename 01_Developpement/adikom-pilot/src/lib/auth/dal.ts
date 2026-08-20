@@ -31,7 +31,12 @@ export type SessionUser = {
   jobTitle: string | null
   isSuperAdmin: boolean
   avatarPath: string | null
+  /** Le mot de passe temporaire remis à la création n'a pas encore été remplacé. */
+  mustChangePassword: boolean
 }
+
+/** Écran de définition du mot de passe personnel, hors du groupe applicatif. */
+export const PASSWORD_CHANGE_PATH = '/changer-mot-de-passe'
 
 /** Utilisateur authentifié auprès de Supabase Auth, sans profil métier. */
 export const getAuthUser = cache(async () => {
@@ -56,7 +61,9 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = await createSupabaseServerClient()
   const { data, error } = await supabase
     .from('app_users')
-    .select('id, first_name, last_name, email, job_title, status, is_super_admin, avatar_path')
+    .select(
+      'id, first_name, last_name, email, job_title, status, is_super_admin, avatar_path, must_change_password'
+    )
     .eq('id', authUser.id)
     .maybeSingle()
 
@@ -72,6 +79,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     jobTitle: data.job_title,
     isSuperAdmin: data.is_super_admin,
     avatarPath: data.avatar_path,
+    mustChangePassword: data.must_change_password,
   }
 })
 
@@ -102,8 +110,25 @@ export async function canAny(codes: readonly PermissionCode[]): Promise<boolean>
 /**
  * Exige une session valide. Redirige vers la connexion sinon.
  * Utilisée par le layout applicatif et par toute action serveur protégée.
+ *
+ * Détourne également vers la définition du mot de passe personnel tant que le
+ * mot de passe temporaire n'a pas été remplacé. Le contrôle est placé ici, et
+ * non dans chaque page, pour qu'aucune route ni aucune action ne puisse
+ * l'oublier : l'accès direct par URL aboutit au même détournement.
  */
 export async function requireUser(): Promise<SessionUser> {
+  const user = await requireSession()
+  if (user.mustChangePassword) redirect(PASSWORD_CHANGE_PATH)
+  return user
+}
+
+/**
+ * Exige une session valide **sans** imposer le changement de mot de passe.
+ *
+ * Réservée à l'écran de changement lui-même et à son action : toute autre
+ * utilisation rouvrirait le contournement que `requireUser` ferme.
+ */
+export async function requireSession(): Promise<SessionUser> {
   const user = await getCurrentUser()
   if (!user) redirect('/connexion')
   return user
