@@ -575,6 +575,68 @@ plutôt qu'après le premier déploiement.
 
 ---
 
+## DEC-017 — Une erreur de lecture n'est jamais présentée comme une absence de donnée
+
+**Date :** 20 août 2026
+**Portée :** technique
+**Statut :** appliquée
+
+### Contexte
+
+Les requêtes du module Utilisateurs traitaient de la même manière une erreur de
+base de données et un résultat vide : la liste renvoyait un tableau vide, la
+fiche renvoyait « introuvable ». Un défaut réel de jointure a ainsi été affiché
+pendant plusieurs heures comme une page 404 parfaitement crédible.
+
+### Décision
+
+Une erreur de requête est distinguée d'un résultat vide :
+
+- le détail technique est journalisé **côté serveur uniquement** ;
+- l'utilisateur reçoit un message fonctionnel, sans trace ni détail de schéma ;
+- l'absence de ligne reste un cas fonctionnel légitime (404).
+
+Deux états d'interface obligatoires sont ajoutés au groupe applicatif :
+`error.tsx` (erreur, avec réessai) et `not-found.tsx` (introuvable). Ce dernier
+ne distingue pas « n'existe pas » de « inaccessible », afin de ne pas renseigner
+un utilisateur non autorisé sur l'existence d'une donnée.
+
+### Justification
+
+CLAUDE.md §38 impose des états d'interface distincts, §43 interdit d'exposer le
+détail technique. Confondre erreur et vide viole les deux à la fois : le
+diagnostic est perdu et l'utilisateur est induit en erreur.
+
+---
+
+## DEC-018 — Les jointures ambiguës sont explicitées
+
+**Date :** 20 août 2026
+**Portée :** technique
+**Statut :** appliquée
+
+### Contexte
+
+`user_departments` et `user_groups` référencent `app_users` deux fois : le
+titulaire (`user_id`) et l'auteur de l'affectation (`assigned_by`). PostgREST
+refuse alors la jointure implicite (PGRST201) et la requête entière échoue.
+
+### Décision
+
+Toute jointure vers une table possédant plusieurs clés étrangères vers la même
+cible désigne explicitement la colonne : `user_departments!user_id ( … )`.
+
+La colonne est préférée au nom de contrainte, car ce dernier est généré
+automatiquement et changerait si la contrainte était recréée.
+
+### Portée future
+
+La règle s'appliquera aux mêmes situations dans les modules à venir,
+notamment `vehicles` (fournisseur courant / auteur de la modification) et les
+tables financières portant à la fois un émetteur et un valideur.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.

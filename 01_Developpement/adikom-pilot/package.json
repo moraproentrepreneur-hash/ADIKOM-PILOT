@@ -17,6 +17,8 @@
     "db:inspect": "node scripts/db-inspect.mjs",
     "verify:auth": "node scripts/verify-auth.mjs",
     "verify:login": "node scripts/verify-login.mjs",
+    "verify:users": "node scripts/verify-users.mjs",
+    "verify:users:ui": "node scripts/verify-users-ui.mjs",
     "bootstrap:admin": "node scripts/bootstrap-super-admin.mjs",
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
   },

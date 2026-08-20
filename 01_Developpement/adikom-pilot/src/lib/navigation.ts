@@ -231,7 +231,7 @@ export const NAVIGATION: NavEntry[] = [
         href: '/utilisateurs',
         icon: Users,
         permission: PERMISSIONS.USERS_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Groupes',

@@ -166,8 +166,8 @@ begin
   values (v_user, '00000000-0000-0000-0000-000000000000', 'authenticated',
           'authenticated', 'recette@adikom.test', now(), now());
 
-  insert into public.app_users (id, first_name, last_name, email, status)
-  values (v_user, 'Recette', 'Permissions', 'recette@adikom.test', 'ACTIVE');
+  insert into public.app_users (id, first_name, last_name, username, email, status)
+  values (v_user, 'Recette', 'Permissions', 'recette.permissions', 'recette@adikom.test', 'ACTIVE');
 
   select id into v_perm from public.permissions where code = 'parties.clients.view';
 
@@ -243,13 +243,19 @@ begin
   values (v_user, '00000000-0000-0000-0000-000000000000', 'authenticated',
           'authenticated', 'superadmin@adikom.test', now(), now());
 
-  insert into public.app_users (id, first_name, last_name, email, status, is_super_admin)
-  values (v_user, 'Super', 'Recette', 'superadmin@adikom.test', 'ACTIVE', true);
+  insert into public.app_users (id, first_name, last_name, username, email, status, is_super_admin)
+  values (v_user, 'Super', 'Recette', 'recette.super', 'superadmin@adikom.test', 'ACTIVE', true);
 
-  -- 7a. Accès complet sans aucune permission explicite
+  -- 7a. Accès complet sans aucune permission explicite.
+  -- `effective_permissions` refuse désormais toute lecture des droits d'autrui :
+  -- l'appelant est donc simulé, l'utilisateur consultant ses propres droits.
+  perform set_config('request.jwt.claims', json_build_object('sub', v_user)::text, true);
+
   select count(*) into v_all from public.permissions;
   select count(*) into v_granted
   from public.effective_permissions(v_user) where granted;
+
+  perform set_config('request.jwt.claims', '', true);
 
   if v_granted <> v_all then
     raise exception 'Super Admin : % permissions accordées sur %.', v_granted, v_all;
@@ -261,8 +267,8 @@ begin
   values (v_other, '00000000-0000-0000-0000-000000000000', 'authenticated',
           'authenticated', 'superadmin2@adikom.test', now(), now());
 
-  insert into public.app_users (id, first_name, last_name, email, status, is_super_admin)
-  values (v_other, 'Second', 'Recette', 'superadmin2@adikom.test', 'ACTIVE', true);
+  insert into public.app_users (id, first_name, last_name, username, email, status, is_super_admin)
+  values (v_other, 'Second', 'Recette', 'recette.super2', 'superadmin2@adikom.test', 'ACTIVE', true);
 
   update public.app_users set is_super_admin = false where id = v_other;
   raise notice '[OK] 7b. Rétrogradation permise tant qu''un autre Super Admin actif subsiste.';
