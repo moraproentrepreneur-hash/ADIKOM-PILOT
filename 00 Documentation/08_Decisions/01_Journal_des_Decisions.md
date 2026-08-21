@@ -50,6 +50,11 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-014 | Fuseau horaire et taxes | Information manquante | En attente ADIKOM | 2026-08-19 |
 | DEC-015 | Portée de « SaaS 100 % interne » | Clarification ADIKOM | Validée | 2026-08-20 |
 | DEC-016 | Nom du dossier de développement | Contrainte technique | Validée — **révise DEC-004** | 2026-08-20 |
+| DEC-017 | Erreur de lecture ≠ absence de donnée | Décision technique | Appliquée | 2026-08-20 |
+| DEC-018 | Jointures ambiguës explicitées | Décision technique | Appliquée | 2026-08-20 |
+| DEC-019 | Mot de passe temporaire | Fonctionnelle et technique | Appliquée | 2026-08-21 |
+| DEC-020 | Anonymisation de l'auteur dans l'audit | Contradiction interne | Appliquée | 2026-08-21 |
+| DEC-021 | Numérotation et découpage des étapes | Clarification ADIKOM | Validée | 2026-08-21 |
 
 ---
 
@@ -712,6 +717,92 @@ opérations d'environnement, hors interface.
 
 ---
 
+## DEC-021 — Numérotation et découpage des étapes de développement
+
+**Date :** 21 août 2026
+**Portée :** méthode de développement
+**Statut :** validée par ADIKOM
+
+### Ambiguïté constatée
+
+La numérotation « Étape 2.1 » n'existait que dans un message de commit
+(`da0e702` — « Etape 2.1 de la Phase 2 — Gouvernance »). Elle ne figurait dans
+aucun document du projet, et contredisait l'ordre documenté par `README.md` §73
+et `CLAUDE.md` §61, où la **Phase 2 est la Gestion de location** et où les
+utilisateurs, groupes et permissions relèvent de la **Phase 4**.
+
+Une décision structurante ne peut pas rester consignée dans un historique Git
+(`CLAUDE.md` §53 — toute décision importante doit pouvoir être retrouvée).
+
+### Décision
+
+La numérotation de référence du projet est fixée comme suit :
+
+```
+Étape 1     Socle technique · authentification · permissions · navigation      livré
+Étape 2.1   Gestion des utilisateurs internes                                  livré
+Étape 2.2   Gestion de location — Référentiel d'exploitation                   en cours
+Étape 2.3   Réservation → Contrat → Départ → Location en cours → Retour → Contrôle
+Étape 2.4   Dommages → Incidents → Maintenance → Imputation fournisseur
+Étape 2.5   Facturation → Paiements → Soldes → Clôture
+```
+
+L'Étape 2.1 a traité les utilisateurs **avant** l'ordre documenté parce que le
+système de permissions conditionne toutes les fonctionnalités ultérieures :
+développer un module métier avant de pouvoir en restreindre l'accès aurait
+imposé de le reprendre ensuite. Cette avance ne modifie pas les phases
+documentées, elle en réordonne l'exécution.
+
+### Périmètre de l'Étape 2.2
+
+**Inclus :** clients · tarification client (conditions préférentielles) ·
+fournisseurs · catégories de véhicules · véhicules · tarifs standard ·
+socle de disponibilité (occupations, DEC-012) · documents de véhicule.
+
+**Exclus, et rattachés aux étapes suivantes :** réservations, contrats, départs,
+retours, dommages, incidents, maintenances, imputations, factures et paiements.
+
+**Partenariats :** reportés hors de l'Étape 2.2. Ils ne conditionnent aucune
+location, et le `Périmètre MVP` §9 prévoit lui-même que leur profondeur évolue
+après le MVP.
+
+### Points confirmés par ADIKOM à cette occasion
+
+1. **Formats de numérotation** (confirme les valeurs par défaut de **DEC-005**
+   pour ces trois objets) : `CLI-000001`, `FOU-000001`, `VEH-000001`. Aucun
+   format n'est codé en dur ; la génération reste atomique et côté serveur.
+   La divergence documentaire est ainsi tranchée : `05_Regles_Metier/02` §3 et
+   `04` §3 proposaient une année (`VEH-2026-000001`, `FOU-2026-000001`), les
+   modules 04 §5.5 / 05 §12 n'en proposaient pas. **L'année n'est pas retenue**
+   pour les référentiels permanents ; elle le reste pour les objets datés
+   (réservation, location, facture).
+2. **Documents des véhicules** : stockage des fichiers activé dès l'Étape 2.2,
+   dans un bucket Supabase **privé**, accès par URL signée de courte durée,
+   policies dédiées. Aucun fichier n'est accessible publiquement.
+3. **Disponibilité** : la table d'occupations de **DEC-012** est créée dès
+   l'Étape 2.2, alimentée d'abord par les immobilisations. Les réservations,
+   locations et maintenances y écriront aux étapes 2.3 et 2.4 sans modification
+   du schéma.
+4. **Champs obligatoires d'un client** — renvoyés à ADIKOM par `Module 04` §5.3 :
+   type, nom ou raison sociale, téléphone, statut. Le reste est facultatif.
+5. **Statuts du véhicule** — « à confirmer lors de l'implémentation »
+   (`Règles parc` §12) : les sept statuts documentés sont retenus tels quels —
+   `Disponible · Réservé · En location · En maintenance · Immobilisé ·
+   Indisponible · Retiré` — avec le principe de `Règles parc` §69 : **le statut
+   décrit une situation, la disponibilité se calcule depuis le calendrier**.
+6. **Catégories de véhicules** : sous-page du Parc automobile, sans entrée de
+   menu supplémentaire. `Module 05` §4 les cite comme composant du module et
+   autorise l'adaptation de l'organisation des menus.
+
+### Conséquences
+
+- Les commits de l'Étape 2.2 référencent `DEC-021` plutôt qu'une numérotation
+  implicite.
+- Aucune règle métier n'est modifiée par la présente décision : elle ne porte
+  que sur l'ordre et le découpage des travaux.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -720,7 +811,7 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 2. **DEC-008** — Règles d'arrondi de la durée, traitement du retard, barèmes carburant / kilométrage / dommages, gestion de la caution et de l'acompte, période de préparation, seuils de validation des imputations.
 3. **DEC-009** — Confirmation de la règle de résolution des permissions multi-groupes.
 4. **DEC-014** — Fuseau horaire de référence et régime de taxes applicable.
-5. **DEC-005** — Confirmation des formats de numérotation par défaut et de la règle de remise à zéro annuelle.
+5. **DEC-005** — Confirmation des formats restants et de la règle de remise à zéro annuelle. *Partiellement tranché : les formats client, fournisseur et véhicule sont confirmés par **DEC-021**. Restent à confirmer les objets datés — réservation, location, maintenance, imputation, factures, règlement, virement.*
 
 ---
 
