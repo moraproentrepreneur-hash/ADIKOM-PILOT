@@ -95,7 +95,7 @@ export const NAVIGATION: NavEntry[] = [
         href: '/tiers/clients',
         icon: Users,
         permission: PERMISSIONS.CLIENTS_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Fournisseurs',
