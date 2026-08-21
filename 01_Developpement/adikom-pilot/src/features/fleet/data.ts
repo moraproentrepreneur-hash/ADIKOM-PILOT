@@ -66,6 +66,8 @@ export type VehicleListItem = {
   origin: VehicleOrigin
   supplierId: string | null
   supplierLabel: string | null
+  partnerId: string | null
+  partnerLabel: string | null
   mileage: number
 }
 
@@ -97,16 +99,19 @@ type RawVehicleRow = {
   status: VehicleStatus
   origin: VehicleOrigin
   current_supplier_id: string | null
+  partner_id: string | null
   mileage: number
   vehicle_categories: { label: string } | null
   suppliers: { legal_name: string; supplier_no: string } | null
+  partners: { legal_name: string; partner_no: string } | null
 }
 
 const LIST_SELECT = `
   id, vehicle_no, plate, brand, model, model_year, category_id, status, origin,
-  current_supplier_id, mileage,
+  current_supplier_id, partner_id, mileage,
   vehicle_categories ( label ),
-  suppliers ( legal_name, supplier_no )
+  suppliers ( legal_name, supplier_no ),
+  partners ( legal_name, partner_no )
 `
 
 const DETAIL_SELECT = `
@@ -130,6 +135,10 @@ function toListItem(row: RawVehicleRow): VehicleListItem {
     supplierId: row.current_supplier_id,
     supplierLabel: row.suppliers
       ? `${row.suppliers.legal_name} (${row.suppliers.supplier_no})`
+      : null,
+    partnerId: row.partner_id,
+    partnerLabel: row.partners
+      ? `${row.partners.legal_name} (${row.partners.partner_no})`
       : null,
     mileage: row.mileage,
   }

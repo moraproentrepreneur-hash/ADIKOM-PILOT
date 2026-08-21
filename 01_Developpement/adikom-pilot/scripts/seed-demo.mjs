@@ -22,7 +22,6 @@ import { createClient } from '@supabase/supabase-js'
 import { loadEnvFile, required } from './lib/env.mjs'
 
 const GREEN = '\x1b[32m'
-const RED = '\x1b[31m'
 const DIM = '\x1b[2m'
 const RESET = '\x1b[0m'
 
@@ -102,6 +101,32 @@ const SUPPLIERS = [
   },
 ]
 
+const PARTNERS = [
+  {
+    legal_name: 'PARTENAIRE DEMO 01',
+    trade_name: 'Partenariat de démonstration',
+    contact_name: 'Référent de démonstration',
+    phone: '+269 340 00 01',
+    email: 'contact@partenaire-demo-01.test',
+    city: 'Moroni',
+    country: 'Comores',
+  },
+  {
+    legal_name: 'PARTENAIRE DEMO 02',
+    contact_name: 'Référent de démonstration',
+    phone: '+269 340 00 02',
+    city: 'Mutsamudu',
+    country: 'Comores',
+  },
+  {
+    legal_name: 'PARTENAIRE DEMO 03',
+    contact_name: 'Référent de démonstration',
+    phone: '+269 340 00 03',
+    city: 'Fomboni',
+    country: 'Comores',
+  },
+]
+
 const CATEGORIES = [
   {
     code: 'DEMO-01',
@@ -124,12 +149,12 @@ const CATEGORIES = [
 ]
 
 /**
- * Véhicules de démonstration.
+ * Véhicules de démonstration — un par origine.
  *
- * VEHICULE DEMO 03, d'origine « Partenariat », n'est PAS créé : la structure
- * des partenaires n'existe pas encore dans le projet, et la contrainte
- * `vehicles_origin_supplier_coherent` n'offre aucun emplacement pour rattacher
- * un partenaire. Le créer sans rattachement donnerait un exemple faux.
+ * Les trois cas que le Parc automobile doit savoir traiter : propriété ADIKOM,
+ * mise à disposition par un fournisseur, et partenariat. La contrainte
+ * `vehicles_origin_attachment_coherent` (migration 024) impose que chacun
+ * porte le rattachement correspondant, et lui seul.
  */
 const VEHICLES = [
   {
@@ -161,6 +186,22 @@ const VEHICLES = [
     seats: 7,
     doors: 5,
     mileage: 42000,
+  },
+  {
+    model: 'VEHICULE DEMO 03',
+    brand: 'DEMO',
+    plate: 'DEMO 003',
+    categoryCode: 'DEMO-03',
+    origin: 'PARTNERSHIP',
+    supplierName: null,
+    partnerName: 'PARTENAIRE DEMO 01',
+    model_year: 2023,
+    color: 'Bleu marine',
+    fuel: 'HYBRID',
+    transmission: 'AUTOMATIC',
+    seats: 5,
+    doors: 5,
+    mileage: 9800,
   },
 ]
 
@@ -237,6 +278,36 @@ async function main() {
     report('fournisseur', supplier.legal_name, data.supplier_no, data.id, true)
   }
 
+  // --- Partenaires -----------------------------------------------------------
+  console.log('\nPartenaires')
+  const partnerIds = {}
+
+  for (const partner of PARTNERS) {
+    const { data: existing } = await admin
+      .from('partners')
+      .select('id, partner_no')
+      .eq('legal_name', partner.legal_name)
+      .maybeSingle()
+
+    if (existing) {
+      partnerIds[partner.legal_name] = existing.id
+      report('partenaire', partner.legal_name, existing.partner_no, existing.id, false)
+      continue
+    }
+
+    const { data: number } = await admin.rpc('next_number', { p_entity_key: 'partner' })
+    const { data, error } = await admin
+      .from('partners')
+      .insert({ ...partner, partner_no: number, notes: DEMO_NOTE })
+      .select('id, partner_no')
+      .single()
+
+    if (error) throw new Error(`${partner.legal_name} : ${error.message}`)
+
+    partnerIds[partner.legal_name] = data.id
+    report('partenaire', partner.legal_name, data.partner_no, data.id, true)
+  }
+
   // --- Catégories ------------------------------------------------------------
   console.log('\nCatégories')
   const categoryIds = {}
@@ -282,6 +353,7 @@ async function main() {
     }
 
     const supplierId = vehicle.supplierName ? supplierIds[vehicle.supplierName] : null
+    const partnerId = vehicle.partnerName ? partnerIds[vehicle.partnerName] : null
     const { data: number } = await admin.rpc('next_number', { p_entity_key: 'vehicle' })
 
     const { data, error } = await admin
@@ -294,6 +366,7 @@ async function main() {
         category_id: categoryIds[vehicle.categoryCode],
         origin: vehicle.origin,
         current_supplier_id: supplierId,
+        partner_id: partnerId,
         model_year: vehicle.model_year,
         color: vehicle.color,
         fuel: vehicle.fuel,
@@ -330,10 +403,6 @@ async function main() {
   console.log(`${created.length} fiche(s) créée(s), ${reused.length} déjà présente(s).`)
   console.log(
     `${DIM}Ces données sont permanentes : aucune recette ne les supprime.${RESET}`
-  )
-  console.log(
-    `${RED}VEHICULE DEMO 03 et PARTENAIRE DEMO 01-03 ne sont pas créés :${RESET}` +
-      ` la structure des partenaires n'existe pas encore.`
   )
   console.log('')
 }

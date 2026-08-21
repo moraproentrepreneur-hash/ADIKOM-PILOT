@@ -22,7 +22,7 @@ begin;
 do $$
 declare
   expected text[] := array[
-    'clients', 'suppliers', 'supplier_bank_details',
+    'clients', 'suppliers', 'supplier_bank_details', 'partners',
     'vehicle_categories', 'vehicles', 'vehicle_supplier_history',
     'vehicle_documents', 'pricing_rules', 'vehicle_occupations'
   ];
@@ -38,7 +38,7 @@ begin
     raise exception 'Tables manquantes : %', missing;
   end if;
 
-  raise notice '[OK] 1. Les 9 tables du référentiel sont présentes.';
+  raise notice '[OK] 1. Les 10 tables du référentiel sont présentes.';
 end $$;
 
 
@@ -47,7 +47,7 @@ end $$;
 do $$
 declare
   tables text[] := array[
-    'clients', 'suppliers', 'supplier_bank_details',
+    'clients', 'suppliers', 'supplier_bank_details', 'partners',
     'vehicle_categories', 'vehicles', 'vehicle_supplier_history',
     'vehicle_documents', 'pricing_rules', 'vehicle_occupations'
   ];
@@ -186,11 +186,18 @@ begin
   exception when check_violation then v_ok := v_ok + 1;
   end;
 
-  if v_ok <> 2 then
-    raise exception 'Cohérence origine / fournisseur non garantie.';
+  begin
+    insert into public.vehicles (vehicle_no, brand, model, category_id, origin)
+    values (public.next_number('vehicle'), 'Nissan', 'Micra', v_cat, 'PARTNERSHIP');
+    raise exception 'Un véhicule PARTNERSHIP sans partenaire a été accepté.';
+  exception when check_violation then v_ok := v_ok + 1;
+  end;
+
+  if v_ok <> 3 then
+    raise exception 'Cohérence des trois origines non garantie.';
   end if;
 
-  raise notice '[OK] 6. Origine et fournisseur restent cohérents.';
+  raise notice '[OK] 6. Les trois origines exigent le rattachement correspondant.';
 end $$;
 
 
@@ -293,7 +300,7 @@ begin
   values (public.next_number('supplier'), 'Recette — Fournisseur B', '+269 000 00 03')
   returning id into v_sup_b;
 
-  perform public.set_vehicle_supplier(v_veh, v_sup_b, 'SUPPLIED', current_date, 'Recette');
+  perform public.set_vehicle_attachment(v_veh, 'SUPPLIED', v_sup_b, null, current_date, 'Recette');
 
   select count(*) into v_open
   from public.vehicle_supplier_history
@@ -338,7 +345,7 @@ begin
   returning id into v_sup;
 
   begin
-    perform public.set_vehicle_supplier(v_veh, v_sup, 'SUPPLIED', current_date, 'Recette');
+    perform public.set_vehicle_attachment(v_veh, 'SUPPLIED', v_sup, null, current_date, 'Recette');
     raise exception 'Un fournisseur suspendu a pu recevoir un véhicule.';
   exception when check_violation then
     raise notice '[OK] 10. Un fournisseur non actif ne peut pas recevoir de véhicule.';

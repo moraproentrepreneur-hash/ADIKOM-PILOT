@@ -7,6 +7,7 @@ import { requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { listCategoryOptions } from '@/features/fleet/data'
 import { listSupplierOptions } from '@/features/suppliers/data'
+import { listPartnerOptions } from '@/features/partners/data'
 import { VehicleForm } from '@/features/fleet/vehicle-form'
 
 export const metadata: Metadata = { title: 'Nouveau véhicule' }
@@ -14,9 +15,10 @@ export const metadata: Metadata = { title: 'Nouveau véhicule' }
 export default async function NewVehiclePage() {
   await requirePermissionOrRedirect(PERMISSIONS.FLEET_CREATE)
 
-  const [categories, suppliers] = await Promise.all([
+  const [categories, suppliers, partners] = await Promise.all([
     listCategoryOptions(),
     listSupplierOptions(),
+    listPartnerOptions(),
   ])
 
   return (
@@ -35,7 +37,12 @@ export default async function NewVehiclePage() {
       />
 
       <Card className="max-w-4xl">
-        <VehicleForm mode="create" categories={categories} suppliers={suppliers} />
+        <VehicleForm
+          mode="create"
+          categories={categories}
+          suppliers={suppliers}
+          partners={partners}
+        />
       </Card>
     </>
   )

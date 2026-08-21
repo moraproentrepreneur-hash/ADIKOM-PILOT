@@ -9,7 +9,7 @@ import { Field, FormSection, Input, Select, Textarea } from '@/components/ui/for
 import { FormFeedback, Notice, SubmitButton } from '@/components/ui/feedback'
 import { EMPTY_FORM_STATE } from '@/lib/form-state'
 import { formatDate, todayISO } from '@/lib/dates'
-import { changeVehicleSupplierAction, type FleetFormState } from './actions'
+import { changeVehicleAttachmentAction, type FleetFormState } from './actions'
 import { ORIGIN_LABELS, type VehicleOrigin } from './constants'
 import type { SupplierPeriod } from './data'
 
@@ -27,19 +27,23 @@ export function SupplierPanel({
   vehicleId,
   currentOrigin,
   currentSupplierLabel,
+  currentPartnerLabel,
   history,
   suppliers,
+  partners,
   editable,
 }: {
   vehicleId: string
   currentOrigin: VehicleOrigin
   currentSupplierLabel: string | null
+  currentPartnerLabel: string | null
   history: SupplierPeriod[]
   suppliers: Option[]
+  partners: Option[]
   editable: boolean
 }) {
   const [state, formAction] = useActionState<FleetFormState, FormData>(
-    changeVehicleSupplierAction,
+    changeVehicleAttachmentAction,
     EMPTY_FORM_STATE
   )
 
@@ -52,9 +56,9 @@ export function SupplierPanel({
       <div className="rounded-control border border-line p-4">
         <p className="text-xs text-muted">Rattachement actuel</p>
         <p className="mt-1 font-medium text-ink">
-          {currentSupplierLabel ?? ORIGIN_LABELS[currentOrigin]}
+          {currentSupplierLabel ?? currentPartnerLabel ?? ORIGIN_LABELS[currentOrigin]}
         </p>
-        {currentSupplierLabel && (
+        {(currentSupplierLabel || currentPartnerLabel) && (
           <p className="mt-0.5 text-xs text-muted">{ORIGIN_LABELS[currentOrigin]}</p>
         )}
       </div>
@@ -68,7 +72,8 @@ export function SupplierPanel({
 
             <Notice tone="warning" className="mb-4">
               Le rattachement en cours sera clôturé à la date choisie, et un nouveau sera ouvert.
-              Les opérations passées ne sont pas modifiées.
+              Les opérations passées ne sont pas modifiées. L’historique daté ci-dessous ne
+              concerne que les fournisseurs.
             </Notice>
 
             <FormSection title="Nouveau rattachement">
@@ -93,6 +98,19 @@ export function SupplierPanel({
                     {suppliers.map((supplier) => (
                       <option key={supplier.id} value={supplier.id}>
                         {supplier.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
+
+              {origin === 'PARTNERSHIP' && (
+                <Field label="Partenaire" name="partnerId" required error={errors.partnerId}>
+                  <Select name="partnerId" error={errors.partnerId}>
+                    <option value="">Choisir un partenaire…</option>
+                    {partners.map((partner) => (
+                      <option key={partner.id} value={partner.id}>
+                        {partner.label}
                       </option>
                     ))}
                   </Select>
@@ -126,7 +144,7 @@ export function SupplierPanel({
             className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
           >
             <Repeat className="size-4" aria-hidden />
-            Changer de fournisseur
+            Changer de rattachement
           </button>
         ))}
 

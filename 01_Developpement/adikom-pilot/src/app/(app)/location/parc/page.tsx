@@ -167,7 +167,7 @@ export default async function FleetPage(props: PageProps<'/location/parc'>) {
                     <th className="px-5 py-3 font-medium text-ink">Véhicule</th>
                     <th className="px-5 py-3 font-medium text-ink">Catégorie</th>
                     <th className="px-5 py-3 font-medium text-ink">Origine</th>
-                    <th className="px-5 py-3 font-medium text-ink">Fournisseur</th>
+                    <th className="px-5 py-3 font-medium text-ink">Fournisseur / Partenaire</th>
                     <th className="px-5 py-3 font-medium text-ink">Kilométrage</th>
                     <th className="px-5 py-3 font-medium text-ink">Statut</th>
                   </tr>
@@ -194,7 +194,9 @@ export default async function FleetPage(props: PageProps<'/location/parc'>) {
                       <td className="px-5 py-3 text-muted">
                         {ORIGIN_LABELS[vehicle.origin as VehicleOrigin]}
                       </td>
-                      <td className="px-5 py-3 text-muted">{vehicle.supplierLabel ?? '—'}</td>
+                      <td className="px-5 py-3 text-muted">
+                        {vehicle.supplierLabel ?? vehicle.partnerLabel ?? '—'}
+                      </td>
                       <td className="px-5 py-3 text-muted tabular">
                         {vehicle.mileage.toLocaleString('fr-FR')} km
                       </td>
@@ -233,7 +235,9 @@ export default async function FleetPage(props: PageProps<'/location/parc'>) {
                     <dl className="mt-3 space-y-1 text-xs text-muted">
                       {vehicle.categoryLabel && <dd>{vehicle.categoryLabel}</dd>}
                       <dd>{ORIGIN_LABELS[vehicle.origin as VehicleOrigin]}</dd>
-                      {vehicle.supplierLabel && <dd>{vehicle.supplierLabel}</dd>}
+                      {(vehicle.supplierLabel || vehicle.partnerLabel) && (
+                        <dd>{vehicle.supplierLabel ?? vehicle.partnerLabel}</dd>
+                      )}
                     </dl>
                   </Link>
                 </li>

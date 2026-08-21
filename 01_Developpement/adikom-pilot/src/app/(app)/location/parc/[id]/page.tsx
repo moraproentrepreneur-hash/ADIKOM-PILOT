@@ -31,6 +31,7 @@ import { AvailabilityPanel } from '@/features/fleet/availability-panel'
 import { RetireVehicleForm } from '@/features/fleet/retire-form'
 import { listCategoryOptions } from '@/features/fleet/data'
 import { listSupplierOptions } from '@/features/suppliers/data'
+import { listPartnerOptions } from '@/features/partners/data'
 import { listPricingRules } from '@/features/pricing/data'
 import { formatPrice } from '@/features/pricing/constants'
 
@@ -225,6 +226,11 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
                     <Empty />
                   )}
                 </InfoRow>
+                {/* Le partenaire n'est pas cliquable : aucune fiche partenaire
+                    n'existe encore, et un lien mort vaut moins qu'un libellé. */}
+                <InfoRow label="Partenaire">
+                  {vehicle.partnerLabel ?? <Empty />}
+                </InfoRow>
                 <InfoRow label="Entrée dans le parc">
                   {formatDate(vehicle.entryDate) ?? <Empty />}
                 </InfoRow>
@@ -274,17 +280,24 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
 }
 
 async function EditPanel({ vehicleId }: { vehicleId: string }) {
-  const [vehicle, categories, suppliers] = await Promise.all([
+  const [vehicle, categories, suppliers, partners] = await Promise.all([
     getVehicleDetail(vehicleId),
     listCategoryOptions(),
     listSupplierOptions(),
+    listPartnerOptions(),
   ])
 
   if (!vehicle) notFound()
 
   return (
     <Card className="max-w-4xl">
-      <VehicleForm mode="edit" vehicle={vehicle} categories={categories} suppliers={suppliers} />
+      <VehicleForm
+        mode="edit"
+        vehicle={vehicle}
+        categories={categories}
+        suppliers={suppliers}
+        partners={partners}
+      />
     </Card>
   )
 }
@@ -309,9 +322,10 @@ async function SupplierTab({
   vehicle: NonNullable<Awaited<ReturnType<typeof getVehicleDetail>>>
   editable: boolean
 }) {
-  const [history, suppliers] = await Promise.all([
+  const [history, suppliers, partners] = await Promise.all([
     listSupplierHistory(vehicle.id),
     listSupplierOptions(),
+    listPartnerOptions(),
   ])
 
   return (
@@ -323,8 +337,10 @@ async function SupplierTab({
         vehicleId={vehicle.id}
         currentOrigin={vehicle.origin}
         currentSupplierLabel={vehicle.supplierLabel}
+        currentPartnerLabel={vehicle.partnerLabel}
         history={history}
         suppliers={suppliers}
+        partners={partners}
         editable={editable}
       />
     </Card>

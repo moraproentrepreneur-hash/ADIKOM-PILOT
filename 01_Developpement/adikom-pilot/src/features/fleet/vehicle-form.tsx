@@ -34,11 +34,13 @@ export function VehicleForm({
   vehicle,
   categories,
   suppliers,
+  partners,
 }: {
   mode: 'create' | 'edit'
   vehicle?: VehicleDetail
   categories: Option[]
   suppliers: Option[]
+  partners: Option[]
 }) {
   const action = mode === 'create' ? createVehicleAction : updateVehicleAction
   const [state, formAction] = useActionState<FleetFormState, FormData>(action, EMPTY_FORM_STATE)
@@ -244,6 +246,31 @@ export function VehicleForm({
                   ))}
                 </Select>
               </Field>
+            )}
+
+            {/* Même principe que le fournisseur : le champ n'apparaît que
+                lorsque l'origine l'exige, et la base impose la cohérence des
+                trois cas (migration 024). */}
+            {origin === 'PARTNERSHIP' && (
+              <Field label="Partenaire" name="partnerId" required error={errors.partnerId}>
+                <Select name="partnerId" error={errors.partnerId}>
+                  <option value="">Choisir un partenaire…</option>
+                  {partners.map((partner) => (
+                    <option key={partner.id} value={partner.id}>
+                      {partner.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+
+            {origin === 'PARTNERSHIP' && partners.length === 0 && (
+              <div className="sm:col-span-2">
+                <Notice tone="warning">
+                  Aucun partenaire n’est enregistré. La gestion des partenariats relève d’une
+                  étape ultérieure : les partenaires existants sont créés hors interface.
+                </Notice>
+              </div>
             )}
           </>
         ) : (

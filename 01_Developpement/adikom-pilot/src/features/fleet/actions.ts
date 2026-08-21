@@ -33,8 +33,8 @@ const ERROR_PATTERNS: readonly [RegExp, string][] = [
     'Cette immatriculation est déjà enregistrée sur un autre véhicule.',
   ],
   [
-    /vehicles_origin_supplier_coherent/i,
-    'Un véhicule fourni doit désigner son fournisseur, et un véhicule ADIKOM ne doit pas en avoir.',
+    /vehicles_origin_attachment_coherent/i,
+    'Le rattachement ne correspond pas à l’origine : un véhicule fourni désigne un fournisseur, un véhicule en partenariat désigne un partenaire, un véhicule ADIKOM n’a ni l’un ni l’autre.',
   ],
   [
     /vehicles_exit_coherent/i,
@@ -181,12 +181,14 @@ const vehicleSchema = z.object({
     }),
   origin: z.enum(['OWNED', 'SUPPLIED', 'PARTNERSHIP', 'OTHER']),
   supplierId: z.string().trim().optional(),
+  partnerId: z.string().trim().optional(),
   entryDate: z.string().trim().optional(),
   notes: z.string().trim().max(2000).optional(),
 })
 
 function toVehicleRow(input: z.infer<typeof vehicleSchema>) {
   const supplied = input.origin === 'SUPPLIED'
+  const partnered = input.origin === 'PARTNERSHIP'
 
   return {
     brand: input.brand,
@@ -201,9 +203,11 @@ function toVehicleRow(input: z.infer<typeof vehicleSchema>) {
     doors: input.doors,
     mileage: input.mileage,
     origin: input.origin,
-    // La cohérence est aussi garantie en base : un véhicule ADIKOM ne porte
-    // jamais de fournisseur, même si le formulaire en propose un.
+    // La cohérence est aussi garantie en base (migration 024) : chaque origine
+    // n'admet que son propre rattachement, quel que soit ce que porte le
+    // formulaire.
     current_supplier_id: supplied ? orNull(input.supplierId) : null,
+    partner_id: partnered ? orNull(input.partnerId) : null,
     entry_date: orNull(input.entryDate),
     notes: orNull(input.notes),
   }
@@ -224,6 +228,7 @@ function readVehicle(formData: FormData) {
     mileage: readText(formData, 'mileage'),
     origin: readText(formData, 'origin'),
     supplierId: readText(formData, 'supplierId'),
+    partnerId: readText(formData, 'partnerId'),
     entryDate: readText(formData, 'entryDate'),
     notes: readText(formData, 'notes'),
   }
@@ -246,6 +251,10 @@ async function createVehicleInner(formData: FormData): Promise<FleetFormState> {
 
   if (input.origin === 'SUPPLIED' && !orNull(input.supplierId)) {
     return { fieldErrors: { supplierId: 'Choisissez le fournisseur du véhicule.' } }
+  }
+
+  if (input.origin === 'PARTNERSHIP' && !orNull(input.partnerId)) {
+    return { fieldErrors: { partnerId: 'Choisissez le partenaire du véhicule.' } }
   }
 
   const supabase = await createSupabaseServerClient()
@@ -337,11 +346,12 @@ async function updateVehicleInner(formData: FormData): Promise<FleetFormState> {
 
   const row = toVehicleRow(input)
 
-  // Le rattachement fournisseur et l'origine sont volontairement exclus : ils
-  // relèvent d'un geste dédié et historisé. Les modifier ici les rendrait
-  // invisibles dans l'historique des rattachements (§60).
-  const { current_supplier_id, origin, ...editable } = row
+  // Le rattachement — fournisseur ou partenaire — et l'origine sont
+  // volontairement exclus : ils relèvent d'un geste dédié et historisé. Les
+  // modifier ici les rendrait invisibles dans l'historique (§60).
+  const { current_supplier_id, partner_id, origin, ...editable } = row
   void current_supplier_id
+  void partner_id
   void origin
 
   const { error } = await supabase.from('vehicles').update(editable).eq('id', vehicleId)
@@ -459,29 +469,34 @@ export async function retireVehicleAction(
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Fournisseur du véhicule                                                    */
+/*  Rattachement du véhicule — fournisseur ou partenaire                       */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Change le fournisseur d'un véhicule.
+ * Change le rattachement d'un véhicule : origine, fournisseur ou partenaire.
  *
- * L'opération est confiée à `set_vehicle_supplier` : clôture du rattachement
+ * L'opération est confiée à `set_vehicle_attachment` : clôture du rattachement
  * précédent, ouverture du nouveau et mise à jour de la fiche ne peuvent pas
  * être dissociées. Un échec à mi-chemin laisserait un véhicule rattaché à deux
  * fournisseurs ouverts, ce que §59 interdit.
+ *
+ * L'historique daté reste propre aux fournisseurs : c'est de lui que dépendront
+ * les imputations de maintenance (§60). L'équivalent pour les partenaires
+ * relèvera du module Partenariats.
  */
-export async function changeVehicleSupplierAction(
+export async function changeVehicleAttachmentAction(
   prevState: FleetFormState,
   formData: FormData
 ): Promise<FleetFormState> {
   return guarded(
-    'parc:fournisseur',
+    'parc:rattachement',
     async () => {
       await requirePermission(PERMISSIONS.FLEET_SUPPLIER_UPDATE)
 
       const vehicleId = readText(formData, 'vehicleId')
       const origin = readText(formData, 'origin')
       const supplierId = orNull(readText(formData, 'supplierId'))
+      const partnerId = orNull(readText(formData, 'partnerId'))
       const effectiveOn = orNull(readText(formData, 'effectiveOn'))
       const reason = orNull(readText(formData, 'reason'))
 
@@ -489,13 +504,17 @@ export async function changeVehicleSupplierAction(
       if (origin === 'SUPPLIED' && !supplierId) {
         return { fieldErrors: { supplierId: 'Choisissez le nouveau fournisseur.' } }
       }
+      if (origin === 'PARTNERSHIP' && !partnerId) {
+        return { fieldErrors: { partnerId: 'Choisissez le nouveau partenaire.' } }
+      }
 
       const supabase = await createSupabaseServerClient()
 
-      const { error } = await supabase.rpc('set_vehicle_supplier', {
+      const { error } = await supabase.rpc('set_vehicle_attachment', {
         p_vehicle_id: vehicleId,
-        p_supplier_id: origin === 'SUPPLIED' ? supplierId : null,
         p_origin: origin,
+        p_supplier_id: origin === 'SUPPLIED' ? supplierId : null,
+        p_partner_id: origin === 'PARTNERSHIP' ? partnerId : null,
         ...(effectiveOn ? { p_effective_on: effectiveOn } : {}),
         p_reason: reason,
       })
