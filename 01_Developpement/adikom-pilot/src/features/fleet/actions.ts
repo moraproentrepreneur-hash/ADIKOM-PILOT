@@ -11,6 +11,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { guarded, orNull, readText, toFieldErrors } from '@/lib/server-action'
 import type { FormState } from '@/lib/form-state'
 import { ACCEPTED_DOCUMENT_TYPES, MAX_DOCUMENT_SIZE } from './constants'
+import { isKnownColor } from './constants'
 
 /**
  * Actions du Parc automobile.
@@ -146,7 +147,12 @@ const vehicleSchema = z.object({
     .refine((value) => value === null || (Number.isInteger(value) && value >= 1950 && value <= 2100), {
       message: 'Année invalide.',
     }),
-  color: z.string().trim().max(40).optional(),
+  color: z
+    .string()
+    .trim()
+    .max(40)
+    .refine(isKnownColor, { message: 'Cette couleur ne figure pas dans la liste.' })
+    .optional(),
   fuel: z.string().trim().optional(),
   transmission: z.string().trim().optional(),
   seats: z

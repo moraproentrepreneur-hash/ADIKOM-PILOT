@@ -15,6 +15,7 @@ import {
   type FormState,
 } from '@/lib/server-action'
 import { findClientDuplicates, type DuplicateMatch } from './data'
+import { isKnownCountry } from '@/lib/countries'
 
 /**
  * Actions du module Clients.
@@ -60,7 +61,15 @@ const clientSchema = z.object({
     .optional(),
   address: z.string().trim().max(300).optional(),
   city: z.string().trim().max(120).optional(),
-  country: z.string().trim().max(120).optional(),
+  // Liste fermée : le formulaire propose un choix, le serveur le vérifie.
+  // Sans ce contrôle, un appel direct enregistrerait n'importe quel texte et la
+  // liste ne serait qu'un confort d'affichage.
+  country: z
+    .string()
+    .trim()
+    .max(120)
+    .refine(isKnownCountry, { message: 'Ce pays ne figure pas dans la liste.' })
+    .optional(),
   idDocumentType: z.string().trim().max(80).optional(),
   idDocumentNumber: z.string().trim().max(80).optional(),
   registrationNumber: z.string().trim().max(80).optional(),

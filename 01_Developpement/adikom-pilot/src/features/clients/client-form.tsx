@@ -7,6 +7,7 @@ import { Save, UserPlus } from 'lucide-react'
 import { Field, FormSection, Input, Select, Textarea } from '@/components/ui/form'
 import { FormFeedback, Notice, SubmitButton } from '@/components/ui/feedback'
 import { EMPTY_FORM_STATE } from '@/lib/form-state'
+import { COUNTRIES, DEFAULT_COUNTRY } from '@/lib/countries'
 import { createClientAction, updateClientAction, type ClientFormState } from './actions'
 import { TYPE_LABELS, type ClientType } from './constants'
 import type { ClientDetail } from './data'
@@ -151,8 +152,23 @@ export function ClientForm({ mode, client }: { mode: 'create' | 'edit'; client?:
           <Input name="address" defaultValue={client?.address ?? ''} error={errors.address} />
         </Field>
 
+        {/* Liste fermée : la saisie libre produisait « Comores », « comores »
+            et « KM » pour un même pays. La frappe au clavier filtre la liste
+            sur ordinateur, et le sélecteur natif du téléphone s'ouvre sur
+            mobile — sans composant supplémentaire à maintenir. */}
         <Field label="Pays" name="country" error={errors.country}>
-          <Input name="country" defaultValue={client?.country ?? 'Comores'} error={errors.country} />
+          <Select
+            name="country"
+            defaultValue={client?.country ?? DEFAULT_COUNTRY}
+            error={errors.country}
+          >
+            <option value="">Non précisé</option>
+            {COUNTRIES.map((country) => (
+              <option key={country} value={country}>
+                {country}
+              </option>
+            ))}
+          </Select>
         </Field>
       </FormSection>
 

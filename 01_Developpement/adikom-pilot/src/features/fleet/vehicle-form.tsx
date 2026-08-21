@@ -12,6 +12,7 @@ import {
   FUEL_LABELS,
   ORIGIN_LABELS,
   TRANSMISSION_LABELS,
+  VEHICLE_COLORS,
   type FuelType,
   type TransmissionType,
   type VehicleOrigin,
@@ -115,8 +116,17 @@ export function VehicleForm({
           />
         </Field>
 
+        {/* Liste fermée : « gris », « Gris » et « gris métal » désignaient le
+            même véhicule tout en rendant impossible le moindre filtre. */}
         <Field label="Couleur" name="color" error={errors.color}>
-          <Input name="color" defaultValue={vehicle?.color ?? ''} error={errors.color} />
+          <Select name="color" defaultValue={vehicle?.color ?? ''} error={errors.color}>
+            <option value="">Non précisée</option>
+            {VEHICLE_COLORS.map((color) => (
+              <option key={color} value={color}>
+                {color}
+              </option>
+            ))}
+          </Select>
         </Field>
       </FormSection>
 

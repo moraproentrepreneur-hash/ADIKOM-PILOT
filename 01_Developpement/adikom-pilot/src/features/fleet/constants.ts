@@ -68,6 +68,52 @@ export const ORIGIN_LABELS: Record<VehicleOrigin, string> = {
   OTHER: 'Autre',
 }
 
+/**
+ * Couleurs automobiles courantes.
+ *
+ * Liste fermée plutôt que saisie libre : « gris », « Gris », « gris métal » et
+ * « GRIS METALLISE » désignaient le même véhicule tout en rendant impossible
+ * le moindre filtre ou décompte par couleur.
+ *
+ * Le libellé français est la valeur stockée : la colonne reste `text`, aucune
+ * migration n'est nécessaire et aucune fiche existante n'est invalidée.
+ */
+export const VEHICLE_COLORS = [
+  'Blanc',
+  'Noir',
+  'Gris',
+  'Gris métallisé',
+  'Argent',
+  'Bleu',
+  'Bleu marine',
+  'Rouge',
+  'Bordeaux',
+  'Vert',
+  'Vert foncé',
+  'Jaune',
+  'Orange',
+  'Marron',
+  'Beige',
+  'Or',
+  'Bronze',
+  'Violet',
+  'Rose',
+  'Bicolore',
+  'Autre',
+] as const
+
+export type VehicleColor = (typeof VEHICLE_COLORS)[number]
+
+/**
+ * Vérifie qu'une couleur appartient à la liste.
+ * Contrôlé côté serveur : une liste qui n'existe que dans le formulaire ne
+ * ferme rien (05_Regles_Metier/05_Permissions.md §85).
+ */
+export function isKnownColor(value: string | null | undefined): boolean {
+  if (!value) return true
+  return (VEHICLE_COLORS as readonly string[]).includes(value)
+}
+
 export type FuelType = 'PETROL' | 'DIESEL' | 'HYBRID' | 'ELECTRIC' | 'OTHER'
 
 export const FUEL_LABELS: Record<FuelType, string> = {

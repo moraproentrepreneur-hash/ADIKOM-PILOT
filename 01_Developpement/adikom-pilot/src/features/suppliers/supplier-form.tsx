@@ -7,6 +7,7 @@ import { Save, Truck } from 'lucide-react'
 import { Field, FormSection, Input, Select, Textarea } from '@/components/ui/form'
 import { FormFeedback, SubmitButton } from '@/components/ui/feedback'
 import { EMPTY_FORM_STATE } from '@/lib/form-state'
+import { COUNTRIES, DEFAULT_COUNTRY } from '@/lib/countries'
 import { createSupplierAction, updateSupplierAction, type SupplierFormState } from './actions'
 import { TYPE_LABELS, type SupplierType } from './constants'
 import type { SupplierDetail } from './data'
@@ -106,8 +107,21 @@ export function SupplierForm({
           <Input name="address" defaultValue={supplier?.address ?? ''} error={errors.address} />
         </Field>
 
+        {/* Liste fermée, comme sur la fiche client : même donnée, même
+            traitement. Voir le commentaire dans `clients/client-form.tsx`. */}
         <Field label="Pays" name="country" error={errors.country}>
-          <Input name="country" defaultValue={supplier?.country ?? 'Comores'} error={errors.country} />
+          <Select
+            name="country"
+            defaultValue={supplier?.country ?? DEFAULT_COUNTRY}
+            error={errors.country}
+          >
+            <option value="">Non précisé</option>
+            {COUNTRIES.map((country) => (
+              <option key={country} value={country}>
+                {country}
+              </option>
+            ))}
+          </Select>
         </Field>
       </FormSection>
 

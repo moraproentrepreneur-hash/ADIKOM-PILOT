@@ -9,6 +9,7 @@ import { requirePermission } from '@/lib/auth/dal'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { guarded, orNull, readText, toFieldErrors } from '@/lib/server-action'
 import type { FormState } from '@/lib/form-state'
+import { isKnownCountry } from '@/lib/countries'
 
 /**
  * Actions du module Fournisseurs.
@@ -46,7 +47,12 @@ const supplierSchema = z.object({
     .optional(),
   address: z.string().trim().max(300).optional(),
   city: z.string().trim().max(120).optional(),
-  country: z.string().trim().max(120).optional(),
+  country: z
+    .string()
+    .trim()
+    .max(120)
+    .refine(isKnownCountry, { message: 'Ce pays ne figure pas dans la liste.' })
+    .optional(),
   registrationNumber: z.string().trim().max(80).optional(),
   taxIdentifier: z.string().trim().max(80).optional(),
   administrativeNotes: z.string().trim().max(2000).optional(),
