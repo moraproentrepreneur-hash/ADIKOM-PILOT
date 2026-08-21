@@ -189,8 +189,16 @@ appliquées depuis le poste de développement, pas par l'application.
 ## Recette
 
 ```bash
-npm run verify        # lint + typecheck + tests + build
+npm run verify                # lint + typecheck + tests + build
+npm run db:verify             # recette SQL du socle
+npm run db:verify:location    # recette SQL du référentiel (Étape 2.2)
+npm run verify:users          # sécurité — module Utilisateurs
+npm run verify:referential    # sécurité — référentiel d'exploitation
 ```
+
+Les deux recettes de sécurité ouvrent de vraies sessions et éprouvent ce que
+chaque profil atteint réellement, par appel direct. Elles créent puis
+suppriment leurs comptes et leurs jeux d'essai.
 
 Puis, dans l'application déployée :
 
@@ -204,6 +212,13 @@ Puis, dans l'application déployée :
 | Table `permissions` | 135 lignes |
 | Table `audit_log` | Une entrée `LOGIN` après connexion |
 | `update audit_log …` dans le SQL Editor | **Refusé** — table en écriture seule |
+| Création d'un client | Identifiant `CLI-000001` attribué par le serveur |
+| Doublon de nom ou de téléphone | Avertissement, création possible après confirmation |
+| Deux immobilisations qui se chevauchent | **Refusée** par la base (DEC-012) |
+| Tarif sans unité | **Refusé** — message au niveau du champ (DEC-001) |
+| Simulation tarifaire | Montant **et** source du tarif retenu (DEC-002) |
+| Coordonnées bancaires sans la permission | Onglet absent **et** données illisibles |
+| Document de véhicule | Ouverture par lien signé d'une minute |
 
 ---
 

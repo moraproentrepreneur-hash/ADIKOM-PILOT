@@ -225,7 +225,13 @@ begin
 end $$;
 
 
--- --- 8. Aucune suppression physique -------------------------------------------
+-- --- 8. Aucune suppression physique par l'application -------------------------
+--
+-- Le contrôle se place dans les conditions réelles de l'application : une
+-- session utilisateur. `current_actor()` lit `auth.uid()`, qui dérive de la
+-- revendication `sub` du jeton — simulée ici. Sans cela, le script s'exécuterait
+-- comme une opération d'environnement, pour laquelle la suppression reste
+-- volontairement permise (migration 021, DEC-020).
 do $$
 declare
   v_cli uuid;
@@ -234,6 +240,12 @@ declare
   v_ok  int := 0;
 begin
   select client_id, supplier_id, vehicle_id into v_cli, v_sup, v_veh from recette_ids;
+
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', gen_random_uuid()::text)::text,
+    true
+  );
 
   begin
     delete from public.clients where id = v_cli;
@@ -256,6 +268,10 @@ begin
   if v_ok <> 3 then
     raise exception 'Une donnée métier a pu être supprimée physiquement.';
   end if;
+
+  -- L'auteur simulé est retiré : les contrôles suivants écrivent dans le
+  -- journal d'audit, dont la référence à l'auteur doit rester valide.
+  perform set_config('request.jwt.claims', '', true);
 
   raise notice '[OK] 8. Clients, fournisseurs et véhicules ne peuvent pas être supprimés.';
 end $$;
@@ -601,10 +617,20 @@ declare
 begin
   select id into v_id from public.pricing_rules limit 1;
 
+  -- Même condition que le contrôle 8 : une session utilisateur, pas une
+  -- opération d'environnement.
+  perform set_config(
+    'request.jwt.claims',
+    json_build_object('sub', gen_random_uuid()::text)::text,
+    true
+  );
+
   begin
     delete from public.pricing_rules where id = v_id;
+    perform set_config('request.jwt.claims', '', true);
     raise exception 'La suppression d''un tarif a été acceptée.';
   exception when insufficient_privilege then
+    perform set_config('request.jwt.claims', '', true);
     raise notice '[OK] 17. Un tarif se désactive, il ne se supprime pas.';
   end;
 end $$;

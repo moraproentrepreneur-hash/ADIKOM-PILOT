@@ -55,6 +55,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-019 | Mot de passe temporaire | Fonctionnelle et technique | Appliquée | 2026-08-21 |
 | DEC-020 | Anonymisation de l'auteur dans l'audit | Contradiction interne | Appliquée | 2026-08-21 |
 | DEC-021 | Numérotation et découpage des étapes | Clarification ADIKOM | Validée | 2026-08-21 |
+| DEC-022 | Droits d'exécution des fonctions | Défaut de sécurité corrigé | Appliquée | 2026-08-21 |
 
 ---
 
@@ -715,6 +716,21 @@ Cette décision ne change pas la règle métier : un utilisateur se **désactive
 il ne se supprime pas (CLAUDE.md §22). La suppression reste réservée aux
 opérations d'environnement, hors interface.
 
+### Précision du 21 août 2026 — portée appliquée aux données métier
+
+Le référentiel de l'Étape 2.2 (clients, fournisseurs, véhicules, tarifs,
+occupations) applique littéralement cette portée : `fn_forbid_delete` refuse
+toute suppression dès lors qu'un **utilisateur est authentifié** — donc pour
+toute action de l'application, qui s'exécute toujours avec la session de son
+auteur — et la laisse possible lorsqu'aucun ne l'est : migration, script
+d'environnement, correction par le rôle de service (migration 021).
+
+Sans cette distinction, une fiche créée par erreur restait définitivement en
+base, et les recettes automatisées ne pouvaient pas retirer leurs jeux d'essai.
+
+Le **journal d'audit fait exception** et reste protégé sans réserve par
+`fn_forbid_mutation` : aucune suppression, quel que soit le rôle.
+
 ---
 
 ## DEC-021 — Numérotation et découpage des étapes de développement
@@ -800,6 +816,67 @@ après le MVP.
   implicite.
 - Aucune règle métier n'est modifiée par la présente décision : elle ne porte
   que sur l'ordre et le découpage des travaux.
+
+---
+
+## DEC-022 — Droits d'exécution des fonctions
+
+**Date :** 21 août 2026
+**Portée :** sécurité
+**Statut :** appliquée
+
+### Défaut constaté
+
+La recette de sécurité écrite pour l'Étape 2.2 a établi qu'avec la **seule clé
+publique**, sans aucun compte, il était possible d'appeler directement plusieurs
+fonctions du socle :
+
+| Fonction | Conséquence |
+|---|---|
+| `log_audit(...)` | **écrire dans le journal d'audit** — donc le falsifier |
+| `next_number(...)` | consommer des numéros de client, véhicule ou facture |
+| `has_permission(...)` | éprouver les droits d'un compte donné |
+| `is_super_admin(...)` | identifier les comptes d'administration |
+
+Le cas le plus grave est le premier. Le journal d'audit est délibérément
+inaltérable (`06_Audit.md` §40 et §77) : une entrée injectée ne peut plus jamais
+en être retirée. L'inaltérabilité, qui protège l'historique, joue alors contre
+lui.
+
+Ces fonctions sont `SECURITY DEFINER` — elles s'exécutent avec les droits de
+leur propriétaire. RLS ne les protège donc pas : **seul le droit d'exécution les
+met hors de portée.**
+
+### Cause
+
+Deux sources de droits, qu'il fallait fermer toutes les deux :
+
+1. PostgreSQL accorde `EXECUTE` à **PUBLIC** sur toute fonction créée ;
+2. Supabase accorde `EXECUTE` **directement au rôle `anon`** via les privilèges
+   par défaut du schéma `public`.
+
+Une première correction ne révoquant qu'à `anon` (migration 020) fut donc sans
+effet sur les fonctions dont PUBLIC détenait le droit ; une seconde ne révoquant
+qu'à PUBLIC (migration 022) laissa intactes celles que Supabase avait accordées
+nommément à `anon`. **Un droit ne se retire pas « en général » : il se retire à
+chaque source qui l'accorde.**
+
+### Décision
+
+L'exécution est retirée à PUBLIC **et** à `anon`, puis accordée explicitement à
+`authenticated` et `service_role`, fonction par fonction (migrations 022 et
+023). Les privilèges par défaut du schéma `public` cessent d'accorder
+l'exécution à `anon`, faute de quoi la correction serait à refaire à chaque
+nouvelle fonction.
+
+### Enseignement retenu
+
+Un contrôle qui ne mesure que l'intention — la présence d'un `REVOKE` dans une
+migration — ne prouve rien. Seul l'essai réel, mené avec la clé publique contre
+la base déployée, fait foi. La recette `npm run verify:referential` exécute
+désormais cet essai à chaque passage, et le contrôle sur `log_audit` a une
+propriété utile : s'il échoue un jour, il laissera lui-même une trace
+indélébile.
 
 ---
 

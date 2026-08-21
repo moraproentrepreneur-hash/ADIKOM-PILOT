@@ -64,7 +64,10 @@ code, la documentation ou un message de commit.
 | `npm run verify` | lint + typecheck + tests + build — **à passer avant chaque commit** |
 | `npm run db:push` | Applique les migrations manquantes sur Supabase Cloud |
 | `npm run db:status` | Liste les migrations à appliquer, sans rien modifier |
-| `npm run db:verify` | Recette du schéma déployé (transaction annulée) |
+| `npm run db:verify` | Recette du schéma — socle (transaction annulée) |
+| `npm run db:verify:location` | Recette du schéma — référentiel d'exploitation |
+| `npm run verify:users` | Recette sécurité — module Utilisateurs |
+| `npm run verify:referential` | Recette sécurité — clients, fournisseurs, parc, tarifs |
 | `npm run db:inspect` | État des lieux du schéma : tables, RLS, policies, triggers |
 | `npm run bootstrap:admin` | Crée ou met à jour le Super Admin |
 
@@ -89,11 +92,18 @@ supabase/migrations/        schéma versionné — jamais modifié à la main en
 
 ---
 
-## Trois règles à ne jamais contourner
+## Quatre règles à ne jamais contourner
 
 **1. Les permissions se vérifient côté serveur.**
 Toute action sensible commence par `requirePermission()`. Masquer un bouton
 n'est pas une protection. Les policies RLS constituent la seconde barrière.
+
+**1 bis. Une fonction `SECURITY DEFINER` n'est protégée que par son droit
+d'exécution.**
+RLS ne s'applique pas à elle : elle s'exécute avec les droits de son
+propriétaire. Toute nouvelle fonction de ce type doit donc révoquer `EXECUTE`
+à `public` **et** à `anon`, puis l'accorder explicitement (DEC-022). Les deux
+sources accordent séparément ; fermer l'une ne ferme pas l'autre.
 
 **2. Les montants sont des entiers.**
 Tout passe par `src/lib/money.ts`. Aucun flottant dans un calcul financier.
