@@ -3,10 +3,11 @@
 import { revalidatePath } from 'next/cache'
 
 import { PERMISSIONS, type PermissionCode } from '@/lib/auth/permissions'
-import { canAny, requireUser } from '@/lib/auth/dal'
+import { canAny, requirePermission, requireUser } from '@/lib/auth/dal'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { guarded, readText, toFieldErrors, type FormState } from '@/lib/server-action'
 import { pricingRuleSchema } from './schema'
+import { resolvePrice, type ResolvedPrice } from './data'
 
 /**
  * Actions de la tarification.
@@ -195,4 +196,53 @@ async function togglePricingRuleInner(formData: FormData): Promise<PricingFormSt
 
   revalidatePricing(clientId)
   return { success: activate ? 'Le tarif a été réactivé.' : 'Le tarif a été désactivé.' }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Simulation                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export type SimulationState = FormState & {
+  resolved?: ResolvedPrice | null
+  /** Rappel des paramètres, pour que le résultat reste lisible après envoi. */
+  clientId?: string
+  vehicleId?: string
+  on?: string
+}
+
+/**
+ * « Quel tarif s'appliquerait ? »
+ *
+ * Interroge le résolveur central, exactement comme le fera la création d'une
+ * réservation à l'Étape 2.3. C'est l'intérêt de l'écran : vérifier la règle
+ * avant qu'un montant réel n'en dépende, et pouvoir expliquer POURQUOI ce
+ * tarif s'applique (Workflow 02 §8).
+ *
+ * `resolved: null` signifie « aucun tarif configuré » — un cas explicite, jamais
+ * un montant supposé (DEC-008).
+ */
+export async function simulatePriceAction(
+  prevState: SimulationState,
+  formData: FormData
+): Promise<SimulationState> {
+  return guarded('tarification:simulation', async () => {
+    await requirePermission(PERMISSIONS.PRICING_VIEW)
+
+    const clientId = readText(formData, 'clientId') || null
+    const vehicleId = readText(formData, 'vehicleId')
+    const on = readText(formData, 'on') || undefined
+
+    if (!vehicleId) {
+      return { fieldErrors: { vehicleId: 'Choisissez un véhicule.' } }
+    }
+
+    const resolved = await resolvePrice(clientId, vehicleId, on)
+
+    return {
+      resolved,
+      clientId: clientId ?? undefined,
+      vehicleId,
+      on,
+    }
+  })
 }

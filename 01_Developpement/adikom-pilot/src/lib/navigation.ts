@@ -102,7 +102,7 @@ export const NAVIGATION: NavEntry[] = [
         href: '/tiers/fournisseurs',
         icon: Truck,
         permission: PERMISSIONS.SUPPLIERS_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Partenariats',
@@ -143,14 +143,14 @@ export const NAVIGATION: NavEntry[] = [
         href: '/location/parc',
         icon: Layers,
         permission: PERMISSIONS.FLEET_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Tarification',
         href: '/location/tarification',
         icon: Tags,
         permission: PERMISSIONS.PRICING_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Maintenance',
