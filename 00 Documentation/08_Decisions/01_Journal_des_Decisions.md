@@ -56,6 +56,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-020 | Anonymisation de l'auteur dans l'audit | Contradiction interne | Appliquée | 2026-08-21 |
 | DEC-021 | Numérotation et découpage des étapes | Clarification ADIKOM | Validée | 2026-08-21 |
 | DEC-022 | Droits d'exécution des fonctions | Défaut de sécurité corrigé | Appliquée | 2026-08-21 |
+| DEC-023 | Convention des références de documents | Décision ADIKOM | Validée — **implémentation reportée** | 2026-08-21 |
 
 ---
 
@@ -880,6 +881,136 @@ indélébile.
 
 ---
 
+## DEC-023 — Convention des références de documents commerciaux
+
+**Date :** 21 août 2026
+**Portée :** métier et technique
+**Statut :** convention **validée** · implémentation **reportée à l'Étape 2.5**
+
+### 1. Convention générale
+
+Les références des documents commerciaux suivent la forme :
+
+```
+[PRÉFIXE]-[TYPE]-[SÉRIE][NUMÉRO]
+```
+
+La série est alphabétique, le numéro tient sur quatre chiffres, et la série
+s'incrémente lorsque le numéro est épuisé :
+
+```
+A0001 → A9999
+B0001 → B9999
+   …
+Z0001 → Z9999
+AA0001 → AB0001 → …
+```
+
+Modèle de référence retenu (convention BISWARA) :
+
+```
+BIS-DVCL-A0001      BIS-CMCL-A0001      BIS-BLCL-A0001
+BIS-FACL-A0001      BIS-AVCL-A0001      BIS-ACCL-A0001
+```
+
+Capacité avant la première bascule à deux lettres : 26 × 9 999 ≈ **260 000
+documents** par type.
+
+### 2. Portée — ce que la convention ne couvre pas
+
+**Elle ne s'applique pas aux référentiels.** Les identifiants internes des
+clients, fournisseurs et véhicules restent ceux confirmés par **DEC-021 §1** :
+
+```
+CLI-000001      FOU-000001      VEH-000001
+```
+
+Décision **définitive pour l'Étape 2.2**. Aucun préfixe d'entreprise
+(`ADK-CLI`…) n'est introduit.
+
+La distinction est structurelle, pas cosmétique : une série existe pour
+segmenter un flux d'émission et borner la longueur d'une référence imprimée.
+Un client possède un identifiant unique, à vie, qui ne figure sur aucun
+document contractuel.
+
+### 3. Implémentation — reportée à l'Étape 2.5
+
+Le moteur actuel (`next_number` / `numbering_rules`) **ne sait pas produire
+cette forme** : il ignore le segment de type, ignore la série, et ne bascule
+pas. Au-delà de 9 999, `lpad` n'écrête pas — le format se romprait
+silencieusement en `…-A10000`, sans erreur ni alerte.
+
+L'extension nécessaire est **additive** : trois colonnes nullables
+(`type_code`, `series`, `series_capacity`) et une branche dans `next_number`.
+Toute règle sans série continuerait de produire exactement ce qu'elle produit
+aujourd'hui.
+
+**Elle n'est pas développée maintenant** (CLAUDE.md §29 et §60) : aucun
+document commercial n'existe avant l'Étape 2.5, et figer les codes de type
+supposerait de décider quels documents ADIKOM émet réellement — décision non
+mûre. L'implémentation aura lieu au développement des premiers documents.
+
+Une contrainte à poser alors : **une règle utilise l'année ou la série, jamais
+les deux.** Ce sont deux mécanismes de segmentation concurrents.
+
+### 4. Factures — validation comptable obligatoire
+
+La convention **supprime l'année** de la référence : `FAC-C-2026-000001`
+devient `ADK-FACL-A0001`.
+
+Pour une facture, ce n'est pas une question de forme mais de conformité :
+selon le régime applicable, une numérotation peut devoir être séquentielle,
+sans interruption, et rattachable à un exercice.
+
+> **La convention définitive des références de factures — `FACL`, `FAFR` et
+> tout document à valeur comptable — doit être validée par le responsable
+> comptable et fiscal d'ADIKOM avant toute première émission.**
+
+Aucune règle fiscale ou comptable n'est déduite, supposée ou inventée par le
+système. Tant que cette validation n'a pas eu lieu, aucun format de facture
+n'est figé. Les documents sans portée comptable (devis, commandes, bons de
+livraison) ne sont pas concernés par cette réserve.
+
+### 5. Codes de type — non figés
+
+Les codes ci-dessous sont conservés comme **exemples de travail**, non comme
+liste arrêtée :
+
+| Document | Code de travail |
+|---|---|
+| Facture client | `FACL` |
+| Facture fournisseur | `FAFR` |
+| Avoir client | `AVCL` |
+| Acompte client | `ACCL` |
+| Règlement | `REGL` |
+
+**Chaque nouveau type de document sera confirmé lors de son développement et
+avant sa première émission.** Aucune liste exhaustive n'est arrêtée
+aujourd'hui.
+
+Le code de type est une **étiquette opaque**. Le système ne doit jamais tenter
+de le décomposer, même lorsqu'il paraît structuré (`DV` + `CL`) : le jour où un
+code déroge à la logique apparente, un analyseur mentirait.
+
+### 6. Conséquence technique à retenir dès maintenant
+
+**L'ordre alphabétique cesse de suivre l'ordre d'émission après `Z`.** En tri
+texte, `AA0001` précède `B0001`, alors qu'il est émis bien après.
+
+En conséquence : **aucune liste, aucun export, aucun état comptable ne doit
+être trié sur la référence du document.** Le tri se fait sur la date
+d'émission ou sur l'identifiant interne. La règle est posée maintenant afin de
+ne pas être découverte le jour de la première bascule.
+
+### 7. Effet sur DEC-005
+
+Les formats par défaut de DEC-005 pour les objets datés — `FAC-C-2026-000001`,
+`FAC-F-2026-000001`, `REG-2026-000001` — sont **provisoires** et seront revus
+à l'Étape 2.5 selon la présente convention et la validation comptable du §4.
+Les formats des référentiels (`CLI`, `FOU`, `VEH`) restent confirmés.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -888,7 +1019,8 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 2. **DEC-008** — Règles d'arrondi de la durée, traitement du retard, barèmes carburant / kilométrage / dommages, gestion de la caution et de l'acompte, période de préparation, seuils de validation des imputations.
 3. **DEC-009** — Confirmation de la règle de résolution des permissions multi-groupes.
 4. **DEC-014** — Fuseau horaire de référence et régime de taxes applicable.
-5. **DEC-005** — Confirmation des formats restants et de la règle de remise à zéro annuelle. *Partiellement tranché : les formats client, fournisseur et véhicule sont confirmés par **DEC-021**. Restent à confirmer les objets datés — réservation, location, maintenance, imputation, factures, règlement, virement.*
+5. **DEC-005** — Confirmation des formats restants et de la règle de remise à zéro annuelle. *Partiellement tranché : les formats client, fournisseur et véhicule sont confirmés par **DEC-021**. Les documents commerciaux relèvent désormais de **DEC-023**, dont l'implémentation est reportée à l'Étape 2.5. Restent à confirmer les objets datés non commerciaux — réservation, location, maintenance, imputation.*
+6. **DEC-023 §4** — Validation par le responsable comptable et fiscal d'ADIKOM de la convention de référence des factures, avant toute première émission.
 
 ---
 
