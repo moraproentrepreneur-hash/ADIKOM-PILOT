@@ -68,6 +68,7 @@ code, la documentation ou un message de commit.
 | `npm run db:verify:location` | Recette du schéma — référentiel d'exploitation |
 | `npm run verify:users` | Recette sécurité — module Utilisateurs |
 | `npm run verify:referential` | Recette sécurité — clients, fournisseurs, parc, tarifs |
+| `npm run verify:referential:ui` | Recette fonctionnelle — référentiel, dans un navigateur |
 | `npm run db:inspect` | État des lieux du schéma : tables, RLS, policies, triggers |
 | `npm run bootstrap:admin` | Crée ou met à jour le Super Admin |
 

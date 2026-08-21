@@ -25,7 +25,8 @@
     "cleanup:test-users": "node scripts/cleanup-test-users.mjs",
     "bootstrap:admin": "node scripts/bootstrap-super-admin.mjs",
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build",
-    "verify:referential": "node scripts/verify-referential.mjs"
+    "verify:referential": "node scripts/verify-referential.mjs",
+    "verify:referential:ui": "node scripts/verify-referential-ui.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

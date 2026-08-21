@@ -196,6 +196,29 @@ npm run verify:users          # sécurité — module Utilisateurs
 npm run verify:referential    # sécurité — référentiel d'exploitation
 ```
 
+Recettes fonctionnelles, dans un vrai navigateur. Elles exigent une session :
+définissez les identifiants **dans le terminal**, jamais dans un fichier.
+
+```powershell
+$env:ADIKOM_ADMIN_USERNAME="identifiant"
+$env:ADIKOM_ADMIN_PASSWORD="<mot de passe>"
+
+npm run start -- -p 3100                          # application à recetter
+npm run verify:users:ui                           # module Utilisateurs
+npm run verify:referential:ui                     # référentiel — Étape 2.2
+npm run verify:referential:ui https://…vercel.app # ou l'application déployée
+```
+
+> PSReadLine n'enregistre pas dans son historique les commandes contenant
+> `password`, `token`, `key` ou `secret` : ces deux lignes ne laissent pas de
+> trace sur disque, et disparaissent à la fermeture du terminal.
+
+La recette du référentiel crée des fiches marquées « RECETTE 2.2 » et les
+supprime en fin d'exécution, fichier déposé compris. **Les entrées du journal
+d'audit qu'elle produit sont définitives** : le journal est immuable. L'option
+`--restaurer-compteurs` remet la numérotation à sa valeur initiale, et
+uniquement si personne n'a rien créé entre-temps.
+
 Les deux recettes de sécurité ouvrent de vraies sessions et éprouvent ce que
 chaque profil atteint réellement, par appel direct. Elles créent puis
 suppriment leurs comptes et leurs jeux d'essai.
