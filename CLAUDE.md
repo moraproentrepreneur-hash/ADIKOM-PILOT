@@ -870,6 +870,100 @@ Exemples :
 
 
 
+\# 19 bis. Attribution indépendante des capacités
+
+
+
+\*\*Règle permanente (DEC-024).\*\*
+
+
+
+> Aucune fonctionnalité contrôlable par utilisateur ne doit être implicitement autorisée par une autre permission lorsqu'elle peut raisonnablement faire l'objet d'une attribution indépendante.
+
+
+
+Consulter, exporter, télécharger et imprimer sont des capacités distinctes.
+
+
+
+Un utilisateur peut légitimement recevoir le droit de consulter une liste et de l'exporter, sans celui d'en produire un document PDF ni de l'imprimer.
+
+
+
+Ne considère donc jamais qu'une capacité transversale est incluse dans « voir ».
+
+
+
+\## Avant toute nouvelle fonctionnalité
+
+
+
+Pose la question :
+
+
+
+\*\*« Cette fonctionnalité doit-elle pouvoir être attribuée séparément à un utilisateur ? »\*\*
+
+
+
+Si oui, applique les six étapes :
+
+
+
+1\. identifier la permission existante qui couvre l'action ;
+
+2\. si aucune ne la couvre, proposer une nouvelle permission — sans la créer d'office ;
+
+3\. l'ajouter au catalogue après validation ;
+
+4\. l'utiliser côté interface ;
+
+5\. la contrôler côté serveur — action serveur ET route/API ;
+
+6\. ajouter les tests de sécurité, positifs et négatifs.
+
+
+
+\## Ne pas surcharger le catalogue
+
+
+
+Une permission ne se crée que si la fonctionnalité correspondante existe réellement ou est explicitement prévue.
+
+
+
+Le catalogue représente les capacités réelles du SaaS, pas celles qu'un modèle général rendrait imaginables.
+
+
+
+Ne crée donc pas `.delete`, `.approve`, `.send` ou `.generate` pour un module qui ne les propose pas.
+
+
+
+\## Convention
+
+
+
+\*\*domaine.ressource.action\*\*, avec un niveau supplémentaire lorsqu'un sous-menu existe :
+
+
+
+`parties.clients.view` · `parties.clients.export` · `parties.clients.download` · `parties.clients.print`
+
+
+
+`parties.clients.pricing.manage`
+
+
+
+Ne modifie jamais un code existant : il peut être attribué à des utilisateurs.
+
+
+
+\---
+
+
+
 \# 20. Fiche utilisateur
 
 

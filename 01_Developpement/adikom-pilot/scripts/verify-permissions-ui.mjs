@@ -182,8 +182,8 @@ async function main() {
     })
 
     const selectors = await page.locator('form fieldset').count()
-    if (selectors === 135) ok('Les 135 permissions sont modifiables', `${selectors} sélecteurs`)
-    else ko('Les 135 permissions sont modifiables', `${selectors} sélecteurs`)
+    if (selectors === 148) ok('Les 148 permissions sont modifiables', `${selectors} sélecteurs`)
+    else ko('Les 148 permissions sont modifiables', `${selectors} sélecteurs`)
 
     const radios = await page.locator(`input[name="perm:${TARGET_CODE}"]`).count()
     if (radios === 3) ok('Trois états proposés par permission', 'Non défini · Accorder · Refuser')

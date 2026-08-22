@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -13,26 +13,45 @@ import { PERMISSIONS } from './permissions'
  *   · code en base mais absent du TS → permission jamais vérifiée par le code
  *     applicatif, donc jamais appliquée.
  *
- * Ce test lit la migration du catalogue et compare les deux ensembles.
+ * Ce test lit les migrations du catalogue et compare les deux ensembles.
+ *
+ * TOUTES les migrations qui alimentent `public.permissions` sont parcourues, et
+ * non un fichier nommé en dur : DEC-024 impose qu'une nouvelle capacité
+ * s'accompagne d'une nouvelle permission, donc de nouvelles migrations. Figer
+ * un seul fichier ferait passer ce contrôle à côté de tout ce qui vient après.
  */
 
-const CATALOG_PATH = resolve(
-  import.meta.dirname,
-  '../../../supabase/migrations/20260819000700_permissions_catalog.sql'
-)
+const MIGRATIONS_DIR = resolve(import.meta.dirname, '../../../supabase/migrations')
 
-/** Extrait les codes de la liste VALUES de la CTE `perms`. */
+/**
+ * Extrait les codes des listes VALUES alimentant le catalogue.
+ *
+ * La lecture démarre à la liste de colonnes `(code, module_code` — celle de la
+ * CTE des permissions — afin d'ignorer les listes de modules et de menus qui la
+ * précèdent et dont les valeurs ont exactement la même forme.
+ */
 function readCatalogCodes(): string[] {
-  const sql = readFileSync(CATALOG_PATH, 'utf8')
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((name) => name.endsWith('.sql'))
+    .sort()
 
-  const start = sql.indexOf('perms (code,')
-  expect(start, 'La CTE « perms » est introuvable dans la migration.').toBeGreaterThan(-1)
+  const codes: string[] = []
 
-  const body = sql.slice(start)
-  // Chaque ligne de valeurs commence par ('<code>',
-  const matches = body.matchAll(/^\s*\('([a-z0-9_.]+)',/gm)
+  for (const name of files) {
+    const sql = readFileSync(resolve(MIGRATIONS_DIR, name), 'utf8')
+    if (!sql.includes('public.permissions')) continue
 
-  return [...matches].map((match) => match[1])
+    const start = sql.indexOf('(code, module_code')
+    if (start === -1) continue
+
+    for (const match of sql.slice(start).matchAll(/^\s*\('([a-z0-9_.]+)',/gm)) {
+      codes.push(match[1])
+    }
+  }
+
+  expect(codes.length, 'Aucun catalogue de permissions trouvé dans les migrations.').toBeGreaterThan(0)
+
+  return codes
 }
 
 describe('catalogue des permissions', () => {

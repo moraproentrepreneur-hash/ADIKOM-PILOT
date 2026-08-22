@@ -232,7 +232,7 @@ Puis, dans l'application déployée :
 | Barre latérale | Tous les modules visibles (accès complet) |
 | Réduction de la barre latérale | État conservé après rechargement |
 | `/tableau-de-bord` sans session | Redirection vers la connexion |
-| Table `permissions` | 135 lignes |
+| Table `permissions` | 148 lignes |
 | Table `audit_log` | Une entrée `LOGIN` après connexion |
 | `update audit_log …` dans le SQL Editor | **Refusé** — table en écriture seule |
 | Création d'un client | Identifiant `CLI-000001` attribué par le serveur |

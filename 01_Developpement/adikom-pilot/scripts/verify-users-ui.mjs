@@ -142,7 +142,7 @@ async function main() {
 
     await page.goto(`${base}/utilisateurs/${createdId}?onglet=permissions`, { waitUntil: 'load' })
     const perms = await mainText()
-    if (/permission/i.test(perms) && /sur 135/.test(perms)) {
+    if (/permission/i.test(perms) && /sur 148/.test(perms)) {
       ok('Onglet Permissions : synthèse affichée')
     } else {
       ko('Onglet Permissions : synthèse affichée')
@@ -154,7 +154,7 @@ async function main() {
     // Le Super Admin dispose du droit de modifier les permissions individuelles :
     // l'onglet expose un sélecteur à trois états par permission du catalogue.
     const selectorCount = await page.locator('main form fieldset').count()
-    if (selectorCount === 135) {
+    if (selectorCount === 148) {
       ok('Permissions individuelles modifiables', `${selectorCount} sélecteurs`)
     } else {
       ko('Permissions individuelles modifiables', `${selectorCount} sélecteurs`)

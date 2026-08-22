@@ -153,6 +153,43 @@ begin
 end $$;
 
 
+-- --- 5 bis. Capacités documentaires attribuables séparément ------------------
+-- DEC-024 : exporter, télécharger et imprimer ne sont pas inclus dans « voir ».
+do $$
+declare
+  attendues text[] := array[
+    'parties.clients.download',   'parties.clients.print',
+    'parties.suppliers.download', 'parties.suppliers.print',
+    'parties.partners.export',    'parties.partners.download', 'parties.partners.print',
+    'rental.fleet.download',      'rental.fleet.print',
+    'rental.categories.export',
+    'rental.pricing.export',      'rental.pricing.download',   'rental.pricing.print'
+  ];
+  manquantes text[];
+begin
+  -- L'action doit exister dans l'énumération, sans quoi aucune permission de
+  -- téléchargement ne peut être enregistrée.
+  if not exists (
+    select 1
+    from pg_enum e
+    join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'permission_action' and e.enumlabel = 'DOWNLOAD'
+  ) then
+    raise exception 'L''action DOWNLOAD est absente de permission_action.';
+  end if;
+
+  select array_agg(c) into manquantes
+  from unnest(attendues) c
+  where not exists (select 1 from public.permissions p where p.code = c);
+
+  if manquantes is not null then
+    raise exception 'Permissions documentaires manquantes : %', manquantes;
+  end if;
+
+  raise notice '[OK] 5 bis. Exporter, télécharger et imprimer sont attribuables séparément.';
+end $$;
+
+
 -- --- 6. Moteur d'autorisation ------------------------------------------------
 -- DEC-009 : refus explicite > autorisation > absence = refus
 do $$

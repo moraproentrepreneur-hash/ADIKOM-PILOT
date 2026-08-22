@@ -57,6 +57,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-021 | Numérotation et découpage des étapes | Clarification ADIKOM | Validée | 2026-08-21 |
 | DEC-022 | Droits d'exécution des fonctions | Défaut de sécurité corrigé | Appliquée | 2026-08-21 |
 | DEC-023 | Convention des références de documents | Décision ADIKOM | Validée — **implémentation reportée** | 2026-08-21 |
+| DEC-024 | Attribution indépendante des capacités | Règle d'architecture | Validée — **permanente** | 2026-08-22 |
 
 ---
 
@@ -1008,6 +1009,90 @@ Les formats par défaut de DEC-005 pour les objets datés — `FAC-C-2026-000001
 `FAC-F-2026-000001`, `REG-2026-000001` — sont **provisoires** et seront revus
 à l'Étape 2.5 selon la présente convention et la validation comptable du §4.
 Les formats des référentiels (`CLI`, `FOU`, `VEH`) restent confirmés.
+
+---
+
+## DEC-024 — Attribution indépendante des capacités
+
+**Date :** 22 août 2026
+**Portée :** architecture — **règle permanente**
+**Statut :** validée par ADIKOM
+
+### Règle
+
+> **Aucune fonctionnalité contrôlable par utilisateur ne doit être implicitement
+> autorisée par une autre permission lorsqu'elle peut raisonnablement faire
+> l'objet d'une attribution indépendante.**
+
+Elle s'applique aux fonctionnalités actuelles **et à toutes les suivantes**.
+
+### Ce qu'elle corrige
+
+Les capacités transversales — exporter, télécharger, imprimer — étaient
+implicitement incluses dans le droit de consulter. Un utilisateur autorisé à
+voir une liste pouvait, de fait, en produire un fichier et l'emporter.
+
+Ces trois actes ne sont pas la consultation : ils font sortir la donnée du
+système. ADIKOM doit pouvoir accorder l'un sans les autres — par exemple
+consulter et exporter une liste, sans pouvoir produire de document PDF.
+
+### Application immédiate
+
+L'action `DOWNLOAD` est ajoutée à `public.permission_action`, qui ne connaissait
+que `EXPORT` et `PRINT` (migration 025).
+
+**Treize permissions** sont créées (migration 026), portant le catalogue de
+**135 à 148** :
+
+| Menu | Ajouts |
+|---|---|
+| Clients | `download` · `print` |
+| Fournisseurs | `download` · `print` |
+| Partenariats | `export` · `download` · `print` |
+| Parc automobile | `download` · `print` |
+| Catégories | `export` |
+| Tarification | `export` · `download` · `print` |
+
+Aucune permission n'est créée pour une capacité qui n'existe pas : pas de fiche
+PDF pour les catégories, rien pour la disponibilité — onglet de la fiche
+véhicule — et rien pour les tarifs préférentiels, dont les capacités sont déjà
+couvertes par `rental.pricing.*` et `parties.clients.pricing.*`.
+
+### Sensibilité — un alignement décidé après inspection
+
+`rental.fleet.export` était la seule permission d'export non sensible.
+L'inspection du contenu réel de l'export a tranché : la liste du parc porte,
+véhicule par véhicule, **le fournisseur ou le partenaire** qui le met à
+disposition. Le fichier expose donc la cartographie des relations commerciales
+d'ADIKOM — exactement ce qui rend l'export des fournisseurs sensible. Le laisser
+non sensible aurait permis d'obtenir par le parc ce que l'on refuse par les
+tiers.
+
+Elle est alignée sur `true`. C'est la seule ligne existante modifiée.
+
+Les nouvelles permissions sont sensibles pour les tiers et la tarification —
+ces documents sortent avec des données personnelles ou commerciales — et non
+sensibles pour le parc et les catégories. Total : **88 permissions sensibles**.
+
+### Une limite énoncée, non masquée
+
+**`print` sans `download` n'est pas une barrière technique.** Pour imprimer un
+document, le navigateur doit l'avoir reçu, et ce qui est reçu peut être
+enregistré. La distinction reste utile — bouton, route, journal d'audit — mais
+elle ne résiste pas à un utilisateur déterminé.
+
+En revanche, refuser **à la fois** `download` et `print` est une barrière
+réelle : aucune route documentaire ne répond alors à cet utilisateur.
+
+### Conséquences durables
+
+- Toute nouvelle fonctionnalité passe par les six étapes consignées dans
+  `CLAUDE.md` §19 bis.
+- Le catalogue reste le miroir des capacités réelles : une permission ne se crée
+  pas « au cas où ».
+- Le contrôle de cohérence entre le catalogue SQL et les constantes TypeScript
+  parcourt désormais **toutes** les migrations, et non un fichier nommé en dur —
+  sans quoi il passerait à côté de chaque permission ajoutée après coup.
 
 ---
 

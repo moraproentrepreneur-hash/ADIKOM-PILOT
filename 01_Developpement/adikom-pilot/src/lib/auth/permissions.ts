@@ -30,6 +30,8 @@ export const PERMISSIONS = {
   CLIENTS_UPDATE: 'parties.clients.update',
   CLIENTS_ARCHIVE: 'parties.clients.archive',
   CLIENTS_EXPORT: 'parties.clients.export',
+  CLIENTS_DOWNLOAD: 'parties.clients.download',
+  CLIENTS_PRINT: 'parties.clients.print',
   CLIENTS_PRICING_VIEW: 'parties.clients.pricing.view',
   CLIENTS_PRICING_MANAGE: 'parties.clients.pricing.manage',
 
@@ -39,6 +41,8 @@ export const PERMISSIONS = {
   SUPPLIERS_UPDATE: 'parties.suppliers.update',
   SUPPLIERS_ARCHIVE: 'parties.suppliers.archive',
   SUPPLIERS_EXPORT: 'parties.suppliers.export',
+  SUPPLIERS_DOWNLOAD: 'parties.suppliers.download',
+  SUPPLIERS_PRINT: 'parties.suppliers.print',
   SUPPLIERS_BANK_VIEW: 'parties.suppliers.bank.view',
   SUPPLIERS_BANK_UPDATE: 'parties.suppliers.bank.update',
   SUPPLIERS_FINANCIAL_VIEW: 'parties.suppliers.financial.view',
@@ -48,6 +52,9 @@ export const PERMISSIONS = {
   PARTNERS_CREATE: 'parties.partners.create',
   PARTNERS_UPDATE: 'parties.partners.update',
   PARTNERS_ARCHIVE: 'parties.partners.archive',
+  PARTNERS_EXPORT: 'parties.partners.export',
+  PARTNERS_DOWNLOAD: 'parties.partners.download',
+  PARTNERS_PRINT: 'parties.partners.print',
 
   // --- Location --------------------------------------------------------------
   RENTAL_BOARD_VIEW: 'rental.board.view',
@@ -75,16 +82,22 @@ export const PERMISSIONS = {
   FLEET_SUPPLIER_UPDATE: 'rental.fleet.supplier.update',
   FLEET_ARCHIVE: 'rental.fleet.archive',
   FLEET_EXPORT: 'rental.fleet.export',
+  FLEET_DOWNLOAD: 'rental.fleet.download',
+  FLEET_PRINT: 'rental.fleet.print',
 
   CATEGORIES_VIEW: 'rental.categories.view',
   CATEGORIES_CREATE: 'rental.categories.create',
   CATEGORIES_UPDATE: 'rental.categories.update',
   CATEGORIES_ARCHIVE: 'rental.categories.archive',
+  CATEGORIES_EXPORT: 'rental.categories.export',
 
   PRICING_VIEW: 'rental.pricing.view',
   PRICING_CREATE: 'rental.pricing.create',
   PRICING_UPDATE: 'rental.pricing.update',
   PRICING_OVERRIDE: 'rental.pricing.override',
+  PRICING_EXPORT: 'rental.pricing.export',
+  PRICING_DOWNLOAD: 'rental.pricing.download',
+  PRICING_PRINT: 'rental.pricing.print',
 
   MAINTENANCE_VIEW: 'rental.maintenance.view',
   MAINTENANCE_CREATE: 'rental.maintenance.create',
@@ -193,6 +206,7 @@ export type PermissionAction =
   | 'VALIDATE'
   | 'CANCEL'
   | 'EXPORT'
+  | 'DOWNLOAD'
   | 'PRINT'
   | 'ADMIN'
 
@@ -205,6 +219,7 @@ export const ACTION_LABELS: Record<PermissionAction, string> = {
   VALIDATE: 'Valider',
   CANCEL: 'Annuler',
   EXPORT: 'Exporter',
+  DOWNLOAD: 'Télécharger',
   PRINT: 'Imprimer',
   ADMIN: 'Administrer',
 }
