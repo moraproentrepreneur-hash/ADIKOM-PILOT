@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     template: '%s · ADIKOM PILOT',
   },
   description:
-    "Système interne de gestion et de pilotage d'ADIKOM Technology & Travel.",
+    "Système interne de gestion et de pilotage d'ADIKOM TECHNOLOGIE & TRAVEL.",
   icons: { icon: '/brand/adikom-logo.png' },
   // Application interne : jamais indexée par les moteurs de recherche.
   robots: { index: false, follow: false },

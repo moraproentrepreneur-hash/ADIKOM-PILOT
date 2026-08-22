@@ -26,7 +26,7 @@ export default async function DashboardPage() {
           Bonjour {user?.firstName}
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Vue d’ensemble de l’activité d’ADIKOM Technology &amp; Travel.
+          Vue d’ensemble de l’activité d’ADIKOM TECHNOLOGIE &amp; TRAVEL.
         </p>
       </header>
 

@@ -105,7 +105,7 @@ export default function LandingPage() {
               Passer d’une gestion dispersée à une organisation pilotée.
             </h1>
             <p className="mt-6 max-w-2xl text-base text-muted sm:text-lg">
-              ADIKOM PILOT centralise les opérations d’ADIKOM Technology &amp; Travel :
+              ADIKOM PILOT centralise les opérations d’ADIKOM TECHNOLOGIE &amp; TRAVEL :
               location de véhicules, parc automobile, tiers, facturation, trésorerie et
               suivi de l’activité — dans un environnement unique, structuré et traçable.
             </p>
@@ -179,7 +179,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-3">
             <AdikomLogo size={32} />
             <p className="text-sm text-muted">
-              ADIKOM Technology &amp; Travel — Union des Comores
+              ADIKOM TECHNOLOGIE &amp; TRAVEL — Union des Comores
             </p>
           </div>
           <p className="text-xs text-muted">

@@ -47,7 +47,7 @@ export function AdikomLogo({
   const image = (
     <Image
       src="/brand/adikom-logo.webp"
-      alt="ADIKOM Technology &amp; Travel"
+      alt="ADIKOM TECHNOLOGIE &amp; TRAVEL"
       width={size}
       height={size}
       priority={priority}

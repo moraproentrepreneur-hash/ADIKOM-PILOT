@@ -27,9 +27,11 @@
     "verify": "npm run lint && npm run typecheck && npm run test && npm run build",
     "verify:referential": "node scripts/verify-referential.mjs",
     "verify:referential:ui": "node scripts/verify-referential-ui.mjs",
-    "demo:seed": "node scripts/seed-demo.mjs"
+    "demo:seed": "node scripts/seed-demo.mjs",
+    "verify:documents": "node scripts/verify-documents.mjs"
   },
   "dependencies": {
+    "@react-pdf/renderer": "^4.6.1",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3",
     "class-variance-authority": "^0.7.1",
