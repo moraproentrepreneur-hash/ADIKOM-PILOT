@@ -3,6 +3,8 @@ import type { Metadata } from 'next'
 import { Card, PageHeader } from '@/components/ui/primitives'
 import { Notice } from '@/components/ui/feedback'
 import { Tabs, type TabItem } from '@/components/ui/tabs'
+import { DocumentToolbar } from '@/components/ui/document-toolbar'
+import { ExportButton } from '@/components/ui/export-button'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { listPricingRules } from '@/features/pricing/data'
@@ -19,6 +21,14 @@ export default async function PricingPage(props: PageProps<'/location/tarificati
   const searchParams = await props.searchParams
   const tab = searchParams.onglet === 'simulation' ? 'simulation' : 'grille'
 
+  const [canExport, canDownload, canPrint] = await Promise.all([
+    can(PERMISSIONS.PRICING_EXPORT),
+    // DEC-024 : produire un document et l'imprimer sont deux capacités
+    // distinctes de la consultation, attribuables séparément.
+    can(PERMISSIONS.PRICING_DOWNLOAD),
+    can(PERMISSIONS.PRICING_PRINT),
+  ])
+
   const tabs: TabItem[] = [
     { key: 'grille', label: 'Grille standard', href: '/location/tarification' },
     { key: 'simulation', label: 'Simulation', href: '/location/tarification?onglet=simulation' },
@@ -30,6 +40,22 @@ export default async function PricingPage(props: PageProps<'/location/tarificati
       <PageHeader
         title="Tarification"
         description="Tarifs standard des véhicules et des catégories, et vérification du tarif applicable."
+        actions={
+          <>
+            {/*
+              La grille ne porte pas sur un enregistrement : son identifiant est
+              conventionnel — voir le registre des documents.
+            */}
+            <DocumentToolbar
+              type="tarification"
+              id="grille"
+              label="grille tarifaire"
+              canDownload={canDownload}
+              canPrint={canPrint}
+            />
+            {canExport && <ExportButton module="tarification" />}
+          </>
+        }
       />
 
       <Tabs items={tabs} current={tab} label="Sections de la tarification" />

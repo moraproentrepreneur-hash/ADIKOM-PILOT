@@ -57,10 +57,18 @@ const styles = StyleSheet.create({
   },
   tableCell: { fontSize: DOC_SIZES.small },
 
+  /*
+   * Pas d'italique ici.
+   *
+   * `@react-pdf/renderer` exige qu'une variante de police soit enregistrée pour
+   * CHAQUE style employé : un `fontStyle: 'italic'` sur une famille déclarée en
+   * romain seul interrompt le rendu du document entier — « Could not resolve
+   * font for Inter, fontStyle italic ». Le gris atténué suffit à marquer un
+   * texte secondaire, sans embarquer deux fichiers de police de plus.
+   */
   empty: {
     fontSize: DOC_SIZES.small,
     color: DOC_COLORS.muted,
-    fontStyle: 'italic',
     paddingVertical: 6,
   },
 

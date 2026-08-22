@@ -4,6 +4,7 @@ import { Search, Truck } from 'lucide-react'
 
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from '@/components/ui/primitives'
 import { Input, Select } from '@/components/ui/form'
+import { ExportButton } from '@/components/ui/export-button'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import {
@@ -26,9 +27,11 @@ export default async function SuppliersPage(props: PageProps<'/tiers/fournisseur
 
   const filters = { search: read('q'), status: read('statut'), type: read('type') }
 
-  const [suppliers, canCreate] = await Promise.all([
+  const [suppliers, canCreate, canExport] = await Promise.all([
     listSuppliers(filters),
     can(PERMISSIONS.SUPPLIERS_CREATE),
+    // DEC-024 : exporter est une capacité distincte de consulter.
+    can(PERMISSIONS.SUPPLIERS_EXPORT),
   ])
 
   const hasFilters = Object.values(filters).some(Boolean)
@@ -39,11 +42,19 @@ export default async function SuppliersPage(props: PageProps<'/tiers/fournisseur
         title="Fournisseurs"
         description="Partenaires mettant des véhicules ou des services à disposition d’ADIKOM."
         actions={
-          canCreate ? (
-            <ButtonLink href="/tiers/fournisseurs/nouveau" icon={Truck}>
-              Nouveau fournisseur
-            </ButtonLink>
-          ) : undefined
+          <>
+            {canExport && (
+              <ExportButton
+                module="fournisseurs"
+                filters={{ q: filters.search, statut: filters.status, type: filters.type }}
+              />
+            )}
+            {canCreate && (
+              <ButtonLink href="/tiers/fournisseurs/nouveau" icon={Truck}>
+                Nouveau fournisseur
+              </ButtonLink>
+            )}
+          </>
         }
       />
 

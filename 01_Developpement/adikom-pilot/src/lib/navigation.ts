@@ -104,12 +104,22 @@ export const NAVIGATION: NavEntry[] = [
         permission: PERMISSIONS.SUPPLIERS_VIEW,
         status: 'ready',
       },
+      /*
+       * Libellé « Partenaires », et non « Partenariats » comme le prévoit
+       * 02_Architecture_Fonctionnelle/02_Navigation.md §3.
+       *
+       * Ce qui est livré est le RÉPERTOIRE des partenaires — consultation,
+       * véhicules rattachés, fiche, export. La gestion du PARTENARIAT lui-même
+       * (conditions, contrats, projets communs) reste à construire. Annoncer
+       * « Partenariats » promettrait ce que l'écran ne fait pas ; le menu
+       * reprendra ce nom lorsqu'il le fera.
+       */
       {
-        label: 'Partenariats',
-        href: '/tiers/partenariats',
+        label: 'Partenaires',
+        href: '/tiers/partenaires',
         icon: Handshake,
         permission: PERMISSIONS.PARTNERS_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
     ],
   },

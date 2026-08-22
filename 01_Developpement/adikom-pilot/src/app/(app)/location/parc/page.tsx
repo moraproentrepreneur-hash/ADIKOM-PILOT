@@ -4,6 +4,7 @@ import { CarFront, Layers, Search } from 'lucide-react'
 
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from '@/components/ui/primitives'
 import { Input, Select } from '@/components/ui/form'
+import { ExportButton } from '@/components/ui/export-button'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import {
@@ -32,11 +33,13 @@ export default async function FleetPage(props: PageProps<'/location/parc'>) {
     origin: read('origine'),
   }
 
-  const [vehicles, categories, canCreate, canManageCategories] = await Promise.all([
+  const [vehicles, categories, canCreate, canManageCategories, canExport] = await Promise.all([
     listVehicles(filters),
     listCategories(),
     can(PERMISSIONS.FLEET_CREATE),
     can(PERMISSIONS.CATEGORIES_VIEW),
+    // DEC-024 : exporter est une capacité distincte de consulter.
+    can(PERMISSIONS.FLEET_EXPORT),
   ])
 
   const hasFilters = Object.values(filters).some(Boolean)
@@ -52,6 +55,17 @@ export default async function FleetPage(props: PageProps<'/location/parc'>) {
               <ButtonLink href="/location/parc/categories" tone="secondary" icon={Layers}>
                 Catégories
               </ButtonLink>
+            )}
+            {canExport && (
+              <ExportButton
+                module="parc"
+                filters={{
+                  q: filters.search,
+                  statut: filters.status,
+                  categorie: filters.categoryId,
+                  origine: filters.origin,
+                }}
+              />
             )}
             {canCreate && (
               <ButtonLink href="/location/parc/nouveau" icon={CarFront}>

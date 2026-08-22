@@ -7,6 +7,7 @@ import { Badge, Card, Empty, InfoRow, PageHeader } from '@/components/ui/primiti
 import { Notice } from '@/components/ui/feedback'
 import { StatusChangeForm } from '@/components/ui/status-change-form'
 import { Tabs, type TabItem } from '@/components/ui/tabs'
+import { DocumentToolbar } from '@/components/ui/document-toolbar'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate, formatDateTime } from '@/lib/dates'
@@ -56,15 +57,27 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
   const justCreated = searchParams.cree === '1'
   const justSaved = searchParams.enregistre === '1'
 
-  const [canUpdate, canStatus, canSupplier, canArchive, canDocuments, canPricing] =
-    await Promise.all([
-      can(PERMISSIONS.FLEET_UPDATE),
-      can(PERMISSIONS.FLEET_STATUS_UPDATE),
-      can(PERMISSIONS.FLEET_SUPPLIER_UPDATE),
-      can(PERMISSIONS.FLEET_ARCHIVE),
-      can(PERMISSIONS.VEHICLE_DOCUMENTS_VIEW),
-      can(PERMISSIONS.PRICING_VIEW),
-    ])
+  const [
+    canUpdate,
+    canStatus,
+    canSupplier,
+    canArchive,
+    canDocuments,
+    canPricing,
+    canDownload,
+    canPrint,
+  ] = await Promise.all([
+    can(PERMISSIONS.FLEET_UPDATE),
+    can(PERMISSIONS.FLEET_STATUS_UPDATE),
+    can(PERMISSIONS.FLEET_SUPPLIER_UPDATE),
+    can(PERMISSIONS.FLEET_ARCHIVE),
+    can(PERMISSIONS.VEHICLE_DOCUMENTS_VIEW),
+    can(PERMISSIONS.PRICING_VIEW),
+    // DEC-024 : produire un document et l'imprimer sont deux capacités
+    // distinctes de la consultation, attribuables séparément.
+    can(PERMISSIONS.FLEET_DOWNLOAD),
+    can(PERMISSIONS.FLEET_PRINT),
+  ])
 
   const tabs: TabItem[] = [
     { key: 'fiche', label: 'Fiche', href: `/location/parc/${id}` },
@@ -117,15 +130,26 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
         title={`${vehicle.brand} ${vehicle.model}`}
         description={vehicle.plate ?? undefined}
         actions={
-          canUpdate && !editing && !retired ? (
-            <Link
-              href={`/location/parc/${id}?mode=edition`}
-              className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
-            >
-              <Pencil className="size-4" aria-hidden />
-              Modifier
-            </Link>
-          ) : undefined
+          <>
+            {/* Un véhicule retiré reste documentable : sa fiche fait foi pour
+                l'historique, et c'est souvent à ce moment qu'on l'imprime. */}
+            <DocumentToolbar
+              type="vehicules"
+              id={id}
+              label={`fiche de ${vehicle.brand} ${vehicle.model}`}
+              canDownload={canDownload}
+              canPrint={canPrint}
+            />
+            {canUpdate && !editing && !retired && (
+              <Link
+                href={`/location/parc/${id}?mode=edition`}
+                className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
+              >
+                <Pencil className="size-4" aria-hidden />
+                Modifier
+              </Link>
+            )}
+          </>
         }
       />
 
@@ -226,10 +250,17 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
                     <Empty />
                   )}
                 </InfoRow>
-                {/* Le partenaire n'est pas cliquable : aucune fiche partenaire
-                    n'existe encore, et un lien mort vaut moins qu'un libellé. */}
                 <InfoRow label="Partenaire">
-                  {vehicle.partnerLabel ?? <Empty />}
+                  {vehicle.partnerId && vehicle.partnerLabel ? (
+                    <Link
+                      href={`/tiers/partenaires/${vehicle.partnerId}`}
+                      className="text-adikom-500 hover:underline"
+                    >
+                      {vehicle.partnerLabel}
+                    </Link>
+                  ) : (
+                    <Empty />
+                  )}
                 </InfoRow>
                 <InfoRow label="Entrée dans le parc">
                   {formatDate(vehicle.entryDate) ?? <Empty />}

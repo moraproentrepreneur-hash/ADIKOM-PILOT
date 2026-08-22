@@ -202,6 +202,8 @@ export type VehicleFilters = {
   status?: string
   categoryId?: string
   supplierId?: string
+  /** Rattachement à un partenaire — distinct de `supplierId` (DEC-021). */
+  partnerId?: string
   origin?: string
 }
 
@@ -225,6 +227,7 @@ export async function listVehicles(filters: VehicleFilters = {}): Promise<Vehicl
   if (filters.status) query = query.eq('status', filters.status)
   if (filters.categoryId) query = query.eq('category_id', filters.categoryId)
   if (filters.supplierId) query = query.eq('current_supplier_id', filters.supplierId)
+  if (filters.partnerId) query = query.eq('partner_id', filters.partnerId)
   if (filters.origin) query = query.eq('origin', filters.origin)
 
   const { data, error } = await query.order('brand').order('model').limit(300)

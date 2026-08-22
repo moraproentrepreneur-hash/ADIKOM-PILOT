@@ -4,6 +4,7 @@ import { Building2, Search, UserPlus, Users } from 'lucide-react'
 
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from '@/components/ui/primitives'
 import { Input, Select } from '@/components/ui/form'
+import { ExportButton } from '@/components/ui/export-button'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import {
@@ -32,9 +33,11 @@ export default async function ClientsPage(props: PageProps<'/tiers/clients'>) {
     type: read('type'),
   }
 
-  const [clients, canCreate] = await Promise.all([
+  const [clients, canCreate, canExport] = await Promise.all([
     listClients(filters),
     can(PERMISSIONS.CLIENTS_CREATE),
+    // DEC-024 : exporter est une capacité distincte de consulter.
+    can(PERMISSIONS.CLIENTS_EXPORT),
   ])
 
   const hasFilters = Object.values(filters).some(Boolean)
@@ -45,11 +48,19 @@ export default async function ClientsPage(props: PageProps<'/tiers/clients'>) {
         title="Clients"
         description="Particuliers et entreprises auxquels ADIKOM loue des véhicules."
         actions={
-          canCreate ? (
-            <ButtonLink href="/tiers/clients/nouveau" icon={UserPlus}>
-              Nouveau client
-            </ButtonLink>
-          ) : undefined
+          <>
+            {canExport && (
+              <ExportButton
+                module="clients"
+                filters={{ q: filters.search, statut: filters.status, type: filters.type }}
+              />
+            )}
+            {canCreate && (
+              <ButtonLink href="/tiers/clients/nouveau" icon={UserPlus}>
+                Nouveau client
+              </ButtonLink>
+            )}
+          </>
         }
       />
 

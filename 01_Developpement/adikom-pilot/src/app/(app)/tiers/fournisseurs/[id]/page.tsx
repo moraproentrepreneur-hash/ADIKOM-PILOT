@@ -7,6 +7,7 @@ import { Badge, Card, Empty, EmptyState, InfoRow, PageHeader } from '@/component
 import { Notice } from '@/components/ui/feedback'
 import { StatusChangeForm } from '@/components/ui/status-change-form'
 import { Tabs, type TabItem } from '@/components/ui/tabs'
+import { DocumentToolbar } from '@/components/ui/document-toolbar'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate, formatDateTime } from '@/lib/dates'
@@ -39,13 +40,18 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
   const justCreated = searchParams.cree === '1'
   const justSaved = searchParams.enregistre === '1'
 
-  const [canUpdate, canArchive, canViewBank, canUpdateBank, canViewFleet] = await Promise.all([
-    can(PERMISSIONS.SUPPLIERS_UPDATE),
-    can(PERMISSIONS.SUPPLIERS_ARCHIVE),
-    can(PERMISSIONS.SUPPLIERS_BANK_VIEW),
-    can(PERMISSIONS.SUPPLIERS_BANK_UPDATE),
-    can(PERMISSIONS.FLEET_VIEW),
-  ])
+  const [canUpdate, canArchive, canViewBank, canUpdateBank, canViewFleet, canDownload, canPrint] =
+    await Promise.all([
+      can(PERMISSIONS.SUPPLIERS_UPDATE),
+      can(PERMISSIONS.SUPPLIERS_ARCHIVE),
+      can(PERMISSIONS.SUPPLIERS_BANK_VIEW),
+      can(PERMISSIONS.SUPPLIERS_BANK_UPDATE),
+      can(PERMISSIONS.FLEET_VIEW),
+      // DEC-024 : produire un document et l'imprimer sont deux capacités
+      // distinctes de la consultation, attribuables séparément.
+      can(PERMISSIONS.SUPPLIERS_DOWNLOAD),
+      can(PERMISSIONS.SUPPLIERS_PRINT),
+    ])
 
   const tabs: TabItem[] = [
     { key: 'informations', label: 'Informations', href: `/tiers/fournisseurs/${id}` },
@@ -103,15 +109,24 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
         title={supplier.legalName}
         description={supplier.tradeName ?? undefined}
         actions={
-          canUpdate && !editing ? (
-            <Link
-              href={`/tiers/fournisseurs/${id}?mode=edition`}
-              className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
-            >
-              <Pencil className="size-4" aria-hidden />
-              Modifier
-            </Link>
-          ) : undefined
+          <>
+            <DocumentToolbar
+              type="fournisseurs"
+              id={id}
+              label={`fiche de ${supplier.legalName}`}
+              canDownload={canDownload}
+              canPrint={canPrint}
+            />
+            {canUpdate && !editing && (
+              <Link
+                href={`/tiers/fournisseurs/${id}?mode=edition`}
+                className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
+              >
+                <Pencil className="size-4" aria-hidden />
+                Modifier
+              </Link>
+            )}
+          </>
         }
       />
 

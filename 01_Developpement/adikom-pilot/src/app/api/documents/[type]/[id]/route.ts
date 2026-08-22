@@ -29,6 +29,12 @@ import {
  * directement. Masquer les boutons n'est qu'un confort
  * (05_Regles_Metier/05_Permissions.md §85).
  *
+ * La réciproque est vraie aussi, et se cumule : `<module>.view` est exigé EN
+ * PLUS. Sans lui, RLS rendrait de toute façon la ressource illisible et la
+ * route répondrait « introuvable » ; la vérifier explicitement transforme cette
+ * absence silencieuse en refus tracé, ce qui vaut mieux pour qui relit le
+ * journal.
+ *
  * Seul le téléchargement est journalisé : il produit un fichier qui quitte le
  * système. L'aperçu et l'impression montrent ce que l'écran montre déjà, et les
  * inscrire noierait le journal (05_Regles_Metier/06_Audit.md §80). Les refus,
@@ -38,6 +44,31 @@ import {
 function parseMode(value: string | null): DocumentMode {
   if (value === 'download' || value === 'print') return value
   return 'preview'
+}
+
+/**
+ * Échec de production d'un document.
+ *
+ * L'utilisateur reçoit un message fonctionnel, sans trace ni détail interne
+ * (CLAUDE.md §43). Le journal serveur, lui, conserve de quoi identifier la
+ * panne sans avoir à la reproduire : le type de document, l'étape qui a cédé,
+ * et l'erreur réelle.
+ *
+ * Ce niveau de détail n'est pas du confort. Un « Could not resolve font for
+ * Inter, fontStyle italic » réduit à « le document n'a pas pu être produit »
+ * coûte une journée de recherche ; écrit dans le journal, il se corrige en
+ * quelques minutes.
+ */
+function failure(stage: string, type: string, id: string, mode: DocumentMode, error: unknown) {
+  const cause = error instanceof Error ? error : new Error(String(error))
+
+  console.error(
+    `[documents] ÉCHEC — type=${type} id=${id} mode=${mode} étape="${stage}" : ` +
+      `${cause.name}: ${cause.message}`
+  )
+  if (cause.stack) console.error(cause.stack)
+
+  return NextResponse.json({ error: 'Le document n’a pas pu être produit.' }, { status: 500 })
 }
 
 export async function GET(
@@ -58,14 +89,16 @@ export async function GET(
 
   const mode = parseMode(new URL(request.url).searchParams.get('mode'))
 
-  const [mayDownload, mayPrint] = await Promise.all([
+  const [mayView, mayDownload, mayPrint] = await Promise.all([
+    can(definition.viewPermission),
     can(definition.downloadPermission),
     can(definition.printPermission),
   ])
 
-  const allowed =
-    user.isSuperAdmin ||
-    (mode === 'download' ? mayDownload : mode === 'print' ? mayPrint : mayDownload || mayPrint)
+  const capable =
+    mode === 'download' ? mayDownload : mode === 'print' ? mayPrint : mayDownload || mayPrint
+
+  const allowed = user.isSuperAdmin || (mayView && capable)
 
   if (!allowed) {
     // Un refus sur une capacité documentaire est un événement de sécurité :
@@ -87,8 +120,7 @@ export async function GET(
   try {
     built = await definition.build(id)
   } catch (error) {
-    console.error(`[documents] ${type}/${id} : ${(error as Error).message}`)
-    return NextResponse.json({ error: 'Le document n’a pas pu être produit.' }, { status: 500 })
+    return failure('construction des données', type, id, mode, error)
   }
 
   // Enregistrement inexistant ou invisible pour ce lecteur : même réponse dans
@@ -101,8 +133,7 @@ export async function GET(
   try {
     pdf = await renderDocument(built.element)
   } catch (error) {
-    console.error(`[documents] rendu ${type}/${id} : ${(error as Error).message}`)
-    return NextResponse.json({ error: 'Le document n’a pas pu être produit.' }, { status: 500 })
+    return failure('rendu PDF', type, id, mode, error)
   }
 
   /*

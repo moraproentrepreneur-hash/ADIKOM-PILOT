@@ -1,0 +1,255 @@
+import 'server-only'
+
+import { PERMISSIONS, type PermissionCode } from '@/lib/auth/permissions'
+import { can } from '@/lib/auth/dal'
+import { dataset, toExcelDate, type ExportDataset } from './workbook'
+
+import {
+  listClients,
+  STATUS_LABELS as CLIENT_STATUS,
+  TYPE_LABELS as CLIENT_TYPE,
+} from '@/features/clients/data'
+import {
+  listSuppliers,
+  STATUS_LABELS as SUPPLIER_STATUS,
+  TYPE_LABELS as SUPPLIER_TYPE,
+} from '@/features/suppliers/data'
+import { listPartners, STATUS_LABELS as PARTNER_STATUS } from '@/features/partners/data'
+import {
+  listCategories,
+  listVehicles,
+  ORIGIN_LABELS,
+  STATUS_LABELS as VEHICLE_STATUS,
+} from '@/features/fleet/data'
+import { listPricingRules } from '@/features/pricing/data'
+import { UNIT_LABELS } from '@/features/pricing/constants'
+
+/**
+ * Registre des exports.
+ *
+ * Un module = une entrée : sa permission, ses colonnes, sa façon de charger les
+ * lignes. La route, le contrôle d'accès et la fabrication du classeur ne
+ * changent jamais.
+ *
+ * DEC-024 : exporter est une capacité distincte de consulter. Chaque entrée
+ * porte donc sa propre permission d'export, jamais celle de lecture.
+ *
+ * Les chargements réutilisent les fonctions des modules, qui interrogent la
+ * base avec la session de l'appelant : un export ne peut pas contenir ce que
+ * l'écran ne montrerait pas.
+ */
+
+export type ExportDefinition = {
+  /** Titre du classeur et base du nom de fichier. */
+  title: string
+  /**
+   * Droit de consulter la liste.
+   *
+   * Exigé EN PLUS de la permission d'export, jamais à sa place : on n'exporte
+   * pas ce qu'on n'a pas le droit de voir. Sans ce contrôle, un compte doté du
+   * seul `export` recevrait un classeur vide — RLS ayant tout filtré — et
+   * croirait la liste vide plutôt que l'accès refusé.
+   */
+  viewPermission: PermissionCode
+  permission: PermissionCode
+  /** Entité journalisée à l'audit. */
+  entityType: string
+  moduleCode: string
+  build: (filters: Record<string, string>) => Promise<ExportDataset>
+}
+
+export const EXPORTS: Record<string, ExportDefinition> = {
+  clients: {
+    title: 'Clients',
+    viewPermission: PERMISSIONS.CLIENTS_VIEW,
+    permission: PERMISSIONS.CLIENTS_EXPORT,
+    entityType: 'clients',
+    moduleCode: 'parties',
+    async build(filters) {
+      const rows = await listClients({
+        search: filters.q,
+        status: filters.statut,
+        type: filters.type,
+      })
+
+      return dataset(rows, [
+        { header: 'Identifiant', width: 14, value: (r) => r.clientNo },
+        { header: 'Client', width: 34, value: (r) => r.displayName },
+        { header: 'Nom commercial', width: 26, value: (r) => r.tradeName },
+        { header: 'Type', width: 14, value: (r) => CLIENT_TYPE[r.type] },
+        { header: 'Téléphone', width: 20, value: (r) => r.phone },
+        { header: 'Email', width: 30, value: (r) => r.email },
+        { header: 'Ville', width: 18, value: (r) => r.city },
+        { header: 'Statut', width: 14, value: (r) => CLIENT_STATUS[r.status] },
+        { header: 'Créé le', width: 14, format: 'date', value: (r) => toExcelDate(r.createdAt) },
+      ])
+    },
+  },
+
+  fournisseurs: {
+    title: 'Fournisseurs',
+    viewPermission: PERMISSIONS.SUPPLIERS_VIEW,
+    permission: PERMISSIONS.SUPPLIERS_EXPORT,
+    entityType: 'suppliers',
+    moduleCode: 'parties',
+    async build(filters) {
+      const rows = await listSuppliers({
+        search: filters.q,
+        status: filters.statut,
+        type: filters.type,
+      })
+
+      /*
+       * Aucune coordonnée bancaire ici, quelles que soient les permissions du
+       * lecteur : un fichier tableur circule, se transfère et se conserve hors
+       * du système. Ces données ne se consultent que sur la fiche, où l'accès
+       * reste tracé (Fournisseurs §44).
+       */
+      return dataset(rows, [
+        { header: 'Identifiant', width: 14, value: (r) => r.supplierNo },
+        { header: 'Fournisseur', width: 34, value: (r) => r.legalName },
+        { header: 'Nom commercial', width: 26, value: (r) => r.tradeName },
+        { header: 'Type', width: 26, value: (r) => SUPPLIER_TYPE[r.type] },
+        { header: 'Contact', width: 24, value: (r) => r.contactName },
+        { header: 'Téléphone', width: 20, value: (r) => r.phone },
+        { header: 'Email', width: 30, value: (r) => r.email },
+        { header: 'Ville', width: 18, value: (r) => r.city },
+        { header: 'Véhicules', width: 11, format: 'number', value: (r) => r.vehicleCount },
+        { header: 'Statut', width: 14, value: (r) => SUPPLIER_STATUS[r.status] },
+      ])
+    },
+  },
+
+  partenaires: {
+    title: 'Partenaires',
+    viewPermission: PERMISSIONS.PARTNERS_VIEW,
+    permission: PERMISSIONS.PARTNERS_EXPORT,
+    entityType: 'partners',
+    moduleCode: 'parties',
+    async build(filters) {
+      const rows = await listPartners({ search: filters.q, status: filters.statut })
+
+      return dataset(rows, [
+        { header: 'Identifiant', width: 14, value: (r) => r.partnerNo },
+        { header: 'Partenaire', width: 34, value: (r) => r.legalName },
+        { header: 'Nom commercial', width: 26, value: (r) => r.tradeName },
+        { header: 'Contact', width: 24, value: (r) => r.contactName },
+        { header: 'Téléphone', width: 20, value: (r) => r.phone },
+        { header: 'Email', width: 30, value: (r) => r.email },
+        { header: 'Ville', width: 18, value: (r) => r.city },
+        { header: 'Véhicules', width: 11, format: 'number', value: (r) => r.vehicleCount },
+        { header: 'Statut', width: 14, value: (r) => PARTNER_STATUS[r.status] },
+      ])
+    },
+  },
+
+  parc: {
+    title: 'Parc automobile',
+    viewPermission: PERMISSIONS.FLEET_VIEW,
+    permission: PERMISSIONS.FLEET_EXPORT,
+    entityType: 'vehicles',
+    moduleCode: 'rental',
+    async build(filters) {
+      const rows = await listVehicles({
+        search: filters.q,
+        status: filters.statut,
+        categoryId: filters.categorie,
+        origin: filters.origine,
+      })
+
+      /*
+       * Identification, rattachement et situation : de quoi tenir un inventaire
+       * du parc. Aucune donnée financière — la valeur d'un véhicule, son loyer
+       * fournisseur et sa rentabilité relèvent d'autres permissions, et n'ont
+       * rien à faire dans un export du référentiel.
+       */
+      return dataset(rows, [
+        { header: 'Identifiant', width: 14, value: (r) => r.vehicleNo },
+        { header: 'Immatriculation', width: 18, value: (r) => r.plate },
+        { header: 'Marque', width: 18, value: (r) => r.brand },
+        { header: 'Modèle', width: 22, value: (r) => r.model },
+        { header: 'Année', width: 9, format: 'number', value: (r) => r.modelYear },
+        { header: 'Catégorie', width: 22, value: (r) => r.categoryLabel },
+        { header: 'Origine', width: 26, value: (r) => ORIGIN_LABELS[r.origin] },
+        {
+          header: 'Fournisseur / Partenaire',
+          width: 34,
+          value: (r) => r.supplierLabel ?? r.partnerLabel,
+        },
+        { header: 'Kilométrage', width: 14, format: 'number', value: (r) => r.mileage },
+        { header: 'Statut', width: 16, value: (r) => VEHICLE_STATUS[r.status] },
+      ])
+    },
+  },
+
+  categories: {
+    title: 'Catégories de véhicules',
+    viewPermission: PERMISSIONS.CATEGORIES_VIEW,
+    permission: PERMISSIONS.CATEGORIES_EXPORT,
+    entityType: 'vehicle_categories',
+    moduleCode: 'rental',
+    async build() {
+      // Catégories archivées comprises : des véhicules et des tarifs y font
+      // encore référence, et un inventaire qui les tait est incomplet.
+      const rows = await listCategories(true)
+
+      return dataset(rows, [
+        { header: 'Code', width: 16, value: (r) => r.code },
+        { header: 'Libellé', width: 32, value: (r) => r.label },
+        { header: 'Description', width: 46, value: (r) => r.description },
+        { header: 'Véhicules', width: 11, format: 'number', value: (r) => r.vehicleCount },
+        { header: 'État', width: 14, value: (r) => (r.isActive ? 'Active' : 'Archivée') },
+      ])
+    },
+  },
+
+  tarification: {
+    title: 'Grille tarifaire',
+    viewPermission: PERMISSIONS.PRICING_VIEW,
+    permission: PERMISSIONS.PRICING_EXPORT,
+    entityType: 'pricing_rules',
+    moduleCode: 'rental',
+    async build() {
+      /*
+       * Les conditions consenties à un client sont une information distincte du
+       * barème : sans `parties.clients.pricing.view`, l'export se limite aux
+       * tarifs standard.
+       *
+       * RLS n'aurait pas suffi ici — `pricing_rules` est lisible dans son
+       * ensemble par qui consulte la tarification. La restriction est donc
+       * posée à la construction, comme sur la fiche client.
+       */
+      const mayReadClientPricing = await can(PERMISSIONS.CLIENTS_PRICING_VIEW)
+
+      const rows = await listPricingRules(
+        mayReadClientPricing ? { includeInactive: true } : { clientId: null, includeInactive: true }
+      )
+
+      return dataset(
+        rows,
+        [
+          {
+            header: 'Portée',
+            width: 30,
+            value: (r) => r.vehicleLabel ?? r.categoryLabel ?? 'Tous les véhicules',
+          },
+          { header: 'Client', width: 32, value: (r) => r.clientLabel ?? 'Tous les clients' },
+          { header: 'Montant', width: 16, format: 'amount', value: (r) => r.amount },
+          { header: 'Unité', width: 12, value: (r) => (r.unit ? UNIT_LABELS[r.unit] : null) },
+          { header: 'Remise %', width: 11, format: 'number', value: (r) => r.discountPercent },
+          { header: 'Du', width: 13, format: 'date', value: (r) => toExcelDate(r.validFrom) },
+          { header: 'Au', width: 13, format: 'date', value: (r) => toExcelDate(r.validTo) },
+          { header: 'Conditions', width: 34, value: (r) => r.conditions },
+          { header: 'État', width: 13, value: (r) => (r.isActive ? 'Actif' : 'Désactivé') },
+        ],
+        mayReadClientPricing
+          ? 'Tarifs standard et conditions préférentielles'
+          : 'Tarifs standard'
+      )
+    },
+  },
+}
+
+export function getExportDefinition(module: string): ExportDefinition | null {
+  return Object.hasOwn(EXPORTS, module) ? EXPORTS[module] : null
+}
