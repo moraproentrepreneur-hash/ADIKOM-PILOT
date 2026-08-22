@@ -116,6 +116,13 @@ export function DocumentShell({
     .filter(Boolean)
     .join('   ')
 
+  /*
+   * Ville et pays sont assemblés avant d'être écrits, et non concaténés à la
+   * volée : une ville absente donnait « ADIKOM …, Comores », avec une virgule
+   * introduite par rien.
+   */
+  const place = [identity.city, identity.country].filter(Boolean).join(', ')
+
   return (
     <Document
       title={reference ? `${title} ${reference}` : title}
@@ -165,9 +172,7 @@ export function DocumentShell({
 
         <View style={styles.footer} fixed>
           <Text style={styles.footerText}>
-            {identity.legalName}
-            {identity.city ? ` — ${identity.city}` : ''}
-            {identity.country ? `, ${identity.country}` : ''}
+            {place ? `${identity.legalName} — ${place}` : identity.legalName}
           </Text>
           <Text
             style={styles.footerText}
