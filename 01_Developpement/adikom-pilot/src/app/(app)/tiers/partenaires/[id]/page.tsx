@@ -5,12 +5,19 @@ import { ArrowLeft, CarFront, Pencil } from 'lucide-react'
 
 import { Badge, Card, Empty, EmptyState, InfoRow, PageHeader } from '@/components/ui/primitives'
 import { Notice } from '@/components/ui/feedback'
+import { StatusChangeForm } from '@/components/ui/status-change-form'
 import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { DocumentToolbar } from '@/components/ui/document-toolbar'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate, formatDateTime } from '@/lib/dates'
-import { getPartnerDetail, STATUS_LABELS, STATUS_TONES } from '@/features/partners/data'
+import {
+  getPartnerDetail,
+  STATUS_HINTS,
+  STATUS_LABELS,
+  STATUS_TONES,
+} from '@/features/partners/data'
+import { setPartnerStatusAction } from '@/features/partners/actions'
 import { PartnerForm } from '@/features/partners/partner-form'
 import {
   listVehicles,
@@ -41,8 +48,12 @@ export default async function PartnerDetailPage(props: PageProps<'/tiers/partena
   const justCreated = searchParams.cree === '1'
   const justSaved = searchParams.enregistre === '1'
 
-  const [canUpdate, canViewFleet, canDownload, canPrint] = await Promise.all([
+  const [canUpdate, canArchive, canViewFleet, canDownload, canPrint] = await Promise.all([
     can(PERMISSIONS.PARTNERS_UPDATE),
+    // DEC-024 : archiver est une capacité distincte de modifier. Un utilisateur
+    // peut légitimement corriger une fiche sans avoir le droit de la retirer
+    // des listes de sélection.
+    can(PERMISSIONS.PARTNERS_ARCHIVE),
     can(PERMISSIONS.FLEET_VIEW),
     // DEC-024 : produire un document et l'imprimer sont deux capacités
     // distinctes de la consultation, attribuables séparément.
@@ -183,6 +194,23 @@ export default async function PartnerDetailPage(props: PageProps<'/tiers/partena
                 <InfoRow label="Modifiée le">{formatDateTime(partner.updatedAt)}</InfoRow>
               </dl>
             </Card>
+
+            {canArchive && (
+              <Card
+                title="Statut du partenaire"
+                description="Seul un partenaire actif peut recevoir de nouveaux véhicules."
+              >
+                <StatusChangeForm
+                  action={setPartnerStatusAction}
+                  entityId={id}
+                  entityField="partnerId"
+                  currentStatus={partner.status}
+                  labels={STATUS_LABELS}
+                  hints={STATUS_HINTS}
+                  reasonPlaceholder="Fin de partenariat, inactivité, décision interne…"
+                />
+              </Card>
+            )}
 
             <Card title="Périmètre actuel">
               <p className="text-sm text-muted">

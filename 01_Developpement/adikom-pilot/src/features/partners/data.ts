@@ -16,7 +16,7 @@ import type { PartnerStatus } from './constants'
  * la barrière au niveau des données.
  */
 
-export { STATUS_LABELS, STATUS_TONES } from './constants'
+export { STATUS_HINTS, STATUS_LABELS, STATUS_TONES } from './constants'
 export type { PartnerStatus } from './constants'
 
 export type PartnerListItem = {

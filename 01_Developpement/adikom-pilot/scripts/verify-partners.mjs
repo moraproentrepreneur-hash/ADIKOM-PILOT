@@ -66,6 +66,9 @@ const PROFILES = [
   { key: 'view', permissions: ['parties.partners.view'] },
   { key: 'create', permissions: ['parties.partners.view', 'parties.partners.create'] },
   { key: 'update', permissions: ['parties.partners.view', 'parties.partners.update'] },
+  { key: 'archive', permissions: ['parties.partners.view', 'parties.partners.archive'] },
+  // Attribution incohérente, volontairement éprouvée : archiver sans voir.
+  { key: 'archiveonly', permissions: ['parties.partners.archive'] },
 ]
 
 async function createProfile(admin, profile) {
@@ -168,17 +171,25 @@ async function writeAsUser(account, url, anonKey, operation, partnerId) {
 
   if (signInError) throw new Error(`session ${account.username} : ${signInError.message}`)
 
-  const result =
-    operation === 'insert'
-      ? await client
-          .from('partners')
-          .insert({ partner_no: `PAR-RLS-${STAMP}`, legal_name: `${TEST_NAME} RLS` })
-          .select('id')
-      : await client
-          .from('partners')
-          .update({ legal_name: `${TEST_NAME} DÉTOURNÉ` })
-          .eq('id', partnerId)
-          .select('id')
+  const operations = {
+    insert: () =>
+      client
+        .from('partners')
+        .insert({ partner_no: `PAR-RLS-${STAMP}`, legal_name: `${TEST_NAME} RLS` })
+        .select('id'),
+    update: () =>
+      client
+        .from('partners')
+        .update({ legal_name: `${TEST_NAME} DÉTOURNÉ` })
+        .eq('id', partnerId)
+        .select('id'),
+    status: () =>
+      client.from('partners').update({ status: 'ARCHIVED' }).eq('id', partnerId).select('id'),
+    select: () => client.from('partners').select('id').eq('id', partnerId),
+    delete: () => client.from('partners').delete().eq('id', partnerId).select('id'),
+  }
+
+  const result = await operations[operation]()
 
   await client.auth.signOut()
 
@@ -257,6 +268,11 @@ async function main() {
         'Le mode édition ne s’ouvre pas par URL'
       )
 
+      check(
+        (await page.getByText('Statut du partenaire').count()) === 0,
+        'Bloc « Statut du partenaire » absent : archiver n’est pas inclus dans voir'
+      )
+
       await context.close()
 
       // La base, si l'appel contourne entièrement l'interface.
@@ -265,6 +281,13 @@ async function main() {
 
       const update = await writeAsUser(accounts.view, url, anonKey, 'update', demo.id)
       check(update.rows === 0, 'RLS refuse la modification', update.error?.code ?? 'aucune ligne')
+
+      const status = await writeAsUser(accounts.view, url, anonKey, 'status', demo.id)
+      check(
+        status.rows === 0,
+        'RLS refuse le changement de statut',
+        status.error?.code ?? 'aucune ligne'
+      )
     }
 
     /* ------------------------------------------------------------------ */
@@ -384,6 +407,132 @@ async function main() {
         'RLS refuse la création à un compte qui n’a que « modifier »',
         insert.error?.code ?? 'aucune ligne'
       )
+    }
+
+    /* ------------------------------------------------------------------ */
+    console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('CAS 4 — VIEW + ARCHIVE : archiver, sans pouvoir modifier\n')
+
+    {
+      const { context, page } = await signIn(browser, base, accounts.archive)
+
+      await page.goto(`${base}/tiers/partenaires/${createdId}`, { waitUntil: 'load' })
+      check(
+        (await page.getByText('Statut du partenaire').count()) >= 1,
+        'Bloc « Statut du partenaire » présent'
+      )
+      check(
+        (await page.getByRole('link', { name: 'Modifier' }).count()) === 0,
+        'Archiver n’emporte pas modifier : bouton « Modifier » absent'
+      )
+
+      // La conséquence est annoncée AVANT validation : c'est la confirmation
+      // retenue par le projet pour les changements d'état.
+      await page.selectOption('select[name="status"]', 'ARCHIVED')
+      check(
+        (await page.getByText('sort des listes de sélection', { exact: false }).count()) >= 1,
+        'La conséquence de l’archivage est annoncée avant validation'
+      )
+
+      await page.fill('input[name="reason"]', 'Recette : fin de partenariat')
+      await submitForm(page, 'Appliquer le changement')
+      await page.waitForTimeout(2500)
+
+      const { data: archived } = await admin
+        .from('partners')
+        .select('status, status_reason, status_changed_at, status_changed_by')
+        .eq('id', createdId)
+        .maybeSingle()
+
+      check(archived?.status === 'ARCHIVED', 'Le partenaire est archivé en base', archived?.status)
+      check(
+        archived?.status_reason === 'Recette : fin de partenariat',
+        'Le motif est conservé sur la fiche'
+      )
+      check(Boolean(archived?.status_changed_at), 'La date du changement est conservée')
+      check(
+        archived?.status_changed_by === accounts.archive.id,
+        'L’auteur du changement est conservé'
+      )
+
+      // La fiche subsiste : archiver n'est pas supprimer.
+      await page.goto(`${base}/tiers/partenaires/${createdId}`, { waitUntil: 'load' })
+      check(
+        (await page.getByText(TEST_NAME, { exact: false }).count()) >= 1,
+        'La fiche reste consultable après archivage'
+      )
+
+      // La liste distingue l'état archivé selon la convention existante.
+      await page.goto(`${base}/tiers/partenaires?statut=ARCHIVED`, { waitUntil: 'load' })
+      check(
+        (await page.getByText(TEST_NAME, { exact: false }).count()) >= 1,
+        'La liste identifie les partenaires archivés',
+        'filtre statut=ARCHIVED'
+      )
+
+      await context.close()
+
+      // Journal d'audit : le motif y est porté, indépendamment de la ligne.
+      const { data: journal } = await admin
+        .from('audit_log')
+        .select('action, entity_type, reason')
+        .eq('entity_type', 'partners')
+        .eq('entity_id', createdId)
+        .eq('action', 'STATUS_CHANGE')
+
+      check(
+        (journal ?? []).some((e) => e.reason === 'Recette : fin de partenariat'),
+        'Le changement de statut est journalisé avec son motif',
+        `${(journal ?? []).length} entrée(s) STATUS_CHANGE`
+      )
+
+      // Un partenaire ne se supprime pas, même avec le droit d'archiver.
+      const removal = await writeAsUser(accounts.archive, url, anonKey, 'delete', createdId)
+      check(
+        removal.rows === 0,
+        'La suppression reste impossible depuis l’application',
+        removal.error?.code ?? 'aucune ligne'
+      )
+
+      // Un partenaire archivé ne peut plus recevoir de véhicule : il sort des
+      // options de rattachement, qui ne retiennent que les partenaires actifs.
+      const { data: selectable } = await admin
+        .from('partners')
+        .select('id')
+        .eq('status', 'ACTIVE')
+        .eq('id', createdId)
+
+      check(
+        (selectable ?? []).length === 0,
+        'Le partenaire archivé sort des listes de sélection'
+      )
+    }
+
+    /* ------------------------------------------------------------------ */
+    console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('CAS 5 — ARCHIVE sans VIEW : attribution incohérente, aucun contournement\n')
+
+    {
+      const { context, page } = await signIn(browser, base, accounts.archiveonly)
+
+      await page.goto(`${base}/tiers/partenaires`, { waitUntil: 'load' })
+      check(
+        page.url().includes('/acces-refuse'),
+        'Liste refusée sans « voir »',
+        page.url().replace(base, '')
+      )
+
+      await page.goto(`${base}/tiers/partenaires/${demo.id}`, { waitUntil: 'load' })
+      check(
+        page.url().includes('/acces-refuse'),
+        'Fiche refusée sans « voir »',
+        page.url().replace(base, '')
+      )
+
+      await context.close()
+
+      const read = await writeAsUser(accounts.archiveonly, url, anonKey, 'select', demo.id)
+      check(read.rows === 0, 'RLS ne laisse rien lire sans « voir »', 'aucune ligne')
     }
 
     /* ------------------------------------------------------------------ */

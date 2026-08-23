@@ -168,3 +168,77 @@ async function updatePartnerInner(formData: FormData): Promise<PartnerFormState>
   revalidatePath(`/tiers/partenaires/${partnerId}`)
   redirect(`/tiers/partenaires/${partnerId}?enregistre=1`)
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Statut — suspension et archivage                                           */
+/* -------------------------------------------------------------------------- */
+
+const STATUS_VALUES = ['ACTIVE', 'INACTIVE', 'SUSPENDED', 'ARCHIVED'] as const
+
+/**
+ * Change le statut d'un partenaire.
+ *
+ * ARCHIVER N'EST PAS MODIFIER.
+ *
+ * La policy RLS `partners_update` accepte l'une OU l'autre des deux
+ * permissions : c'est la garde serveur qui exige celle correspondant à l'action
+ * réellement demandée — ici `parties.partners.archive`, jamais `.update`. Même
+ * répartition que pour les clients et les fournisseurs, où elle est inscrite en
+ * commentaire de la migration 018.
+ *
+ * Un partenaire ne se supprime pas : le trigger `partners_no_delete` refuse
+ * toute suppression à un utilisateur authentifié (CLAUDE.md §22, DEC-020). Ce
+ * changement de statut est donc le seul retrait possible depuis l'application.
+ */
+export async function setPartnerStatusAction(
+  prevState: PartnerFormState,
+  formData: FormData
+): Promise<PartnerFormState> {
+  return guarded('partenaires:statut', () => setPartnerStatusInner(formData))
+}
+
+async function setPartnerStatusInner(formData: FormData): Promise<PartnerFormState> {
+  const actor = await requirePermission(PERMISSIONS.PARTNERS_ARCHIVE)
+
+  const partnerId = readText(formData, 'partnerId')
+  const status = readText(formData, 'status')
+  const reason = orNull(readText(formData, 'reason'))
+
+  if (!partnerId || !STATUS_VALUES.includes(status as (typeof STATUS_VALUES)[number])) {
+    return { error: 'Opération invalide.' }
+  }
+
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase
+    .from('partners')
+    .update({
+      status,
+      status_reason: reason,
+      status_changed_at: new Date().toISOString(),
+      status_changed_by: actor.id,
+    })
+    .eq('id', partnerId)
+
+  if (error) throw new Error(error.message)
+
+  /*
+   * Le trigger `partners_audit` journalise déjà l'avant et l'après. Cette
+   * entrée-ci porte le MOTIF, que la ligne modifiée ne conserve qu'à l'état
+   * courant : sans elle, la raison du dernier changement écraserait la
+   * précédente (05_Regles_Metier/06_Audit.md).
+   */
+  if (reason) {
+    await supabase.rpc('log_audit', {
+      p_action: 'STATUS_CHANGE',
+      p_entity_type: 'partners',
+      p_entity_id: partnerId,
+      p_module_code: 'parties',
+      p_reason: reason,
+    })
+  }
+
+  revalidatePath('/tiers/partenaires')
+  revalidatePath(`/tiers/partenaires/${partnerId}`)
+  return { success: 'Le statut du partenaire a été mis à jour.' }
+}
