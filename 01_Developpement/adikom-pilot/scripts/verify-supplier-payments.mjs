@@ -70,6 +70,8 @@ const PROFILES = [
       'parties.suppliers.view',
       'parties.suppliers.bank.view',
       'parties.suppliers.download',
+      // Sert de témoin : la colonne « Véhicules » doit reparaître avec ce droit.
+      'rental.fleet.view',
     ],
   },
   {
@@ -266,6 +268,14 @@ async function main() {
       check(
         (await page.getByRole('link', { name: 'Informations de paiement' }).count()) === 0,
         'Onglet « Informations de paiement » absent'
+      )
+
+      // Le décompte vient d'un agrégat sur `vehicles`, filtré par RLS : sans la
+      // permission il vaudrait 0 partout, ce qui se lirait comme un parc vide.
+      await page.goto(`${base}/tiers/fournisseurs`, { waitUntil: 'load' })
+      check(
+        (await page.getByText('Véhicules', { exact: true }).count()) === 0,
+        'Colonne « Véhicules » absente de la liste sans « rental.fleet.view »'
       )
 
       await page.goto(`${base}/tiers/fournisseurs/${supplierId}?onglet=paiement`, {
@@ -520,6 +530,15 @@ async function main() {
         (await page.getByRole('button', { name: 'Désactiver', exact: true }).count()) === 0,
         'Aucune action de désactivation'
       )
+
+      await page.goto(`${base}/tiers/fournisseurs`, { waitUntil: 'load' })
+      check(
+        (await page.getByText('Véhicules', { exact: true }).count()) >= 1,
+        'Colonne « Véhicules » présente dans la liste avec « rental.fleet.view »'
+      )
+      await page.goto(`${base}/tiers/fournisseurs/${supplierId}?onglet=paiement`, {
+        waitUntil: 'load',
+      })
 
       const pdf = await context.request.get(
         `${base}/api/documents/fournisseurs/${supplierId}?mode=download`

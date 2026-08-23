@@ -33,7 +33,8 @@ const STATUS_TONES: Record<SupplierStatus, 'success' | 'neutral' | 'warning'> = 
 export type SupplierSheetProps = {
   identity: DocumentIdentity
   supplier: SupplierDetail
-  vehicles: VehicleListItem[]
+  /** `null` lorsque le lecteur n'a pas accès au parc. */
+  vehicles: VehicleListItem[] | null
   /** `null` lorsque le lecteur n'a pas accès aux informations de paiement. */
   payments: SupplierPaymentDetail[] | null
   issuedOn: string
@@ -106,31 +107,41 @@ export function SupplierSheetDocument({
         />
       </Section>
 
-      <Section title="Véhicules mis à disposition">
-        <DataTable
-          columns={[
-            { header: 'Identifiant', width: '20%', cell: (v: VehicleListItem) => v.vehicleNo },
-            {
-              header: 'Véhicule',
-              width: '38%',
-              cell: (v: VehicleListItem) => `${v.brand} ${v.model}`,
-            },
-            {
-              header: 'Immatriculation',
-              width: '22%',
-              cell: (v: VehicleListItem) => v.plate ?? '—',
-            },
-            {
-              header: 'Statut',
-              width: '20%',
-              align: 'right',
-              cell: (v: VehicleListItem) => VEHICLE_STATUS[v.status],
-            },
-          ]}
-          rows={vehicles}
-          emptyLabel="Aucun véhicule rattaché à ce fournisseur."
-        />
-      </Section>
+      {/*
+        La section entière disparaît sans `rental.fleet.view`.
+
+        `null` signifie « pas la permission » ; un tableau vide signifie
+        « aucun véhicule » et le dit. Imprimer « Aucun véhicule rattaché » à un
+        lecteur qui n'a pas le droit de voir le parc ferait passer un refus
+        d'accès pour un fait (DEC-017).
+      */}
+      {vehicles !== null && (
+        <Section title="Véhicules mis à disposition">
+          <DataTable
+            columns={[
+              { header: 'Identifiant', width: '20%', cell: (v: VehicleListItem) => v.vehicleNo },
+              {
+                header: 'Véhicule',
+                width: '38%',
+                cell: (v: VehicleListItem) => `${v.brand} ${v.model}`,
+              },
+              {
+                header: 'Immatriculation',
+                width: '22%',
+                cell: (v: VehicleListItem) => v.plate ?? '—',
+              },
+              {
+                header: 'Statut',
+                width: '20%',
+                align: 'right',
+                cell: (v: VehicleListItem) => VEHICLE_STATUS[v.status],
+              },
+            ]}
+            rows={vehicles}
+            emptyLabel="Aucun véhicule rattaché à ce fournisseur."
+          />
+        </Section>
+      )}
 
       {/*
         Informations de paiement — uniquement si le lecteur y a droit.

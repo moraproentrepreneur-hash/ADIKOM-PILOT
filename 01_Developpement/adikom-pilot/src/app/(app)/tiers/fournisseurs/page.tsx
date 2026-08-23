@@ -27,11 +27,18 @@ export default async function SuppliersPage(props: PageProps<'/tiers/fournisseur
 
   const filters = { search: read('q'), status: read('statut'), type: read('type') }
 
-  const [suppliers, canCreate, canExport] = await Promise.all([
+  const [suppliers, canCreate, canExport, canViewFleet] = await Promise.all([
     listSuppliers(filters),
     can(PERMISSIONS.SUPPLIERS_CREATE),
     // DEC-024 : exporter est une capacité distincte de consulter.
     can(PERMISSIONS.SUPPLIERS_EXPORT),
+    /*
+     * Le décompte de véhicules provient d'un agrégat imbriqué sur `vehicles`,
+     * filtré par RLS : sans `rental.fleet.view` il vaut 0 pour toutes les
+     * lignes. Afficher cette colonne ferait passer un refus d'accès pour un
+     * parc vide (DEC-017). Elle disparaît plutôt que de mentir.
+     */
+    can(PERMISSIONS.FLEET_VIEW),
   ])
 
   const hasFilters = Object.values(filters).some(Boolean)
@@ -151,7 +158,9 @@ export default async function SuppliersPage(props: PageProps<'/tiers/fournisseur
                     <th className="px-5 py-3 font-medium text-ink">Type</th>
                     <th className="px-5 py-3 font-medium text-ink">Contact</th>
                     <th className="px-5 py-3 font-medium text-ink">Téléphone</th>
-                    <th className="px-5 py-3 font-medium text-ink">Véhicules</th>
+                    {canViewFleet && (
+                      <th className="px-5 py-3 font-medium text-ink">Véhicules</th>
+                    )}
                     <th className="px-5 py-3 font-medium text-ink">Statut</th>
                   </tr>
                 </thead>
@@ -177,7 +186,9 @@ export default async function SuppliersPage(props: PageProps<'/tiers/fournisseur
                       </td>
                       <td className="px-5 py-3 text-muted">{supplier.contactName ?? '—'}</td>
                       <td className="px-5 py-3 text-muted tabular">{supplier.phone}</td>
-                      <td className="px-5 py-3 text-muted tabular">{supplier.vehicleCount}</td>
+                      {canViewFleet && (
+                        <td className="px-5 py-3 text-muted tabular">{supplier.vehicleCount}</td>
+                      )}
                       <td className="px-5 py-3">
                         <Badge tone={STATUS_TONES[supplier.status as SupplierStatus]}>
                           {STATUS_LABELS[supplier.status as SupplierStatus]}
@@ -208,9 +219,11 @@ export default async function SuppliersPage(props: PageProps<'/tiers/fournisseur
                     <dl className="mt-3 space-y-1 text-xs text-muted">
                       <dd>{TYPE_LABELS[supplier.type as SupplierType]}</dd>
                       <dd className="tabular">{supplier.phone}</dd>
-                      <dd>
-                        {supplier.vehicleCount} véhicule{supplier.vehicleCount > 1 ? 's' : ''}
-                      </dd>
+                      {canViewFleet && (
+                        <dd>
+                          {supplier.vehicleCount} véhicule{supplier.vehicleCount > 1 ? 's' : ''}
+                        </dd>
+                      )}
                     </dl>
                   </Link>
                 </li>

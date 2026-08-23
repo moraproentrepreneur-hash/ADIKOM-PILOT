@@ -394,6 +394,25 @@ describe('fiche fournisseur', () => {
       )
     )
   })
+
+  /**
+   * Sans `rental.fleet.view`, la section « Véhicules » disparaît au lieu
+   * d'annoncer un parc vide (DEC-017). Le document doit rester exploitable
+   * avec DEUX sections absentes à la fois.
+   */
+  it('rend un fournisseur sans accès au parc ni aux informations de paiement', async () => {
+    expectPdf(
+      await renderDocument(
+        SupplierSheetDocument({
+          identity: IDENTITY,
+          supplier: SUPPLIER,
+          vehicles: null,
+          payments: null,
+          issuedOn: ISSUED,
+        })
+      )
+    )
+  })
 })
 
 /* -------------------------------------------------------------------------- */
@@ -421,6 +440,20 @@ describe('fiche partenaire', () => {
           identity: IDENTITY,
           partner: PARTNER,
           vehicles: [],
+          issuedOn: ISSUED,
+        })
+      )
+    )
+  })
+
+  /** `null` : le lecteur n'a pas `rental.fleet.view`, la section disparaît. */
+  it('rend un partenaire sans accès au parc', async () => {
+    expectPdf(
+      await renderDocument(
+        PartnerSheetDocument({
+          identity: IDENTITY,
+          partner: PARTNER,
+          vehicles: null,
           issuedOn: ISSUED,
         })
       )

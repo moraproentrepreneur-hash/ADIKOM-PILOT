@@ -146,8 +146,10 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
       const mayReadPayments = await can(PERMISSIONS.SUPPLIERS_BANK_VIEW)
       const payments = mayReadPayments ? await listSupplierPaymentDetails(id) : null
 
+      // `null` sans la permission : la section disparaît du document, au lieu
+      // d'annoncer un parc vide qui n'est qu'un refus d'accès (DEC-017).
       const mayReadFleet = await can(PERMISSIONS.FLEET_VIEW)
-      const vehicles = mayReadFleet ? await listVehicles({ supplierId: id }) : []
+      const vehicles = mayReadFleet ? await listVehicles({ supplierId: id }) : null
 
       const identity = await getDocumentIdentity()
 
@@ -180,7 +182,8 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
       const mayReadFleet = await can(PERMISSIONS.FLEET_VIEW)
       // Le rattachement d'un partenaire passe par `partner_id`, jamais par le
       // fournisseur : les deux voies sont exclusives (DEC-021).
-      const vehicles = mayReadFleet ? await listVehicles({ partnerId: id }) : []
+      // `null` sans la permission : la section disparaît (DEC-017).
+      const vehicles = mayReadFleet ? await listVehicles({ partnerId: id }) : null
 
       const identity = await getDocumentIdentity()
 

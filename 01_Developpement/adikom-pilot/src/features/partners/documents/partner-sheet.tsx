@@ -29,7 +29,8 @@ const STATUS_TONES: Record<PartnerStatus, 'success' | 'neutral' | 'warning'> = {
 export type PartnerSheetProps = {
   identity: DocumentIdentity
   partner: PartnerDetail
-  vehicles: VehicleListItem[]
+  /** `null` lorsque le lecteur n'a pas accès au parc. */
+  vehicles: VehicleListItem[] | null
   issuedOn: string
 }
 
@@ -90,31 +91,38 @@ export function PartnerSheetDocument({
         />
       </Section>
 
-      <Section title="Véhicules mis à disposition">
-        <DataTable
-          columns={[
-            { header: 'Identifiant', width: '20%', cell: (v: VehicleListItem) => v.vehicleNo },
-            {
-              header: 'Véhicule',
-              width: '38%',
-              cell: (v: VehicleListItem) => `${v.brand} ${v.model}`,
-            },
-            {
-              header: 'Immatriculation',
-              width: '22%',
-              cell: (v: VehicleListItem) => v.plate ?? '—',
-            },
-            {
-              header: 'Statut',
-              width: '20%',
-              align: 'right',
-              cell: (v: VehicleListItem) => VEHICLE_STATUS[v.status],
-            },
-          ]}
-          rows={vehicles}
-          emptyLabel="Aucun véhicule rattaché à ce partenaire."
-        />
-      </Section>
+      {/*
+        La section entière disparaît sans `rental.fleet.view` — même règle que
+        la fiche fournisseur. `null` : pas la permission, la section se tait.
+        Tableau vide : aucun véhicule, et le document le dit (DEC-017).
+      */}
+      {vehicles !== null && (
+        <Section title="Véhicules mis à disposition">
+          <DataTable
+            columns={[
+              { header: 'Identifiant', width: '20%', cell: (v: VehicleListItem) => v.vehicleNo },
+              {
+                header: 'Véhicule',
+                width: '38%',
+                cell: (v: VehicleListItem) => `${v.brand} ${v.model}`,
+              },
+              {
+                header: 'Immatriculation',
+                width: '22%',
+                cell: (v: VehicleListItem) => v.plate ?? '—',
+              },
+              {
+                header: 'Statut',
+                width: '20%',
+                align: 'right',
+                cell: (v: VehicleListItem) => VEHICLE_STATUS[v.status],
+              },
+            ]}
+            rows={vehicles}
+            emptyLabel="Aucun véhicule rattaché à ce partenaire."
+          />
+        </Section>
+      )}
 
       {partner.notes && (
         <Section title="Observations">

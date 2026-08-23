@@ -28,11 +28,18 @@ export default async function PartnersPage(props: PageProps<'/tiers/partenaires'
 
   const filters = { search: read('q'), status: read('statut') }
 
-  const [partners, canCreate, canExport] = await Promise.all([
+  const [partners, canCreate, canExport, canViewFleet] = await Promise.all([
     listPartners(filters),
     can(PERMISSIONS.PARTNERS_CREATE),
     // DEC-024 : exporter est une capacité distincte de consulter.
     can(PERMISSIONS.PARTNERS_EXPORT),
+    /*
+     * Le décompte de véhicules provient d'un agrégat imbriqué sur `vehicles`,
+     * filtré par RLS : sans `rental.fleet.view` il vaut 0 pour toutes les
+     * lignes. Afficher cette colonne ferait passer un refus d'accès pour un
+     * parc vide (DEC-017). Elle disparaît plutôt que de mentir.
+     */
+    can(PERMISSIONS.FLEET_VIEW),
   ])
 
   const hasFilters = Object.values(filters).some(Boolean)
@@ -137,7 +144,9 @@ export default async function PartnersPage(props: PageProps<'/tiers/partenaires'
                     <th className="px-5 py-3 font-medium text-ink">Contact</th>
                     <th className="px-5 py-3 font-medium text-ink">Téléphone</th>
                     <th className="px-5 py-3 font-medium text-ink">Ville</th>
-                    <th className="px-5 py-3 font-medium text-ink">Véhicules</th>
+                    {canViewFleet && (
+                      <th className="px-5 py-3 font-medium text-ink">Véhicules</th>
+                    )}
                     <th className="px-5 py-3 font-medium text-ink">Statut</th>
                   </tr>
                 </thead>
@@ -162,7 +171,9 @@ export default async function PartnersPage(props: PageProps<'/tiers/partenaires'
                       <td className="px-5 py-3 text-muted">{partner.contactName ?? '—'}</td>
                       <td className="px-5 py-3 text-muted tabular">{partner.phone ?? '—'}</td>
                       <td className="px-5 py-3 text-muted">{partner.city ?? '—'}</td>
-                      <td className="px-5 py-3 text-muted tabular">{partner.vehicleCount}</td>
+                      {canViewFleet && (
+                        <td className="px-5 py-3 text-muted tabular">{partner.vehicleCount}</td>
+                      )}
                       <td className="px-5 py-3">
                         <Badge tone={STATUS_TONES[partner.status]}>
                           {STATUS_LABELS[partner.status]}
@@ -193,9 +204,11 @@ export default async function PartnersPage(props: PageProps<'/tiers/partenaires'
                     <dl className="mt-3 space-y-1 text-xs text-muted">
                       {partner.contactName && <dd>{partner.contactName}</dd>}
                       {partner.phone && <dd className="tabular">{partner.phone}</dd>}
-                      <dd>
-                        {partner.vehicleCount} véhicule{partner.vehicleCount > 1 ? 's' : ''}
-                      </dd>
+                      {canViewFleet && (
+                        <dd>
+                          {partner.vehicleCount} véhicule{partner.vehicleCount > 1 ? 's' : ''}
+                        </dd>
+                      )}
                     </dl>
                   </Link>
                 </li>

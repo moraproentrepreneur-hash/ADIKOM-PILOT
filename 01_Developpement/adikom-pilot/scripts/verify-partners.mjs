@@ -250,6 +250,13 @@ async function main() {
         'Bouton « Nouveau partenaire » absent de la liste'
       )
 
+      // Le décompte vient d'un agrégat sur `vehicles`, filtré par RLS : sans la
+      // permission il vaudrait 0 partout, ce qui se lirait comme un parc vide.
+      check(
+        (await page.getByText('Véhicules', { exact: true }).count()) === 0,
+        'Colonne « Véhicules » absente de la liste sans « rental.fleet.view »'
+      )
+
       await page.goto(`${base}/tiers/partenaires/${demo.id}`, { waitUntil: 'load' })
       check(
         (await page.getByRole('link', { name: 'Modifier' }).count()) === 0,
@@ -573,6 +580,12 @@ async function main() {
         (await page.getByText(String(count), { exact: true }).count()) >= 1,
         'Le nombre affiché est le nombre réel',
         `${count} véhicule(s)`
+      )
+
+      await page.goto(`${base}/tiers/partenaires`, { waitUntil: 'load' })
+      check(
+        (await page.getByText('Véhicules', { exact: true }).count()) >= 1,
+        'Colonne « Véhicules » présente dans la liste avec « rental.fleet.view »'
       )
 
       await context.close()
