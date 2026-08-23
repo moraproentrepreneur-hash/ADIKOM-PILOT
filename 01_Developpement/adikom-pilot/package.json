@@ -15,6 +15,7 @@
     "db:status": "node scripts/db-push.mjs --dry-run",
     "db:verify": "node scripts/run-sql.mjs supabase/tests/socle.sql",
     "db:verify:location": "node scripts/run-sql.mjs supabase/tests/location.sql",
+    "db:verify:cycle": "node scripts/run-sql.mjs supabase/tests/rental_cycle.sql",
     "db:inspect": "node scripts/db-inspect.mjs",
     "verify:auth": "node scripts/verify-auth.mjs",
     "verify:login": "node scripts/verify-login.mjs",

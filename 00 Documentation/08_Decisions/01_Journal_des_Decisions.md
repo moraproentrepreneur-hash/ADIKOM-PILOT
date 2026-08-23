@@ -58,6 +58,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-022 | Droits d'exécution des fonctions | Défaut de sécurité corrigé | Appliquée | 2026-08-21 |
 | DEC-023 | Convention des références de documents | Décision ADIKOM | Validée — **implémentation reportée** | 2026-08-21 |
 | DEC-024 | Attribution indépendante des capacités | Règle d'architecture | Validée — **permanente** | 2026-08-22 |
+| DEC-025 | Cadrage de l'Étape 2.3 — cycle d'exploitation | Arbitrages ADIKOM | Validée — **clôt DEC-014** | 2026-08-24 |
 
 ---
 
@@ -1096,6 +1097,166 @@ réelle : aucune route documentaire ne répond alors à cet utilisateur.
 
 ---
 
+## DEC-025 — Cadrage de l'Étape 2.3 — cycle d'exploitation
+
+**Date :** 24 août 2026
+**Portée :** métier, technique et sécurité
+**Statut :** validée par ADIKOM · **clôt DEC-014 pour le fuseau horaire**
+
+### Contexte
+
+L'Étape 2.2 — référentiel d'exploitation — est livrée. DEC-021 désigne l'Étape
+2.3 : *Réservation → Contrat → Départ → Location en cours → Retour → Contrôle*.
+Onze points restaient ouverts avant de pouvoir la construire sans inventer de
+règle. Ils sont tranchés ici.
+
+### a. Statuts « Expirée » et « En retard » — dérivés, jamais écrits
+
+Le projet ne dispose d'aucun ordonnanceur : ni tâche planifiée Supabase, ni
+cron. Un statut stocké qui dépendrait d'un travail non exécuté afficherait une
+information fausse.
+
+Les deux valeurs sont donc **calculées à l'affichage et au filtrage**, à partir
+des dates et de l'heure courante. Elles figurent dans les énumérations par
+fidélité à DEC-006, et resteront disponibles le jour où une tâche planifiée
+existera. **Aucune infrastructure d'ordonnancement n'est créée pour elles.**
+
+### b. Validation du contrôle — `rental.rentals.close`
+
+La transition **À contrôler → À facturer** emploie `rental.rentals.close`.
+Aucune permission `rental.rentals.control` n'est créée : le catalogue décrit ce
+que le SaaS sait faire, et la clôture d'exploitation est bien l'acte demandé.
+
+`Facturée` et `Clôturée` restent hors de l'Étape 2.3 : elles relèvent de
+l'Étape 2.5.
+
+### c. Le statut du véhicule ne pilote pas la disponibilité
+
+Confirmation de `05_Regles_Metier/02_Parc_Automobile.md` §67 et de DEC-021 §5 :
+**le statut décrit une situation, la disponibilité se calcule depuis le
+calendrier.**
+
+- une réservation, même confirmée, **ne change pas** le statut du véhicule ;
+- le **départ** le porte à `En location` ;
+- le **retour** le ramène à `Disponible`, sauf immobilisation ou autre état
+  métier légitime.
+
+Une réservation agit sur le calendrier, jamais sur le statut courant. La valeur
+`RESERVED` de l'énumération n'est pas employée par le cycle.
+
+### d. Historique des prolongations — journal d'audit seul
+
+Aucune table dédiée. Le déclencheur d'audit de `rentals` conserve l'avant et
+l'après de chaque prolongation, son auteur et son horodatage ; le motif est
+porté par `status_reason`. Une table ne fournirait rien que le journal ne
+contienne déjà (CLAUDE.md §29).
+
+Une structure dédiée sera créée si, et seulement si, un historique consultable
+**depuis la fiche location** devient nécessaire.
+
+### e. Fuseau horaire — `Indian/Comoro`
+
+**DEC-014 est close sur ce point.** Les horodatages sont stockés en UTC
+(`timestamptz`) et interprétés sur `Indian/Comoro` (UTC+3) pour l'affichage,
+les durées, les retards et le calendrier.
+
+L'implémentation existe déjà en un seul point — `DISPLAY_TIMEZONE` dans
+`src/lib/dates.ts` — et alimente le moteur documentaire et le moteur d'export.
+**Aucune seconde implémentation n'est introduite.**
+
+`company_settings.timezone` conserve la même valeur mais **n'est pas la source
+active** : c'est un point d'extension, non câblé tant qu'aucun besoin ne
+l'exige.
+
+*Le régime de taxes reste ouvert dans DEC-014 : il n'est pas tranché ici.*
+
+### f. Photos d'état des lieux — bucket existant, préfixe dédié
+
+Aucun nouveau bucket. Les photos rejoignent `vehicle-documents`, **privé et
+sans policy**, sous le préfixe :
+
+```
+inspections/{inspectionId}/{uuid}-{nom}
+```
+
+distinct de `{vehicleId}/…` employé par les documents du véhicule. Le préfixe
+`inspections` ne peut entrer en collision avec un identifiant de véhicule,
+lequel est un UUID.
+
+Les photos sont rattachées à **l'état des lieux**, jamais au véhicule : une
+photo de départ et une photo de retour ne disent pas la même chose. L'accès
+reste indirect — action serveur, vérification de permission, URL signée de
+courte durée. **Aucune URL permanente n'est stockée.**
+
+### g. Tableau de location — inclus dans l'Étape 2.3
+
+Version minimale et réellement exploitable : départs du jour, retours du jour,
+locations en cours, locations en retard. Ni indicateurs, ni statistiques
+avancées à ce stade. `/location` cesse d'être annoncé « à venir ».
+
+### h. Signature électronique — hors système
+
+Le système génère, prévisualise, télécharge et imprime le contrat. **La
+signature s'effectue hors système.** Aucune table, aucun workflow, aucune
+permission et aucune interface de signature ne sont créés.
+
+### i. Contrôle de retour — constater, ne pas valoriser
+
+Le contrôle compare le kilométrage, la distance parcourue, le carburant, les
+états intérieur et extérieur, les dommages préexistants et les dommages
+nouveaux, et signale les anomalies.
+
+**Aucun montant n'est calculé.** Carburant manquant, kilométrage
+supplémentaire, retard, franchise et dommages n'ont aucun barème défini
+(DEC-008, toujours ouvert). L'écran distingue explicitement le **constat** de la
+**valorisation**, celle-ci étant annoncée comme non configurée plutôt
+qu'inventée. La valorisation sera traitée avant l'Étape 2.5.
+
+### j. Capacités documentaires — six permissions
+
+Réservations et locations n'avaient reçu aucune capacité documentaire lors de
+la migration 026, faute d'existence fonctionnelle. L'Étape 2.3 produit des
+documents contractuels et des listes exportables :
+
+```
+rental.reservations.export · .download · .print
+rental.rentals.export      · .download · .print
+```
+
+Catalogue : **148 → 154**. DEC-024 s'applique intégralement — `view` reste exigé
+**en plus**, les trois capacités sont indépendantes, aucune n'est impliquée par
+une autre, et le contrôle est appliqué côté serveur comme sur les routes
+directes. Toutes sont marquées sensibles : ces sorties portent l'identité du
+client, la période et le montant verrouillé.
+
+Trois documents seulement : **contrat de location**, **bon de départ**,
+**procès-verbal de retour**. Aucun document de réservation — une réservation
+n'est pas un engagement remis au client.
+
+### k. Transitions imposées par la base
+
+« Ne crée pas de raccourci qui permettrait de contourner les transitions
+métier. » Les enchaînements de DEC-006 sont portés par des déclencheurs
+`before update`, en plus des gardes serveur.
+
+La distinction est nette et les deux barrières sont nécessaires : **une
+permission dit qui peut agir, une transition dit ce qui a un sens.** Un appel
+direct à l'API, muni de la bonne permission, ne peut pas pour autant faire
+passer une location de « En préparation » à « À facturer ».
+
+### Conséquences
+
+- Migration **031** : types, quatre tables, contraintes, index, RLS, audit,
+  interdiction de suppression, déclencheurs de transition et quatre opérations
+  atomiques.
+- Migration **032** : les six permissions.
+- Aucun mécanisme existant n'est reconstruit : `vehicle_occupations`,
+  `is_vehicle_available`, `vehicle_calendar`, `resolve_pricing_rule`,
+  `next_number`, moteur documentaire et moteur d'export sont réemployés tels
+  quels.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -1103,7 +1264,7 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 1. **DEC-007** — Le montant dû au fournisseur doit-il être généré par le système (contrat, loyer, part par location) ou saisi manuellement à réception de la facture ?
 2. **DEC-008** — Règles d'arrondi de la durée, traitement du retard, barèmes carburant / kilométrage / dommages, gestion de la caution et de l'acompte, période de préparation, seuils de validation des imputations.
 3. **DEC-009** — Confirmation de la règle de résolution des permissions multi-groupes.
-4. **DEC-014** — Fuseau horaire de référence et régime de taxes applicable.
+4. **DEC-014** — Régime de taxes applicable. *Le fuseau horaire est tranché : `Indian/Comoro`, confirmé par **DEC-025 §e**.*
 5. **DEC-005** — Confirmation des formats restants et de la règle de remise à zéro annuelle. *Partiellement tranché : les formats client, fournisseur et véhicule sont confirmés par **DEC-021**. Les documents commerciaux relèvent désormais de **DEC-023**, dont l'implémentation est reportée à l'Étape 2.5. Restent à confirmer les objets datés non commerciaux — réservation, location, maintenance, imputation.*
 6. **DEC-023 §4** — Validation par le responsable comptable et fiscal d'ADIKOM de la convention de référence des factures, avant toute première émission.
 

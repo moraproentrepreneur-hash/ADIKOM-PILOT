@@ -64,6 +64,10 @@ export const PERMISSIONS = {
   RESERVATIONS_UPDATE: 'rental.reservations.update',
   RESERVATIONS_CONFIRM: 'rental.reservations.confirm',
   RESERVATIONS_CANCEL: 'rental.reservations.cancel',
+  // DEC-024 : trois capacités distinctes, aucune incluse dans « voir ».
+  RESERVATIONS_EXPORT: 'rental.reservations.export',
+  RESERVATIONS_DOWNLOAD: 'rental.reservations.download',
+  RESERVATIONS_PRINT: 'rental.reservations.print',
 
   RENTALS_VIEW: 'rental.rentals.view',
   RENTALS_CREATE: 'rental.rentals.create',
@@ -74,6 +78,9 @@ export const PERMISSIONS = {
   RENTALS_CLOSE: 'rental.rentals.close',
   RENTALS_CANCEL: 'rental.rentals.cancel',
   RENTALS_FINANCIAL_VIEW: 'rental.rentals.financial.view',
+  RENTALS_EXPORT: 'rental.rentals.export',
+  RENTALS_DOWNLOAD: 'rental.rentals.download',
+  RENTALS_PRINT: 'rental.rentals.print',
 
   FLEET_VIEW: 'rental.fleet.view',
   FLEET_CREATE: 'rental.fleet.create',

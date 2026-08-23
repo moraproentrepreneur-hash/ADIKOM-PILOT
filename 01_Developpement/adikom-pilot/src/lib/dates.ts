@@ -1,13 +1,19 @@
 /**
  * Formatage des dates — ADIKOM PILOT.
  *
- * DEC-014 : les horodatages sont stockés en UTC (`timestamptz`) et affichés sur
- * le fuseau des Comores. Le fuseau est fixé ici, et non laissé à celui du
- * serveur : une application déployée sur Vercel s'exécute en UTC, et un retour
- * prévu « le 21 à 01:00 » s'afficherait alors la veille à 22:00.
+ * DEC-014, close sur ce point par DEC-025 §e : les horodatages sont stockés en
+ * UTC (`timestamptz`) et interprétés sur le fuseau des Comores. Le fuseau est
+ * fixé ici, et non laissé à celui du serveur : une application déployée sur
+ * Vercel s'exécute en UTC, et un retour prévu « le 21 à 01:00 » s'afficherait
+ * alors la veille à 22:00.
  *
- * Le fuseau reste à confirmer par ADIKOM (DEC-014) ; le changer se fait ici,
- * en un seul point.
+ * SOURCE UNIQUE. `company_settings.timezone` porte la même valeur mais n'est
+ * lue par rien : c'est un point d'extension, pas un paramètre en service. Le
+ * câbler un jour se ferait ici, sans créer de seconde implémentation.
+ *
+ * Le cycle d'exploitation — réservation, départ, retard, prolongation, retour,
+ * durée facturable, calendrier, tableau de location — dépend entièrement de ce
+ * réglage.
  */
 
 export const DISPLAY_TIMEZONE = 'Indian/Comoro'
