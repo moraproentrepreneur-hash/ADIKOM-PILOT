@@ -14,10 +14,10 @@ export const metadata: Metadata = { title: 'Partenaires' }
 /**
  * Répertoire des partenaires.
  *
- * Périmètre validé : CONSULTER. Un partenaire se rattache à des véhicules ;
- * la gestion du partenariat lui-même — conditions, contrats, projets communs —
- * relève du module Partenariats, à venir. L'écran n'offre donc ni création ni
- * modification, et ne fait pas semblant d'en offrir.
+ * L'écran couvre l'identité du partenaire : consulter, créer, modifier. La
+ * gestion du partenariat lui-même — conditions, contrats, projets communs —
+ * relève du module Partenariats, à venir : elle n'est ni proposée ici, ni
+ * suggérée.
  */
 export default async function PartnersPage(props: PageProps<'/tiers/partenaires'>) {
   await requirePermissionOrRedirect(PERMISSIONS.PARTNERS_VIEW)
@@ -28,8 +28,10 @@ export default async function PartnersPage(props: PageProps<'/tiers/partenaires'
 
   const filters = { search: read('q'), status: read('statut') }
 
-  const [partners, canExport] = await Promise.all([
+  const [partners, canCreate, canExport] = await Promise.all([
     listPartners(filters),
+    can(PERMISSIONS.PARTNERS_CREATE),
+    // DEC-024 : exporter est une capacité distincte de consulter.
     can(PERMISSIONS.PARTNERS_EXPORT),
   ])
 
@@ -41,12 +43,19 @@ export default async function PartnersPage(props: PageProps<'/tiers/partenaires'
         title="Partenaires"
         description="Organisations avec lesquelles ADIKOM exploite des véhicules en partenariat."
         actions={
-          canExport ? (
-            <ExportButton
-              module="partenaires"
-              filters={{ q: filters.search, statut: filters.status }}
-            />
-          ) : undefined
+          <>
+            {canExport && (
+              <ExportButton
+                module="partenaires"
+                filters={{ q: filters.search, statut: filters.status }}
+              />
+            )}
+            {canCreate && (
+              <ButtonLink href="/tiers/partenaires/nouveau" icon={Handshake}>
+                Nouveau partenaire
+              </ButtonLink>
+            )}
+          </>
         }
       />
 
@@ -104,12 +113,16 @@ export default async function PartnersPage(props: PageProps<'/tiers/partenaires'
             description={
               hasFilters
                 ? 'Modifiez ou réinitialisez les filtres pour élargir la recherche.'
-                : 'Les partenaires apparaissent ici dès qu’un partenariat est enregistré. Leur création relève du module Partenariats, à venir.'
+                : 'Enregistrez un partenaire pour pouvoir lui rattacher des véhicules.'
             }
             action={
               hasFilters ? (
                 <ButtonLink href="/tiers/partenaires" tone="secondary">
                   Réinitialiser les filtres
+                </ButtonLink>
+              ) : canCreate ? (
+                <ButtonLink href="/tiers/partenaires/nouveau" icon={Handshake}>
+                  Créer le premier partenaire
                 </ButtonLink>
               ) : undefined
             }

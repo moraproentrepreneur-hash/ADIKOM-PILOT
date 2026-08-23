@@ -1,15 +1,17 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, CarFront } from 'lucide-react'
+import { ArrowLeft, CarFront, Pencil } from 'lucide-react'
 
 import { Badge, Card, Empty, EmptyState, InfoRow, PageHeader } from '@/components/ui/primitives'
+import { Notice } from '@/components/ui/feedback'
 import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { DocumentToolbar } from '@/components/ui/document-toolbar'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate, formatDateTime } from '@/lib/dates'
 import { getPartnerDetail, STATUS_LABELS, STATUS_TONES } from '@/features/partners/data'
+import { PartnerForm } from '@/features/partners/partner-form'
 import {
   listVehicles,
   STATUS_LABELS as VEHICLE_STATUS_LABELS,
@@ -19,7 +21,7 @@ import {
 export const metadata: Metadata = { title: 'Fiche partenaire' }
 
 /**
- * Fiche partenaire — consultation.
+ * Fiche partenaire — consultation et modification.
  *
  * Les onglets relevant du module Partenariats sont annoncés inertes : la fiche
  * dit ce qu'elle contiendra sans laisser croire à un écran défaillant
@@ -35,8 +37,12 @@ export default async function PartnerDetailPage(props: PageProps<'/tiers/partena
   if (!partner) notFound()
 
   const requestedTab = typeof searchParams.onglet === 'string' ? searchParams.onglet : 'informations'
+  const editing = searchParams.mode === 'edition'
+  const justCreated = searchParams.cree === '1'
+  const justSaved = searchParams.enregistre === '1'
 
-  const [canViewFleet, canDownload, canPrint] = await Promise.all([
+  const [canUpdate, canViewFleet, canDownload, canPrint] = await Promise.all([
+    can(PERMISSIONS.PARTNERS_UPDATE),
     can(PERMISSIONS.FLEET_VIEW),
     // DEC-024 : produire un document et l'imprimer sont deux capacités
     // distinctes de la consultation, attribuables séparément.
@@ -75,17 +81,40 @@ export default async function PartnerDetailPage(props: PageProps<'/tiers/partena
         Retour à la liste
       </Link>
 
+      {justCreated && (
+        <Notice tone="success" className="mb-5">
+          Partenaire créé. Son identifiant est <strong>{partner.partnerNo}</strong>.
+        </Notice>
+      )}
+
+      {justSaved && (
+        <Notice tone="success" className="mb-5">
+          Les informations du partenaire ont été enregistrées.
+        </Notice>
+      )}
+
       <PageHeader
         title={partner.legalName}
         description={partner.tradeName ?? undefined}
         actions={
-          <DocumentToolbar
-            type="partenaires"
-            id={id}
-            label={`fiche de ${partner.legalName}`}
-            canDownload={canDownload}
-            canPrint={canPrint}
-          />
+          <>
+            <DocumentToolbar
+              type="partenaires"
+              id={id}
+              label={`fiche de ${partner.legalName}`}
+              canDownload={canDownload}
+              canPrint={canPrint}
+            />
+            {canUpdate && !editing && (
+              <Link
+                href={`/tiers/partenaires/${id}?mode=edition`}
+                className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
+              >
+                <Pencil className="size-4" aria-hidden />
+                Modifier
+              </Link>
+            )}
+          </>
         }
       />
 
@@ -98,6 +127,10 @@ export default async function PartnerDetailPage(props: PageProps<'/tiers/partena
 
       {tab === 'vehicules' ? (
         <VehiclesTab partnerId={id} />
+      ) : editing && canUpdate ? (
+        <Card className="max-w-4xl">
+          <PartnerForm mode="edit" partner={partner} />
+        </Card>
       ) : (
         <div className="grid gap-5 lg:grid-cols-3">
           <div className="space-y-5 lg:col-span-2">
@@ -153,8 +186,8 @@ export default async function PartnerDetailPage(props: PageProps<'/tiers/partena
 
             <Card title="Périmètre actuel">
               <p className="text-sm text-muted">
-                Cette fiche est consultable. La gestion du partenariat — conditions, contrats,
-                projets communs — relèvera du module Partenariats.
+                Cette fiche couvre l’identité du partenaire. La gestion du partenariat —
+                conditions, contrats, projets communs — relèvera du module Partenariats.
               </p>
             </Card>
           </div>

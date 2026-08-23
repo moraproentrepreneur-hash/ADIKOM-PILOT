@@ -5,11 +5,12 @@ import { reportQueryFailure } from '@/lib/server-action'
 import type { PartnerStatus } from './constants'
 
 /**
- * Accès aux données des partenaires — LECTURE SEULE.
+ * Accès aux données des partenaires — LECTURE.
  *
- * Le périmètre validé se limite à consulter : liste, recherche, fiche,
- * véhicules rattachés, document et export. La création, la modification et la
- * gestion des conditions relèvent du module Partenariats, à venir.
+ * Le périmètre couvert est celui de l'identité du partenaire : liste,
+ * recherche, fiche, véhicules rattachés, document et export. Les écritures
+ * correspondantes sont dans `actions.ts` ; la gestion du partenariat lui-même
+ * — conditions, contrats, projets — relève du module Partenariats, à venir.
  *
  * Toutes les requêtes passent par le client porteur de la session : RLS reste
  * la barrière au niveau des données.

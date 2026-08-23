@@ -3,9 +3,9 @@ import type { BadgeTone } from '@/components/ui/primitives'
 /**
  * Constantes des partenaires.
  *
- * Structure minimale (migration 024) : elle permet de rattacher un véhicule à
- * un partenaire, pas de gérer un partenariat. Le module complet — création,
- * fiche, conditions, documents — relève d'une étape dédiée.
+ * Structure minimale (migration 024) : elle porte l'identité d'un partenaire et
+ * permet de lui rattacher un véhicule, pas de gérer un partenariat. Les
+ * conditions, contrats et projets communs relèvent d'une étape dédiée.
  */
 
 export type PartnerStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'ARCHIVED'
