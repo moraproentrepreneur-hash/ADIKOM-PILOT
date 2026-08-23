@@ -62,11 +62,13 @@ export function VehicleSheetDocument({
   /* Le rattachement dépend de l'origine : un véhicule n'a jamais les deux. */
   const attachment = vehicle.supplierLabel ?? vehicle.partnerLabel
 
+  /* Pas de sous-titre : l'immatriculation est une donnée du véhicule, elle
+     figure parmi ses champs. Même règle que les fiches client, fournisseur et
+     partenaire — un seul système documentaire. */
   return (
     <DocumentShell
       identity={identity}
       title="Fiche véhicule"
-      subtitle={vehicle.plate ?? undefined}
       reference={vehicle.vehicleNo}
       issuedOn={issuedOn}
     >

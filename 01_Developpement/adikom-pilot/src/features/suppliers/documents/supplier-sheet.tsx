@@ -46,11 +46,12 @@ export function SupplierSheetDocument({
   bank,
   issuedOn,
 }: SupplierSheetProps) {
+  /* Pas de sous-titre : même règle que la fiche client. Le nom commercial est
+     une donnée du fournisseur, il figure donc parmi ses champs, ci-dessous. */
   return (
     <DocumentShell
       identity={identity}
       title="Fiche fournisseur"
-      subtitle={supplier.tradeName ?? undefined}
       reference={supplier.supplierNo}
       issuedOn={issuedOn}
     >
@@ -65,6 +66,7 @@ export function SupplierSheetDocument({
             <>
               <Field label="Identifiant" value={supplier.supplierNo} />
               <Field label="Type" value={TYPE_LABELS[supplier.type]} />
+              <Field label="Nom commercial" value={supplier.tradeName} />
               <Field label="Personne de contact" value={supplier.contactName} />
             </>
           }

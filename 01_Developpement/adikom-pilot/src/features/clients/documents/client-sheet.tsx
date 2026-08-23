@@ -63,11 +63,17 @@ export function ClientSheetDocument({
   pricingRules,
   issuedOn,
 }: ClientSheetProps) {
+  /*
+   * Pas de sous-titre sous « Fiche client ».
+   *
+   * Le nom commercial y répétait une donnée déjà présente dans le corps de la
+   * fiche, en s'intercalant entre la nature du document et le nom du client —
+   * deux informations que rien ne devait séparer.
+   */
   return (
     <DocumentShell
       identity={identity}
       title="Fiche client"
-      subtitle={client.tradeName ?? undefined}
       reference={client.clientNo}
       issuedOn={issuedOn}
     >

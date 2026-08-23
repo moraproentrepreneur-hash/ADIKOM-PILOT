@@ -39,11 +39,12 @@ export function PartnerSheetDocument({
   vehicles,
   issuedOn,
 }: PartnerSheetProps) {
+  /* Pas de sous-titre : même règle que les fiches client et fournisseur. Le nom
+     commercial figure parmi les champs du partenaire, ci-dessous. */
   return (
     <DocumentShell
       identity={identity}
       title="Fiche partenaire"
-      subtitle={partner.tradeName ?? undefined}
       reference={partner.partnerNo}
       issuedOn={issuedOn}
     >
