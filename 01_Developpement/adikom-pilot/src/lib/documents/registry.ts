@@ -11,7 +11,7 @@ import { issuedOnLabel } from './render'
 import { ClientSheetDocument } from '@/features/clients/documents/client-sheet'
 import { getClientDetail } from '@/features/clients/data'
 import { SupplierSheetDocument } from '@/features/suppliers/documents/supplier-sheet'
-import { getSupplierBankDetails, getSupplierDetail } from '@/features/suppliers/data'
+import { getSupplierDetail, listSupplierPaymentDetails } from '@/features/suppliers/data'
 import { PartnerSheetDocument } from '@/features/partners/documents/partner-sheet'
 import { getPartnerDetail } from '@/features/partners/data'
 import { VehicleSheetDocument } from '@/features/fleet/documents/vehicle-sheet'
@@ -136,13 +136,15 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
       if (!supplier) return null
 
       /*
-       * Les coordonnées bancaires exigent leur propre permission
+       * Les informations de paiement exigent leur propre permission
        * (Fournisseurs §44). Elles sont en outre filtrées par RLS : sans le
        * droit, la lecture ne renvoie rien. Le contrôle explicite évite
-       * simplement d'interroger la base pour rien.
+       * simplement d'interroger la base pour rien, et distingue « pas le
+       * droit » (`null`, section absente) de « aucune coordonnée »
+       * (tableau vide, section qui le dit).
        */
-      const mayReadBank = await can(PERMISSIONS.SUPPLIERS_BANK_VIEW)
-      const bank = mayReadBank ? await getSupplierBankDetails(id) : null
+      const mayReadPayments = await can(PERMISSIONS.SUPPLIERS_BANK_VIEW)
+      const payments = mayReadPayments ? await listSupplierPaymentDetails(id) : null
 
       const mayReadFleet = await can(PERMISSIONS.FLEET_VIEW)
       const vehicles = mayReadFleet ? await listVehicles({ supplierId: id }) : []
@@ -154,7 +156,7 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
           identity,
           supplier,
           vehicles,
-          bank,
+          payments,
           issuedOn: issuedOnLabel(),
         }),
         reference: supplier.supplierNo,

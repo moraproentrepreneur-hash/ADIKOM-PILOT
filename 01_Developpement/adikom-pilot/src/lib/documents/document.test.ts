@@ -8,7 +8,7 @@ import { PricingGridDocument } from '@/features/pricing/documents/pricing-grid'
 import { documentFileName, issuedOnLabel, renderDocument } from './render'
 import type { DocumentIdentity } from './identity'
 import type { ClientDetail } from '@/features/clients/data'
-import type { SupplierBankDetails, SupplierDetail } from '@/features/suppliers/data'
+import type { SupplierDetail, SupplierPaymentDetail } from '@/features/suppliers/data'
 import type { PartnerDetail } from '@/features/partners/data'
 import type {
   Occupation,
@@ -142,15 +142,46 @@ const SUPPLIER: SupplierDetail = {
   updatedAt: '2026-08-22T06:00:00.000Z',
 }
 
-const BANK: SupplierBankDetails = {
-  bankName: 'Banque de démonstration',
-  accountHolder: 'FOURNISSEUR DEMO 01',
-  accountNumber: '00012345678',
-  iban: null,
-  swiftBic: null,
-  notes: null,
-  updatedAt: '2026-08-22T06:00:00.000Z',
-}
+/**
+ * Deux coordonnées, dont une désactivée : le document ne doit imprimer que les
+ * actives, et signaler la principale.
+ */
+const PAYMENTS: SupplierPaymentDetail[] = [
+  {
+    id: '00000000-0000-0000-0000-000000000011',
+    kind: 'BANK_ACCOUNT',
+    label: 'Compte principal',
+    accountHolder: 'FOURNISSEUR DEMO 01',
+    currencyCode: 'KMF',
+    bankName: 'Banque de démonstration',
+    bankBranch: null,
+    accountNumber: '00012345678',
+    iban: null,
+    swiftBic: null,
+    accountReference: null,
+    isPrimary: true,
+    isActive: true,
+    notes: null,
+    updatedAt: '2026-08-22T06:00:00.000Z',
+  },
+  {
+    id: '00000000-0000-0000-0000-000000000012',
+    kind: 'OTHER',
+    label: 'Coordonnée de recette',
+    accountHolder: null,
+    currencyCode: null,
+    bankName: null,
+    bankBranch: null,
+    accountNumber: null,
+    iban: null,
+    swiftBic: null,
+    accountReference: 'REF-DEMO-0001',
+    isPrimary: false,
+    isActive: false,
+    notes: null,
+    updatedAt: '2026-08-22T06:00:00.000Z',
+  },
+]
 
 const PARTNER: PartnerDetail = {
   id: '00000000-0000-0000-0000-000000000020',
@@ -301,29 +332,63 @@ describe('fiche client', () => {
 /* -------------------------------------------------------------------------- */
 
 describe('fiche fournisseur', () => {
-  it('produit un PDF avec véhicules et coordonnées bancaires', async () => {
+  it('produit un PDF avec véhicules et informations de paiement', async () => {
     expectPdf(
       await renderDocument(
         SupplierSheetDocument({
           identity: IDENTITY,
           supplier: SUPPLIER,
           vehicles: [VEHICLE_ITEM],
-          bank: BANK,
+          payments: PAYMENTS,
           issuedOn: ISSUED,
         })
       )
     )
   })
 
-  it('rend un fournisseur sans véhicule ni coordonnées bancaires', async () => {
+  it('rend un fournisseur sans véhicule ni information de paiement', async () => {
     expectPdf(
       await renderDocument(
         SupplierSheetDocument({
           identity: IDENTITY,
           supplier: SUPPLIER,
           vehicles: [],
-          // `null` : le lecteur n'a pas accès aux coordonnées bancaires.
-          bank: null,
+          // `null` : le lecteur n'a pas accès aux informations de paiement.
+          payments: null,
+          issuedOn: ISSUED,
+        })
+      )
+    )
+  })
+
+  /**
+   * Le lecteur A le droit, mais le fournisseur n'a aucune coordonnée : le
+   * tableau est VIDE. C'est exactement la branche qui avait interrompu le rendu
+   * en production le 22/08/2026 — elle est éprouvée pour chaque tableau.
+   */
+  it('rend un tableau d’informations de paiement VIDE', async () => {
+    expectPdf(
+      await renderDocument(
+        SupplierSheetDocument({
+          identity: IDENTITY,
+          supplier: SUPPLIER,
+          vehicles: [],
+          payments: [],
+          issuedOn: ISSUED,
+        })
+      )
+    )
+  })
+
+  /** Toutes les coordonnées désactivées : le tableau se vide après filtrage. */
+  it('rend un fournisseur dont toutes les coordonnées sont désactivées', async () => {
+    expectPdf(
+      await renderDocument(
+        SupplierSheetDocument({
+          identity: IDENTITY,
+          supplier: SUPPLIER,
+          vehicles: [],
+          payments: PAYMENTS.map((payment) => ({ ...payment, isActive: false })),
           issuedOn: ISSUED,
         })
       )

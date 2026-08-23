@@ -48,3 +48,22 @@ export const TYPE_LABELS: Record<SupplierType, string> = {
   SERVICE_PROVIDER: 'Prestataire de services',
   OTHER: 'Autre',
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Informations de paiement                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Nature d'une coordonnée de règlement.
+ *
+ * DEUX VALEURS, ET PAS UNE DE PLUS. `BANK_ACCOUNT` est le seul moyen confirmé
+ * par la documentation ; `OTHER` est générique et ne prétend nommer aucun
+ * moyen métier qu'ADIKOM n'a pas arrêté. La liste s'étendra par migration
+ * lorsque les pratiques réelles seront confirmées (migration 028).
+ */
+export type SupplierPaymentKind = 'BANK_ACCOUNT' | 'OTHER'
+
+export const PAYMENT_KIND_LABELS: Record<SupplierPaymentKind, string> = {
+  BANK_ACCOUNT: 'Compte bancaire',
+  OTHER: 'Autre coordonnée',
+}

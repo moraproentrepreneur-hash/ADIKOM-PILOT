@@ -22,7 +22,7 @@ begin;
 do $$
 declare
   expected text[] := array[
-    'clients', 'suppliers', 'supplier_bank_details', 'partners',
+    'clients', 'suppliers', 'supplier_payment_details', 'partners',
     'vehicle_categories', 'vehicles', 'vehicle_supplier_history',
     'vehicle_documents', 'pricing_rules', 'vehicle_occupations'
   ];
@@ -47,7 +47,7 @@ end $$;
 do $$
 declare
   tables text[] := array[
-    'clients', 'suppliers', 'supplier_bank_details', 'partners',
+    'clients', 'suppliers', 'supplier_payment_details', 'partners',
     'vehicle_categories', 'vehicles', 'vehicle_supplier_history',
     'vehicle_documents', 'pricing_rules', 'vehicle_occupations'
   ];
@@ -63,16 +63,30 @@ begin
     raise exception 'RLS absente sur : %', unprotected;
   end if;
 
+  -- `polcmd` vaut 'd' pour une policy DELETE et '*' pour une policy FOR ALL —
+  -- laquelle COUVRE la suppression. Ne chercher que 'd' laissait passer
+  -- `supplier_bank_details`, dont la policy `for all` autorisait un utilisateur
+  -- porteur de `bank.update` à effacer la ligne. Les deux sont désormais
+  -- refusées.
   select array_agg(distinct c.relname) into deletable
   from pg_policy p
   join pg_class c on c.oid = p.polrelid
-  where c.relname = any(tables) and p.polcmd = 'd';
+  where c.relname = any(tables) and p.polcmd in ('d', '*');
 
   if deletable is not null then
-    raise exception 'Policy DELETE inattendue sur : %', deletable;
+    raise exception 'Policy autorisant la suppression sur : %', deletable;
   end if;
 
-  raise notice '[OK] 2. RLS activée, aucune policy DELETE sur le référentiel.';
+  -- Une policy ne protège rien si le DROIT est accordé : les deux se vérifient.
+  select array_agg(t) into deletable
+  from unnest(tables) t
+  where has_table_privilege('authenticated', 'public.' || t, 'DELETE');
+
+  if deletable is not null then
+    raise exception 'Droit DELETE accordé à « authenticated » sur : %', deletable;
+  end if;
+
+  raise notice '[OK] 2. RLS activée, aucune suppression possible sur le référentiel.';
 end $$;
 
 
@@ -660,27 +674,71 @@ begin
     raise exception 'Aucun changement de tarif n''a été journalisé.';
   end if;
 
-  -- Les coordonnées bancaires ne doivent jamais être recopiées dans le journal
-  -- (05_Regles_Metier/06_Audit.md §79 et §80).
-  insert into public.supplier_bank_details (supplier_id, bank_name, account_number, iban)
-  values (v_sup, 'Recette Banque', '0001234567', 'KM0000000000000000');
+  -- Les identifiants de règlement ne doivent jamais être recopiés dans le
+  -- journal (05_Regles_Metier/06_Audit.md §79 et §80). Les DEUX formes sont
+  -- éprouvées : bancaire et générique.
+  insert into public.supplier_payment_details
+    (supplier_id, kind, label, bank_name, account_number, iban)
+  values
+    (v_sup, 'BANK_ACCOUNT', 'Compte de recette', 'Recette Banque',
+     '0001234567', 'KM0000000000000000');
+
+  insert into public.supplier_payment_details
+    (supplier_id, kind, label, account_reference)
+  values
+    (v_sup, 'OTHER', 'Coordonnée de recette', 'REF-RECETTE-0001');
 
   select count(*) into v_leak
   from public.audit_log
-  where entity_type = 'supplier_bank_details'
-    and (after_data ? 'account_number' or after_data ? 'iban' or after_data ? 'swift_bic');
+  where entity_type = 'supplier_payment_details'
+    and (after_data ? 'account_number' or after_data ? 'iban'
+         or after_data ? 'swift_bic' or after_data ? 'account_reference');
 
   if v_leak > 0 then
-    raise exception 'Le journal d''audit contient des coordonnées bancaires en clair.';
+    raise exception 'Le journal d''audit contient des identifiants de règlement en clair.';
   end if;
 
+  -- Le journal doit rester UTILE : il conserve ce qui identifie la coordonnée.
   if not exists (
-    select 1 from public.audit_log where entity_type = 'supplier_bank_details'
+    select 1 from public.audit_log
+    where entity_type = 'supplier_payment_details' and after_data ? 'label'
   ) then
-    raise exception 'La modification des coordonnées bancaires n''a pas été journalisée.';
+    raise exception 'Le journal ne permet plus de savoir quelle coordonnée a changé.';
   end if;
 
-  raise notice '[OK] 18. Tarifs journalisés en PRICE_CHANGE, coordonnées bancaires rédigées.';
+  -- Les coordonnées bancaires d'ADIKOM elle-même relèvent de la même règle.
+  -- La colonne n'était couverte par aucune rédaction avant la migration 028.
+  if public.fn_audit_redact('{"bank_account_details":"secret"}'::jsonb) ? 'bank_account_details'
+  then
+    raise exception 'Les coordonnées bancaires d''ADIKOM ne sont pas rédigées.';
+  end if;
+
+  -- Une seule coordonnée principale par fournisseur, imposée par la base.
+  -- Les DEUX sont désignées principales d'un même mouvement : le déclencheur
+  -- bascule l'ancienne, l'index unique garantit qu'aucune paire ne subsiste.
+  update public.supplier_payment_details set is_primary = true where supplier_id = v_sup;
+
+  select count(*) into v_leak
+  from public.supplier_payment_details
+  where supplier_id = v_sup and is_primary;
+
+  if v_leak <> 1 then
+    raise exception 'Coordonnées principales simultanées : % (une seule attendue).', v_leak;
+  end if;
+
+  -- Une coordonnée désactivée ne peut pas rester la coordonnée par défaut.
+  update public.supplier_payment_details
+     set is_active = false
+   where supplier_id = v_sup and is_primary;
+
+  if exists (
+    select 1 from public.supplier_payment_details
+    where supplier_id = v_sup and is_primary and not is_active
+  ) then
+    raise exception 'Une coordonnée désactivée est restée principale.';
+  end if;
+
+  raise notice '[OK] 18. Tarifs journalisés, identifiants de règlement rédigés, une seule coordonnée principale.';
 end $$;
 
 

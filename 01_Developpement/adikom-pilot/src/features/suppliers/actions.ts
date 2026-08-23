@@ -14,7 +14,7 @@ import { isKnownCountry } from '@/lib/countries'
 /**
  * Actions du module Fournisseurs.
  *
- * La modification des coordonnées bancaires est une opération sensible
+ * La modification des informations de paiement est une opération sensible
  * (05_Regles_Metier/04_Fournisseurs.md §45) : elle relève d'une permission
  * distincte, est vérifiée côté serveur, et journalisée — sans que le numéro de
  * compte lui-même n'entre dans le journal (Audit §79).
@@ -220,70 +220,210 @@ async function setSupplierStatusInner(formData: FormData): Promise<SupplierFormS
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Coordonnées bancaires                                                      */
+/*  Informations de paiement                                                   */
 /* -------------------------------------------------------------------------- */
 
-const bankSchema = z.object({
-  bankName: z.string().trim().max(160).optional(),
-  accountHolder: z.string().trim().max(160).optional(),
-  accountNumber: z.string().trim().max(64).optional(),
-  iban: z.string().trim().max(64).optional(),
-  swiftBic: z.string().trim().max(32).optional(),
-  notes: z.string().trim().max(1000).optional(),
-})
+/**
+ * Une coordonnée de règlement.
+ *
+ * Les deux formes — bancaire et générique — sont départagées ici comme elles le
+ * sont en base : `supplier_payment_bank_shape` et `supplier_payment_other_shape`
+ * (migration 028). La validation côté serveur produit un message utilisable ;
+ * la contrainte, elle, garantit qu'aucune écriture ne l'esquive.
+ */
+const paymentSchema = z
+  .object({
+    kind: z.enum(['BANK_ACCOUNT', 'OTHER'], { message: 'Précisez la nature de la coordonnée.' }),
+    label: z
+      .string()
+      .trim()
+      .min(1, 'La désignation est obligatoire.')
+      .max(120, 'Cette désignation est trop longue.'),
+    accountHolder: z.string().trim().max(160).optional(),
+    currencyCode: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .max(3)
+      .refine((value) => value === '' || /^[A-Z]{3}$/.test(value), {
+        message: 'Utilisez un code à trois lettres, par exemple KMF.',
+      })
+      .optional(),
+    bankName: z.string().trim().max(160).optional(),
+    bankBranch: z.string().trim().max(160).optional(),
+    accountNumber: z.string().trim().max(64).optional(),
+    iban: z.string().trim().max(64).optional(),
+    swiftBic: z.string().trim().max(32).optional(),
+    accountReference: z.string().trim().max(160).optional(),
+    notes: z.string().trim().max(1000).optional(),
+  })
+  .refine(
+    (input) =>
+      input.kind !== 'BANK_ACCOUNT' ||
+      Boolean(orNull(input.bankName) ?? orNull(input.accountNumber) ?? orNull(input.iban)),
+    {
+      message: 'Renseignez au moins la banque, le numéro de compte ou l’IBAN.',
+      path: ['bankName'],
+    }
+  )
+  .refine(
+    (input) => input.kind !== 'OTHER' || Boolean(orNull(input.accountReference)),
+    {
+      message: 'Renseignez la référence de cette coordonnée.',
+      path: ['accountReference'],
+    }
+  )
+
+function readPaymentForm(formData: FormData) {
+  return {
+    kind: readText(formData, 'kind'),
+    label: readText(formData, 'label'),
+    accountHolder: readText(formData, 'accountHolder'),
+    currencyCode: readText(formData, 'currencyCode'),
+    bankName: readText(formData, 'bankName'),
+    bankBranch: readText(formData, 'bankBranch'),
+    accountNumber: readText(formData, 'accountNumber'),
+    iban: readText(formData, 'iban'),
+    swiftBic: readText(formData, 'swiftBic'),
+    accountReference: readText(formData, 'accountReference'),
+    notes: readText(formData, 'paymentNotes'),
+  }
+}
 
 /**
- * Enregistre les coordonnées bancaires d'un fournisseur.
+ * Les colonnes propres à une forme sont VIDÉES pour l'autre.
+ *
+ * Sans cela, changer la nature d'une coordonnée existante laisserait derrière
+ * elle un IBAN orphelin — que la contrainte refuserait, avec un message
+ * incompréhensible pour l'utilisateur.
+ */
+function toPaymentRow(input: z.infer<typeof paymentSchema>) {
+  const isBank = input.kind === 'BANK_ACCOUNT'
+
+  return {
+    kind: input.kind,
+    label: input.label,
+    account_holder: orNull(input.accountHolder),
+    currency_code: orNull(input.currencyCode),
+    bank_name: isBank ? orNull(input.bankName) : null,
+    bank_branch: isBank ? orNull(input.bankBranch) : null,
+    account_number: isBank ? orNull(input.accountNumber) : null,
+    iban: isBank ? orNull(input.iban) : null,
+    swift_bic: isBank ? orNull(input.swiftBic) : null,
+    account_reference: isBank ? null : orNull(input.accountReference),
+    notes: orNull(input.notes),
+  }
+}
+
+/**
+ * Enregistre une coordonnée de règlement — création ou modification.
  *
  * Trois barrières, aucune ne remplaçant les autres :
  *   1. `requirePermission('parties.suppliers.bank.update')` côté serveur ;
- *   2. la policy RLS de `supplier_bank_details`, qui exige la même permission ;
+ *   2. les policies RLS de `supplier_payment_details`, qui exigent la même
+ *      permission — et n'autorisent aucune suppression ;
  *   3. le trigger d'audit, qui journalise le changement sans en recopier les
  *      valeurs sensibles (`fn_audit_redact`).
  */
-export async function updateSupplierBankAction(
+export async function saveSupplierPaymentAction(
   prevState: SupplierFormState,
   formData: FormData
 ): Promise<SupplierFormState> {
-  return guarded('fournisseurs:banque', () => updateSupplierBankInner(formData))
+  return guarded('fournisseurs:paiement', () => saveSupplierPaymentInner(formData))
 }
 
-async function updateSupplierBankInner(formData: FormData): Promise<SupplierFormState> {
+async function saveSupplierPaymentInner(formData: FormData): Promise<SupplierFormState> {
   const actor = await requirePermission(PERMISSIONS.SUPPLIERS_BANK_UPDATE)
 
   const supplierId = readText(formData, 'supplierId')
   if (!supplierId) return { error: 'Fournisseur introuvable.' }
 
-  const parsed = bankSchema.safeParse({
-    bankName: readText(formData, 'bankName'),
-    accountHolder: readText(formData, 'accountHolder'),
-    accountNumber: readText(formData, 'accountNumber'),
-    iban: readText(formData, 'iban'),
-    swiftBic: readText(formData, 'swiftBic'),
-    notes: readText(formData, 'bankNotes'),
-  })
-
+  const parsed = paymentSchema.safeParse(readPaymentForm(formData))
   if (!parsed.success) return { fieldErrors: toFieldErrors(parsed.error) }
 
-  const input = parsed.data
   const supabase = await createSupabaseServerClient()
+  const paymentId = readText(formData, 'paymentId')
+  const isPrimary = readText(formData, 'isPrimary') === 'on'
 
-  const { error } = await supabase.from('supplier_bank_details').upsert(
-    {
-      supplier_id: supplierId,
-      bank_name: orNull(input.bankName),
-      account_holder: orNull(input.accountHolder),
-      account_number: orNull(input.accountNumber),
-      iban: orNull(input.iban),
-      swift_bic: orNull(input.swiftBic),
-      notes: orNull(input.notes),
-      updated_by: actor.id,
-    },
-    { onConflict: 'supplier_id' }
-  )
+  if (paymentId) {
+    const { error } = await supabase
+      .from('supplier_payment_details')
+      .update({ ...toPaymentRow(parsed.data), is_primary: isPrimary, updated_by: actor.id })
+      .eq('id', paymentId)
+      .eq('supplier_id', supplierId)
+
+    if (error) throw new Error(error.message)
+
+    revalidatePath(`/tiers/fournisseurs/${supplierId}`)
+    return { success: 'La coordonnée de règlement a été enregistrée.' }
+  }
+
+  const { error } = await supabase.from('supplier_payment_details').insert({
+    ...toPaymentRow(parsed.data),
+    supplier_id: supplierId,
+    is_primary: isPrimary,
+    created_by: actor.id,
+  })
 
   if (error) throw new Error(error.message)
 
   revalidatePath(`/tiers/fournisseurs/${supplierId}`)
-  return { success: 'Les coordonnées bancaires ont été enregistrées.' }
+  return { success: 'La coordonnée de règlement a été ajoutée.' }
+}
+
+/**
+ * Active ou désactive une coordonnée, ou la désigne comme principale.
+ *
+ * Une coordonnée ne se supprime pas : ni policy DELETE, ni droit accordé
+ * (CLAUDE.md §22). La désactivation est le retrait, et le trigger
+ * `fn_supplier_payment_single_primary` se charge de basculer l'ancienne
+ * principale — l'application n'a pas à orchestrer deux écritures.
+ */
+export async function setSupplierPaymentStateAction(
+  prevState: SupplierFormState,
+  formData: FormData
+): Promise<SupplierFormState> {
+  return guarded('fournisseurs:paiement:état', () => setSupplierPaymentStateInner(formData))
+}
+
+async function setSupplierPaymentStateInner(formData: FormData): Promise<SupplierFormState> {
+  const actor = await requirePermission(PERMISSIONS.SUPPLIERS_BANK_UPDATE)
+
+  const supplierId = readText(formData, 'supplierId')
+  const paymentId = readText(formData, 'paymentId')
+  const operation = readText(formData, 'operation')
+
+  if (!supplierId || !paymentId) return { error: 'Coordonnée introuvable.' }
+
+  const patch =
+    operation === 'primary'
+      ? { is_primary: true }
+      : operation === 'deactivate'
+        ? { is_active: false }
+        : operation === 'activate'
+          ? { is_active: true }
+          : null
+
+  if (!patch) return { error: 'Opération invalide.' }
+
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase
+    .from('supplier_payment_details')
+    .update({ ...patch, updated_by: actor.id })
+    .eq('id', paymentId)
+    .eq('supplier_id', supplierId)
+
+  if (error) throw new Error(error.message)
+
+  revalidatePath(`/tiers/fournisseurs/${supplierId}`)
+
+  return {
+    success:
+      operation === 'primary'
+        ? 'Cette coordonnée est désormais la coordonnée principale.'
+        : operation === 'deactivate'
+          ? 'La coordonnée a été désactivée.'
+          : 'La coordonnée a été réactivée.',
+  }
 }

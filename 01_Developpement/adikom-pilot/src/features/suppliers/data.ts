@@ -2,19 +2,25 @@ import 'server-only'
 
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { reportQueryFailure } from '@/lib/server-action'
-import type { SupplierStatus, SupplierType } from './constants'
+import type { SupplierPaymentKind, SupplierStatus, SupplierType } from './constants'
 
 /**
  * Accès aux données du module Fournisseurs.
  *
- * Les coordonnées bancaires vivent dans une table distincte, protégée par sa
- * propre permission : voir un fournisseur ne donne pas accès à son RIB
- * (05_Regles_Metier/04_Fournisseurs.md §44, 03_Modules/04_Tiers.md §22). La
- * restriction est portée par RLS, pas par l'affichage.
+ * Les informations de paiement vivent dans une table distincte, protégée par sa
+ * propre permission : voir un fournisseur ne donne pas accès à ses coordonnées
+ * de règlement (05_Regles_Metier/04_Fournisseurs.md §44, 03_Modules/04_Tiers.md
+ * §22). La restriction est portée par RLS, pas par l'affichage.
  */
 
-export { STATUS_LABELS, STATUS_TONES, STATUS_HINTS, TYPE_LABELS } from './constants'
-export type { SupplierStatus, SupplierType } from './constants'
+export {
+  PAYMENT_KIND_LABELS,
+  STATUS_LABELS,
+  STATUS_TONES,
+  STATUS_HINTS,
+  TYPE_LABELS,
+} from './constants'
+export type { SupplierPaymentKind, SupplierStatus, SupplierType } from './constants'
 
 export type SupplierListItem = {
   id: string
@@ -173,55 +179,80 @@ export async function getSupplierDetail(id: string): Promise<SupplierDetail | nu
   }
 }
 
-export type SupplierBankDetails = {
-  bankName: string | null
+export type SupplierPaymentDetail = {
+  id: string
+  kind: SupplierPaymentKind
+  label: string
   accountHolder: string | null
+  currencyCode: string | null
+  bankName: string | null
+  bankBranch: string | null
   accountNumber: string | null
   iban: string | null
   swiftBic: string | null
+  accountReference: string | null
+  isPrimary: boolean
+  isActive: boolean
   notes: string | null
-  updatedAt: string | null
+  updatedAt: string
 }
 
 /**
- * Coordonnées bancaires d'un fournisseur.
+ * Coordonnées de règlement d'un fournisseur — où et comment il peut être payé.
  *
- * Renvoie `null` aussi bien lorsqu'aucune coordonnée n'est enregistrée que
- * lorsque la permission manque : c'est RLS qui filtre, et l'appelant n'a pas à
- * distinguer les deux cas. L'écran affiche un refus explicite plutôt qu'un
- * formulaire vide, en s'appuyant sur la permission, pas sur ce résultat.
+ * Renvoie un tableau VIDE aussi bien lorsqu'aucune coordonnée n'est enregistrée
+ * que lorsque la permission manque : c'est RLS qui filtre, et l'appelant n'a
+ * pas à distinguer les deux cas. L'écran affiche un refus explicite plutôt
+ * qu'une liste vide, en s'appuyant sur la permission, pas sur ce résultat
+ * (05_Regles_Metier/05_Permissions.md §85).
+ *
+ * L'ordre est celui de la lecture : la coordonnée principale d'abord, les
+ * désactivées en dernier.
  */
-export async function getSupplierBankDetails(
+export async function listSupplierPaymentDetails(
   supplierId: string
-): Promise<SupplierBankDetails | null> {
+): Promise<SupplierPaymentDetail[]> {
   const supabase = await createSupabaseServerClient()
 
   const { data, error } = await supabase
-    .from('supplier_bank_details')
-    .select('bank_name, account_holder, account_number, iban, swift_bic, notes, updated_at')
+    .from('supplier_payment_details')
+    .select(
+      `id, kind, label, account_holder, currency_code,
+       bank_name, bank_branch, account_number, iban, swift_bic,
+       account_reference, is_primary, is_active, notes, updated_at`
+    )
     .eq('supplier_id', supplierId)
-    .maybeSingle()
+    .order('is_active', { ascending: false })
+    .order('is_primary', { ascending: false })
+    .order('label')
 
   // Un refus RLS se traduit ici par une absence de ligne, pas par une erreur.
   // Une erreur réelle reste signalée (DEC-017).
   if (error) {
     reportQueryFailure(
-      'coordonnées bancaires',
+      'informations de paiement',
       error,
-      'Les coordonnées bancaires n’ont pas pu être chargées.'
+      'Les informations de paiement n’ont pas pu être chargées.'
     )
   }
-  if (!data) return null
 
-  return {
-    bankName: data.bank_name,
-    accountHolder: data.account_holder,
-    accountNumber: data.account_number,
-    iban: data.iban,
-    swiftBic: data.swift_bic,
-    notes: data.notes,
-    updatedAt: data.updated_at,
-  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    kind: row.kind as SupplierPaymentKind,
+    label: row.label,
+    accountHolder: row.account_holder,
+    currencyCode: row.currency_code,
+    bankName: row.bank_name,
+    bankBranch: row.bank_branch,
+    accountNumber: row.account_number,
+    iban: row.iban,
+    swiftBic: row.swift_bic,
+    accountReference: row.account_reference,
+    isPrimary: row.is_primary,
+    isActive: row.is_active,
+    notes: row.notes,
+    updatedAt: row.updated_at,
+  }))
 }
 
 export type SupplierOption = { id: string; label: string }

@@ -8,8 +8,8 @@ import type { DocumentIdentity } from '@/lib/documents/identity'
 import { formatDateTime } from '@/lib/dates'
 import { STATUS_LABELS as VEHICLE_STATUS } from '@/features/fleet/constants'
 import type { VehicleListItem } from '@/features/fleet/data'
-import { STATUS_LABELS, TYPE_LABELS, type SupplierStatus } from '../constants'
-import type { SupplierBankDetails, SupplierDetail } from '../data'
+import { PAYMENT_KIND_LABELS, STATUS_LABELS, TYPE_LABELS, type SupplierStatus } from '../constants'
+import type { SupplierDetail, SupplierPaymentDetail } from '../data'
 
 /**
  * Fiche fournisseur — document A4.
@@ -17,8 +17,8 @@ import type { SupplierBankDetails, SupplierDetail } from '../data'
  * Même enveloppe, mêmes blocs et même moteur que la fiche client : seul le
  * contenu change.
  *
- * Les coordonnées bancaires ne sont transmises que si le lecteur a le droit de
- * les consulter. Le modèle ne décide pas de ce qu'il montre — il affiche ce
+ * Les informations de paiement ne sont transmises que si le lecteur a le droit
+ * de les consulter. Le modèle ne décide pas de ce qu'il montre — il affiche ce
  * qu'on lui donne — ce qui rend impossible qu'un document expose ce que l'écran
  * refuse (Fournisseurs §44, Tiers §22).
  */
@@ -34,8 +34,8 @@ export type SupplierSheetProps = {
   identity: DocumentIdentity
   supplier: SupplierDetail
   vehicles: VehicleListItem[]
-  /** `null` lorsque le lecteur n'a pas accès aux coordonnées bancaires. */
-  bank: SupplierBankDetails | null
+  /** `null` lorsque le lecteur n'a pas accès aux informations de paiement. */
+  payments: SupplierPaymentDetail[] | null
   issuedOn: string
 }
 
@@ -43,7 +43,7 @@ export function SupplierSheetDocument({
   identity,
   supplier,
   vehicles,
-  bank,
+  payments,
   issuedOn,
 }: SupplierSheetProps) {
   /* Pas de sous-titre : même règle que la fiche client. Le nom commercial est
@@ -132,22 +132,46 @@ export function SupplierSheetDocument({
         />
       </Section>
 
-      {bank && (
-        <Section title="Coordonnées bancaires">
-          <FieldColumns
-            left={
-              <>
-                <Field label="Banque" value={bank.bankName} />
-                <Field label="Titulaire" value={bank.accountHolder} />
-              </>
-            }
-            right={
-              <>
-                <Field label="Numéro de compte" value={bank.accountNumber} />
-                <Field label="IBAN" value={bank.iban} />
-                <Field label="BIC / SWIFT" value={bank.swiftBic} />
-              </>
-            }
+      {/*
+        Informations de paiement — uniquement si le lecteur y a droit.
+
+        `null` signifie « pas la permission » et fait disparaître la section
+        entière ; un tableau vide signifie « aucune coordonnée » et le dit. Ne
+        sont imprimées que les coordonnées ACTIVES : un document de règlement
+        n'a pas à proposer un compte qu'ADIKOM a retiré.
+      */}
+      {payments !== null && (
+        <Section title="Informations de paiement">
+          <DataTable
+            columns={[
+              {
+                header: 'Coordonnée',
+                width: '30%',
+                cell: (p: SupplierPaymentDetail) =>
+                  p.isPrimary ? `${p.label} (principale)` : p.label,
+              },
+              {
+                header: 'Nature',
+                width: '20%',
+                cell: (p: SupplierPaymentDetail) => PAYMENT_KIND_LABELS[p.kind],
+              },
+              {
+                header: 'Titulaire',
+                width: '24%',
+                cell: (p: SupplierPaymentDetail) => p.accountHolder ?? '—',
+              },
+              {
+                header: 'Identifiant',
+                width: '26%',
+                align: 'right',
+                cell: (p: SupplierPaymentDetail) =>
+                  p.kind === 'BANK_ACCOUNT'
+                    ? (p.iban ?? p.accountNumber ?? p.bankName ?? '—')
+                    : (p.accountReference ?? '—'),
+              },
+            ]}
+            rows={payments.filter((payment) => payment.isActive)}
+            emptyLabel="Aucune coordonnée de règlement enregistrée."
           />
         </Section>
       )}

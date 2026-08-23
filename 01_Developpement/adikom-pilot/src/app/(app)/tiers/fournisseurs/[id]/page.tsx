@@ -1,9 +1,17 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, CarFront, Lock, Pencil } from 'lucide-react'
+import { ArrowLeft, CarFront, Lock, Pencil, Plus } from 'lucide-react'
 
-import { Badge, Card, Empty, EmptyState, InfoRow, PageHeader } from '@/components/ui/primitives'
+import {
+  Badge,
+  ButtonLink,
+  Card,
+  Empty,
+  EmptyState,
+  InfoRow,
+  PageHeader,
+} from '@/components/ui/primitives'
 import { Notice } from '@/components/ui/feedback'
 import { StatusChangeForm } from '@/components/ui/status-change-form'
 import { Tabs, type TabItem } from '@/components/ui/tabs'
@@ -12,8 +20,9 @@ import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate, formatDateTime } from '@/lib/dates'
 import {
-  getSupplierBankDetails,
   getSupplierDetail,
+  listSupplierPaymentDetails,
+  PAYMENT_KIND_LABELS,
   STATUS_HINTS,
   STATUS_LABELS,
   STATUS_TONES,
@@ -21,7 +30,10 @@ import {
 } from '@/features/suppliers/data'
 import { setSupplierStatusAction } from '@/features/suppliers/actions'
 import { SupplierForm } from '@/features/suppliers/supplier-form'
-import { BankDetailsForm } from '@/features/suppliers/bank-details-form'
+import {
+  PaymentDetailForm,
+  PaymentStateButton,
+} from '@/features/suppliers/payment-details'
 import { listVehicles, STATUS_LABELS as VEHICLE_STATUS_LABELS, STATUS_TONES as VEHICLE_STATUS_TONES } from '@/features/fleet/data'
 
 export const metadata: Metadata = { title: 'Fiche fournisseur' }
@@ -67,9 +79,9 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
     ...(canViewBank
       ? [
           {
-            key: 'banque',
-            label: 'Coordonnées bancaires',
-            href: `/tiers/fournisseurs/${id}?onglet=banque`,
+            key: 'paiement',
+            label: 'Informations de paiement',
+            href: `/tiers/fournisseurs/${id}?onglet=paiement`,
           },
         ]
       : []),
@@ -140,8 +152,12 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
 
       {tab === 'vehicules' ? (
         <VehiclesTab supplierId={id} />
-      ) : tab === 'banque' ? (
-        <BankTab supplierId={id} editable={canUpdateBank} />
+      ) : tab === 'paiement' ? (
+        <PaymentTab
+          supplierId={id}
+          editable={canUpdateBank}
+          editing={typeof searchParams.paiement === 'string' ? searchParams.paiement : null}
+        />
       ) : editing && canUpdate ? (
         <Card className="max-w-4xl">
           <SupplierForm mode="edit" supplier={supplier} />
@@ -272,28 +288,150 @@ async function VehiclesTab({ supplierId }: { supplierId: string }) {
 }
 
 /**
- * Coordonnées bancaires.
+ * Informations de paiement — où et comment le fournisseur peut être payé.
  *
  * L'onglet n'apparaît qu'avec `parties.suppliers.bank.view`, et la lecture est
  * de toute façon filtrée par RLS : un accès direct par URL ne révèle rien.
+ *
+ * Le MOYEN employé pour une transaction n'est pas ici : il appartiendra au
+ * règlement, avec le compte financier mouvementé (03_Modules/07 §22 et §23).
  */
-async function BankTab({ supplierId, editable }: { supplierId: string; editable: boolean }) {
-  const details = await getSupplierBankDetails(supplierId)
+async function PaymentTab({
+  supplierId,
+  editable,
+  editing,
+}: {
+  supplierId: string
+  editable: boolean
+  /** Identifiant de la coordonnée en cours d'édition, ou « nouveau ». */
+  editing: string | null
+}) {
+  const details = await listSupplierPaymentDetails(supplierId)
+  const base = `/tiers/fournisseurs/${supplierId}?onglet=paiement`
+
+  // Une coordonnée ne s'édite que par cette voie : le paramètre est vérifié
+  // contre les lignes réellement lisibles, jamais suivi tel quel.
+  const edited = editing && editing !== 'nouveau' ? details.find((d) => d.id === editing) : undefined
+
+  if (editable && editing === 'nouveau') {
+    return (
+      <Card title="Nouvelle coordonnée de règlement" className="max-w-3xl">
+        <PaymentDetailForm supplierId={supplierId} cancelHref={base} />
+      </Card>
+    )
+  }
+
+  if (editable && edited) {
+    return (
+      <Card title={`Coordonnée — ${edited.label}`} className="max-w-3xl">
+        <PaymentDetailForm supplierId={supplierId} detail={edited} cancelHref={base} />
+      </Card>
+    )
+  }
 
   return (
     <Card
-      title="Coordonnées bancaires"
+      title="Informations de paiement"
       description="Donnée sensible : accès et modification soumis à une permission dédiée."
+      actions={
+        editable ? (
+          <ButtonLink href={`${base}&paiement=nouveau`} icon={Plus}>
+            Ajouter
+          </ButtonLink>
+        ) : undefined
+      }
       className="max-w-3xl"
     >
-      {!details && !editable ? (
+      {details.length === 0 ? (
         <EmptyState
           icon={Lock}
           title="Aucune coordonnée enregistrée"
-          description="Les coordonnées bancaires de ce fournisseur n’ont pas encore été renseignées."
+          description={
+            editable
+              ? 'Ajoutez une coordonnée pour indiquer où et comment régler ce fournisseur.'
+              : 'Les informations de paiement de ce fournisseur n’ont pas encore été renseignées.'
+          }
         />
       ) : (
-        <BankDetailsForm supplierId={supplierId} details={details} editable={editable} />
+        <ul className="space-y-4">
+          {details.map((detail) => (
+            <li
+              key={detail.id}
+              className={`rounded-control border p-4 ${
+                detail.isActive ? 'border-line' : 'border-line bg-adikom-50/40'
+              }`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-ink">{detail.label}</p>
+                  <p className="text-xs text-muted">
+                    {PAYMENT_KIND_LABELS[detail.kind]}
+                    {detail.currencyCode ? ` · ${detail.currencyCode}` : ''}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  {detail.isPrimary && <Badge tone="success">Principale</Badge>}
+                  {!detail.isActive && <Badge>Désactivée</Badge>}
+                </div>
+              </div>
+
+              <dl className="mt-3">
+                {detail.kind === 'BANK_ACCOUNT' ? (
+                  <>
+                    <InfoRow label="Banque">{detail.bankName ?? <Empty />}</InfoRow>
+                    <InfoRow label="Agence">{detail.bankBranch ?? <Empty />}</InfoRow>
+                    <InfoRow label="Titulaire">{detail.accountHolder ?? <Empty />}</InfoRow>
+                    <InfoRow label="Numéro de compte">
+                      <span className="tabular">{detail.accountNumber ?? <Empty />}</span>
+                    </InfoRow>
+                    <InfoRow label="IBAN">
+                      <span className="tabular">{detail.iban ?? <Empty />}</span>
+                    </InfoRow>
+                    <InfoRow label="BIC / SWIFT">
+                      <span className="tabular">{detail.swiftBic ?? <Empty />}</span>
+                    </InfoRow>
+                  </>
+                ) : (
+                  <>
+                    <InfoRow label="Bénéficiaire">{detail.accountHolder ?? <Empty />}</InfoRow>
+                    <InfoRow label="Référence">
+                      <span className="tabular">{detail.accountReference ?? <Empty />}</span>
+                    </InfoRow>
+                  </>
+                )}
+                {detail.notes && <InfoRow label="Précisions">{detail.notes}</InfoRow>}
+              </dl>
+
+              {editable && (
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <ButtonLink
+                    href={`${base}&paiement=${detail.id}`}
+                    tone="secondary"
+                    icon={Pencil}
+                  >
+                    Modifier
+                  </ButtonLink>
+
+                  {detail.isActive && !detail.isPrimary && (
+                    <PaymentStateButton
+                      supplierId={supplierId}
+                      paymentId={detail.id}
+                      operation="primary"
+                      label="Définir comme principale"
+                    />
+                  )}
+
+                  <PaymentStateButton
+                    supplierId={supplierId}
+                    paymentId={detail.id}
+                    operation={detail.isActive ? 'deactivate' : 'activate'}
+                    label={detail.isActive ? 'Désactiver' : 'Réactiver'}
+                  />
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
     </Card>
   )

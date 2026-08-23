@@ -1,0 +1,36 @@
+-- =============================================================================
+-- ADIKOM PILOT — 030 · Retrait de `supplier_bank_details`
+-- Arbitrage ADIKOM du 23 août 2026
+--
+-- POURQUOI UNE MIGRATION SÉPARÉE
+--
+-- La migration 028 crée `supplier_payment_details` et y reprend les lignes de
+-- l'ancienne table, sans la supprimer. C'est délibéré : entre l'application
+-- d'une migration et la mise en ligne du code, la production continue de
+-- tourner sur la version précédente — laquelle lit `supplier_bank_details` et
+-- signale une erreur si la lecture échoue (`reportQueryFailure`, DEC-017).
+--
+-- Supprimer la table dans la même migration aurait donc cassé la fiche
+-- fournisseur et son PDF pour tout compte porteur de
+-- `parties.suppliers.bank.view`, pendant toute la durée de la revue et du
+-- déploiement.
+--
+-- ORDRE D'APPLICATION, À RESPECTER
+--
+--   1. migrations 028 et 029 ;
+--   2. déploiement du code sur Vercel, statut READY ;
+--   3. migration 030 — celle-ci.
+--
+-- À ce stade, plus aucune ligne de code ne référence la table : la reprise a
+-- eu lieu en 028, et la vérification de dépendances du 23/08/2026 n'a laissé
+-- subsister aucun appel (application, scripts de recette, tests SQL).
+--
+-- CE QUI DISPARAÎT AVEC ELLE
+--
+-- Ses deux policies, ses deux triggers et son droit de suppression — dont la
+-- policy `for all` qui autorisait un utilisateur à effacer la ligne. Le
+-- journal d'audit, lui, conserve les entrées déjà produites : il est immuable
+-- (05_Regles_Metier/06_Audit.md §40).
+-- =============================================================================
+
+drop table if exists public.supplier_bank_details;

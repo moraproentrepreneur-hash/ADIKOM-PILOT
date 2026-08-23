@@ -195,11 +195,14 @@ async function main() {
       .single()
     fixtures.supplierId = supplier.id
 
-    await admin.from('supplier_bank_details').insert({
+    await admin.from('supplier_payment_details').insert({
       supplier_id: supplier.id,
+      kind: 'BANK_ACCOUNT',
+      label: `${MARKER} — Compte`,
       bank_name: `${MARKER} — Banque`,
       account_number: '0001234567',
       iban: 'KM0000000000000000',
+      is_primary: true,
     })
 
     const { data: clientNo } = await admin.rpc('next_number', { p_entity_key: 'client' })
@@ -246,8 +249,8 @@ async function main() {
     noRows(await anon.from('clients').select('id').limit(1), 'Clients illisibles')
     noRows(await anon.from('suppliers').select('id').limit(1), 'Fournisseurs illisibles')
     noRows(
-      await anon.from('supplier_bank_details').select('supplier_id').limit(1),
-      'Coordonnées bancaires illisibles'
+      await anon.from('supplier_payment_details').select('id').limit(1),
+      'Informations de paiement illisibles'
     )
     noRows(await anon.from('vehicles').select('id').limit(1), 'Véhicules illisibles')
     noRows(await anon.from('pricing_rules').select('id').limit(1), 'Tarifs illisibles')
@@ -300,8 +303,8 @@ async function main() {
     noRows(await none.from('vehicles').select('id').limit(1), 'Véhicules illisibles')
     noRows(await none.from('pricing_rules').select('id').limit(1), 'Tarifs illisibles')
     noRows(
-      await none.from('supplier_bank_details').select('supplier_id').limit(1),
-      'Coordonnées bancaires illisibles'
+      await none.from('supplier_payment_details').select('id').limit(1),
+      'Informations de paiement illisibles'
     )
 
     refused(
@@ -368,24 +371,27 @@ async function main() {
     hasRows(await reader.from('vehicles').select('id').limit(5), 'Véhicules lisibles')
     hasRows(await reader.from('pricing_rules').select('id').limit(5), 'Tarifs lisibles')
 
-    // Le contrôle central du lot : voir un fournisseur ne donne pas accès à son
-    // RIB (05_Regles_Metier/04_Fournisseurs.md §44, 03_Modules/04_Tiers.md §22).
+    // Le contrôle central du lot : voir un fournisseur ne donne pas accès à ses
+    // coordonnées de règlement (05_Regles_Metier/04_Fournisseurs.md §44,
+    // 03_Modules/04_Tiers.md §22).
     noRows(
       await reader
-        .from('supplier_bank_details')
-        .select('supplier_id, iban')
+        .from('supplier_payment_details')
+        .select('id, iban')
         .eq('supplier_id', fixtures.supplierId),
-      'Coordonnées bancaires INVISIBLES malgré l’accès au fournisseur'
+      'Informations de paiement INVISIBLES malgré l’accès au fournisseur'
     )
 
     refused(
       (
-        await reader.from('supplier_bank_details').upsert({
+        await reader.from('supplier_payment_details').insert({
           supplier_id: fixtures.supplierId,
+          kind: 'BANK_ACCOUNT',
+          label: 'Intrusion',
           iban: 'KM9999999999999999',
         })
       ).error,
-      'Modification des coordonnées bancaires refusée'
+      'Création d’une coordonnée de règlement refusée'
     )
 
     refused(
