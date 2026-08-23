@@ -78,3 +78,46 @@ export function displayStatus(status: RentalStatus, expectedReturnAt: string): R
   if (status !== 'IN_PROGRESS' && status !== 'EXTENDED') return status
   return new Date(expectedReturnAt).getTime() < Date.now() ? 'LATE' : status
 }
+
+/* -------------------------------------------------------------------------- */
+/*  États des lieux                                                            */
+/* -------------------------------------------------------------------------- */
+
+export type InspectionKind = 'DEPARTURE' | 'RETURN'
+
+export const INSPECTION_LABELS: Record<InspectionKind, string> = {
+  DEPARTURE: 'État des lieux de départ',
+  RETURN: 'État des lieux de retour',
+}
+
+/**
+ * Niveau de carburant, en crans.
+ *
+ * La documentation raisonne en fractions — « 3/4 » au départ, « 1/2 » au
+ * retour (Module 05 §36) — et non en litres : un relevé à la jauge n'a pas la
+ * précision d'un volume, et prétendre le contraire produirait un écart
+ * faussement exact.
+ */
+export type FuelLevel = 'EMPTY' | 'QUARTER' | 'HALF' | 'THREE_QUARTERS' | 'FULL'
+
+export const FUEL_LEVEL_LABELS: Record<FuelLevel, string> = {
+  EMPTY: 'Vide',
+  QUARTER: '1/4',
+  HALF: '1/2',
+  THREE_QUARTERS: '3/4',
+  FULL: 'Plein',
+}
+
+/** Ordre de la jauge, du vide au plein — pour l'affichage et la comparaison. */
+export const FUEL_LEVEL_ORDER: FuelLevel[] = [
+  'EMPTY',
+  'QUARTER',
+  'HALF',
+  'THREE_QUARTERS',
+  'FULL',
+]
+
+/** Photos : mêmes limites que les documents de véhicule, même bucket. */
+export const MAX_PHOTO_SIZE = 10 * 1024 * 1024
+
+export const ACCEPTED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const

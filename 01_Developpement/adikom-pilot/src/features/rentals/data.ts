@@ -3,7 +3,7 @@ import 'server-only'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { reportQueryFailure } from '@/lib/server-action'
 import type { PricingUnit } from '@/features/pricing/constants'
-import type { RentalStatus } from './constants'
+import type { FuelLevel, InspectionKind, RentalStatus } from './constants'
 
 /**
  * Accès aux données des locations.
@@ -18,7 +18,12 @@ export {
   FILTERABLE_STATUSES,
   displayStatus,
 } from './constants'
-export type { RentalStatus } from './constants'
+export {
+  FUEL_LEVEL_LABELS,
+  FUEL_LEVEL_ORDER,
+  INSPECTION_LABELS,
+} from './constants'
+export type { FuelLevel, InspectionKind, RentalStatus } from './constants'
 
 export type RentalListItem = {
   id: string
@@ -233,4 +238,87 @@ export async function getRentalDetail(id: string): Promise<RentalDetail | null> 
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  États des lieux                                                            */
+/* -------------------------------------------------------------------------- */
+
+export type InspectionPhoto = {
+  id: string
+  fileName: string
+  caption: string | null
+}
+
+export type Inspection = {
+  id: string
+  kind: InspectionKind
+  performedAt: string
+  mileage: number | null
+  fuelLevel: FuelLevel | null
+  exteriorCondition: string | null
+  interiorCondition: string | null
+  preexistingDamages: string | null
+  observations: string | null
+  photos: InspectionPhoto[]
+}
+
+/**
+ * États des lieux d'une location, avec leurs photos.
+ *
+ * `storage_path` n'est JAMAIS renvoyé à l'interface : une photo s'ouvre par
+ * `/api/inspections/[id]`, qui vérifie la permission puis délivre une URL
+ * signée de courte durée. Exposer le chemin ne donnerait rien — le bucket est
+ * privé et sans policy — mais le taire évite d'inviter à l'essayer.
+ */
+export async function listInspections(rentalId: string): Promise<Inspection[]> {
+  const supabase = await createSupabaseServerClient()
+
+  const { data, error } = await supabase
+    .from('rental_inspections')
+    .select(
+      `id, kind, performed_at, mileage, fuel_level,
+       exterior_condition, interior_condition, preexisting_damages, observations,
+       rental_inspection_photos ( id, file_name, caption, is_archived )`
+    )
+    .eq('rental_id', rentalId)
+    .order('performed_at')
+
+  if (error) {
+    reportQueryFailure(
+      'états des lieux',
+      error,
+      'Les états des lieux n’ont pas pu être chargés.'
+    )
+  }
+
+  type RawInspection = {
+    id: string
+    kind: InspectionKind
+    performed_at: string
+    mileage: number | null
+    fuel_level: FuelLevel | null
+    exterior_condition: string | null
+    interior_condition: string | null
+    preexisting_damages: string | null
+    observations: string | null
+    rental_inspection_photos:
+      | { id: string; file_name: string; caption: string | null; is_archived: boolean }[]
+      | null
+  }
+
+  return ((data ?? []) as unknown as RawInspection[]).map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    performedAt: row.performed_at,
+    mileage: row.mileage,
+    fuelLevel: row.fuel_level,
+    exteriorCondition: row.exterior_condition,
+    interiorCondition: row.interior_condition,
+    preexistingDamages: row.preexisting_damages,
+    observations: row.observations,
+    photos: (row.rental_inspection_photos ?? [])
+      .filter((photo) => !photo.is_archived)
+      .map((photo) => ({ id: photo.id, fileName: photo.file_name, caption: photo.caption })),
+  }))
 }

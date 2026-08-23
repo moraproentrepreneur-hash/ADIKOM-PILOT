@@ -1,9 +1,17 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ClipboardCheck, Image as ImageIcon, KeyRound } from 'lucide-react'
 
-import { Badge, Card, Empty, InfoRow, PageHeader } from '@/components/ui/primitives'
+import {
+  Badge,
+  ButtonLink,
+  Card,
+  Empty,
+  EmptyState,
+  InfoRow,
+  PageHeader,
+} from '@/components/ui/primitives'
 import { Notice } from '@/components/ui/feedback'
 import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
@@ -12,7 +20,10 @@ import { formatDate, formatDateTime, formatPeriod } from '@/lib/dates'
 import { formatPrice, SOURCE_LABELS, type PricingSource } from '@/features/pricing/constants'
 import {
   displayStatus,
+  FUEL_LEVEL_LABELS,
   getRentalDetail,
+  INSPECTION_LABELS,
+  listInspections,
   STATUS_LABELS,
   STATUS_TONES,
 } from '@/features/rentals/data'
@@ -33,10 +44,16 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
   if (!rental) notFound()
 
   const justCreated = searchParams.cree === '1'
+  const justLeft = searchParams.parti === '1'
+  const rejectedPhotos = Number(
+    typeof searchParams.photos === 'string' ? searchParams.photos : 0
+  )
+  const requestedTab = typeof searchParams.onglet === 'string' ? searchParams.onglet : 'informations'
 
-  const [canUpdate, canCancel, canSeeAmounts, canViewReservation] = await Promise.all([
+  const [canUpdate, canCancel, canCheckout, canSeeAmounts, canViewReservation] = await Promise.all([
     can(PERMISSIONS.RENTALS_UPDATE),
     can(PERMISSIONS.RENTALS_CANCEL),
+    can(PERMISSIONS.RENTALS_CHECKOUT),
     can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
     can(PERMISSIONS.RESERVATIONS_VIEW),
   ])
@@ -46,9 +63,13 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
 
   const tabs: TabItem[] = [
     { key: 'informations', label: 'Informations', href: `/location/locations/${id}` },
-    { key: 'etats', label: 'États des lieux', planned: true },
+    { key: 'etats', label: 'États des lieux', href: `/location/locations/${id}?onglet=etats` },
     { key: 'historique', label: 'Historique', planned: true },
   ]
+
+  const tab = tabs.some((item) => item.key === requestedTab && item.href)
+    ? requestedTab
+    : 'informations'
 
   return (
     <>
@@ -68,7 +89,32 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
         </Notice>
       )}
 
-      <PageHeader title={rental.clientLabel} description={rental.rentalNo} />
+      {justLeft && (
+        <Notice tone="success" className="mb-5">
+          Départ enregistré. La location est <strong>en cours</strong> et le véhicule est sorti du
+          parc.
+          {rejectedPhotos > 0 && (
+            <>
+              {' '}
+              En revanche, {rejectedPhotos} photo{rejectedPhotos > 1 ? 's n’ont' : ' n’a'} pas pu
+              être enregistrée{rejectedPhotos > 1 ? 's' : ''} : le départ, lui, est bien pris en
+              compte.
+            </>
+          )}
+        </Notice>
+      )}
+
+      <PageHeader
+        title={rental.clientLabel}
+        description={rental.rentalNo}
+        actions={
+          canCheckout && rental.status === 'CONFIRMED' ? (
+            <ButtonLink href={`/location/locations/${id}/depart`} icon={KeyRound}>
+              Enregistrer le départ
+            </ButtonLink>
+          ) : undefined
+        }
+      />
 
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <Badge tone={STATUS_TONES[shown]}>{STATUS_LABELS[shown]}</Badge>
@@ -77,8 +123,11 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
         </span>
       </div>
 
-      <Tabs items={tabs} current="informations" />
+      <Tabs items={tabs} current={tab} />
 
+      {tab === 'etats' ? (
+        <InspectionsTab rentalId={id} />
+      ) : (
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
           <Card title="Contrat">
@@ -192,12 +241,101 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
 
           <Card title="Étape suivante">
             <p className="text-sm text-muted">
-              Le départ, l’état des lieux et les photos relèvent du lot suivant. Le retour et le
-              contrôle viendront ensuite.
+              {rental.status === 'CONFIRMED'
+                ? 'Le contrat est prêt : enregistrez le départ et l’état des lieux du véhicule.'
+                : rental.startedAt
+                  ? 'Le retour et le contrôle relèvent d’un lot ultérieur.'
+                  : 'Confirmez le contrat pour pouvoir enregistrer le départ.'}
             </p>
           </Card>
         </div>
       </div>
+      )}
     </>
+  )
+}
+
+/**
+ * États des lieux de la location.
+ *
+ * Tant qu'aucun départ n'a été enregistré, l'onglet le DIT — il ne se contente
+ * pas d'être vide. La distinction compte : un écran vide se lit comme une
+ * panne, une absence annoncée se lit comme une étape à venir (DEC-017).
+ */
+async function InspectionsTab({ rentalId }: { rentalId: string }) {
+  const inspections = await listInspections(rentalId)
+
+  if (inspections.length === 0) {
+    return (
+      <Card title="États des lieux">
+        <EmptyState
+          icon={ClipboardCheck}
+          title="Aucun état des lieux"
+          description="L’état des lieux de départ sera enregistré au moment où le véhicule quittera le parc."
+        />
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      {inspections.map((inspection) => (
+        <Card
+          key={inspection.id}
+          title={INSPECTION_LABELS[inspection.kind]}
+          description={formatDateTime(inspection.performedAt) ?? undefined}
+        >
+          <dl>
+            <InfoRow label="Kilométrage">
+              {inspection.mileage != null ? (
+                <span className="tabular">{inspection.mileage.toLocaleString('fr-FR')} km</span>
+              ) : (
+                <Empty />
+              )}
+            </InfoRow>
+            <InfoRow label="Carburant">
+              {inspection.fuelLevel ? FUEL_LEVEL_LABELS[inspection.fuelLevel] : <Empty />}
+            </InfoRow>
+            <InfoRow label="État extérieur">{inspection.exteriorCondition ?? <Empty />}</InfoRow>
+            <InfoRow label="État intérieur">{inspection.interiorCondition ?? <Empty />}</InfoRow>
+            <InfoRow
+              label="Dommages préexistants"
+              hint="Relevés au départ : ils ne seront pas imputés au client."
+            >
+              {inspection.preexistingDamages ?? <Empty />}
+            </InfoRow>
+            <InfoRow label="Observations">{inspection.observations ?? <Empty />}</InfoRow>
+          </dl>
+
+          {inspection.photos.length > 0 && (
+            <div className="mt-4 border-t border-line pt-4">
+              <p className="mb-2 text-xs font-medium text-ink">
+                {inspection.photos.length} photo{inspection.photos.length > 1 ? 's' : ''}
+              </p>
+              <ul className="flex flex-wrap gap-2">
+                {inspection.photos.map((photo) => (
+                  <li key={photo.id}>
+                    {/*
+                      Le chemin de stockage n'est jamais exposé : cette route
+                      vérifie la permission puis délivre une URL signée d'une
+                      minute (DEC-025 §f).
+                    */}
+                    <a
+                      href={`/api/inspections/${photo.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-control border border-line px-3 py-1.5 text-xs text-adikom-500 transition-colors hover:border-adikom-300"
+                    >
+                      <ImageIcon className="size-3.5" aria-hidden />
+                      {photo.caption ?? photo.fileName}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+      ))}
+    </div>
   )
 }

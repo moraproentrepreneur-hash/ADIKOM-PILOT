@@ -33,7 +33,8 @@
     "verify:partners": "node scripts/verify-partners.mjs",
     "verify:payments": "node scripts/verify-supplier-payments.mjs",
     "verify:reservations": "node scripts/verify-reservations.mjs",
-    "verify:rentals": "node scripts/verify-rentals.mjs"
+    "verify:rentals": "node scripts/verify-rentals.mjs",
+    "verify:checkout": "node scripts/verify-checkout.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",
