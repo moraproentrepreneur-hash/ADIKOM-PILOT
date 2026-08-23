@@ -264,14 +264,45 @@ async function main() {
 
   console.log(`\nCible : ${base}\n`)
 
-  // --- Sujets : les données DEMO, jamais modifiées --------------------------
-  const [{ data: client }, { data: supplier }, { data: partner }, { data: vehicles }] =
-    await Promise.all([
-      admin.from('clients').select('id, client_no, legal_name').eq('legal_name', 'CLIENT DEMO 01').maybeSingle(),
-      admin.from('suppliers').select('id, supplier_no, legal_name').eq('legal_name', 'FOURNISSEUR DEMO 01').maybeSingle(),
-      admin.from('partners').select('id, partner_no, legal_name').eq('legal_name', 'PARTENAIRE DEMO 01').maybeSingle(),
-      admin.from('vehicles').select('id, vehicle_no, brand, model').like('vehicle_no', 'VEH-%').order('vehicle_no').limit(3),
-    ])
+  /*
+   * --- Sujets : les données DEMO, jamais modifiées --------------------------
+   *
+   * UNE ERREUR DE LECTURE N'EST PAS UNE DONNÉE ABSENTE (DEC-017).
+   *
+   * Ces quatre requêtes partaient en parallèle et leur `error` était ignorée :
+   * un aléa réseau sur l'une d'elles s'affichait « Sujets introuvables », et
+   * envoyait chercher un jeu de démonstration parfaitement présent. Constaté
+   * deux fois, sur deux cibles différentes.
+   *
+   * Elles sont désormais séquentielles, l'erreur est signalée pour ce qu'elle
+   * est, et une lecture qui échoue est retentée avant d'être déclarée perdue.
+   */
+  async function subject(scope, run) {
+    let lastError = null
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const { data, error } = await run()
+      if (!error) return data
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 500 * attempt))
+    }
+
+    console.error(`\n✖ Lecture impossible (${scope}) : ${lastError.message}\n`)
+    process.exit(1)
+  }
+
+  const client = await subject('clients', () =>
+    admin.from('clients').select('id, client_no, legal_name').eq('legal_name', 'CLIENT DEMO 01').maybeSingle()
+  )
+  const supplier = await subject('fournisseurs', () =>
+    admin.from('suppliers').select('id, supplier_no, legal_name').eq('legal_name', 'FOURNISSEUR DEMO 01').maybeSingle()
+  )
+  const partner = await subject('partenaires', () =>
+    admin.from('partners').select('id, partner_no, legal_name').eq('legal_name', 'PARTENAIRE DEMO 01').maybeSingle()
+  )
+  const vehicles = await subject('véhicules', () =>
+    admin.from('vehicles').select('id, vehicle_no, brand, model').like('vehicle_no', 'VEH-%').order('vehicle_no').limit(3)
+  )
 
   const missing = []
   if (!client) missing.push('CLIENT DEMO 01')
