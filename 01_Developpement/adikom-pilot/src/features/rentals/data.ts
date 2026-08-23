@@ -19,6 +19,7 @@ export {
   displayStatus,
 } from './constants'
 export {
+  calendarDaysUntil,
   FUEL_LEVEL_LABELS,
   FUEL_LEVEL_ORDER,
   INSPECTION_LABELS,

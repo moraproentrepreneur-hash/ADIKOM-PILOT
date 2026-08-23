@@ -19,6 +19,7 @@ import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate, formatDateTime, formatPeriod } from '@/lib/dates'
 import { formatPrice, SOURCE_LABELS, type PricingSource } from '@/features/pricing/constants'
 import {
+  calendarDaysUntil,
   displayStatus,
   FUEL_LEVEL_LABELS,
   getRentalDetail,
@@ -31,6 +32,7 @@ import {
   CancelRentalPanel,
   ConfirmRentalPanel,
 } from '@/features/rentals/rental-actions-panel'
+import { ExtendPanel } from '@/features/rentals/extend-panel'
 
 export const metadata: Metadata = { title: 'Location' }
 
@@ -50,16 +52,22 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
   )
   const requestedTab = typeof searchParams.onglet === 'string' ? searchParams.onglet : 'informations'
 
-  const [canUpdate, canCancel, canCheckout, canSeeAmounts, canViewReservation] = await Promise.all([
-    can(PERMISSIONS.RENTALS_UPDATE),
-    can(PERMISSIONS.RENTALS_CANCEL),
-    can(PERMISSIONS.RENTALS_CHECKOUT),
-    can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
-    can(PERMISSIONS.RESERVATIONS_VIEW),
-  ])
+  const [canUpdate, canCancel, canCheckout, canExtend, canSeeAmounts, canViewReservation] =
+    await Promise.all([
+      can(PERMISSIONS.RENTALS_UPDATE),
+      can(PERMISSIONS.RENTALS_CANCEL),
+      can(PERMISSIONS.RENTALS_CHECKOUT),
+      can(PERMISSIONS.RENTALS_EXTEND),
+      can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
+      can(PERMISSIONS.RESERVATIONS_VIEW),
+    ])
 
   const shown = displayStatus(rental.status, rental.expectedReturnAt)
   const beforeDeparture = rental.status === 'PREPARING' || rental.status === 'CONFIRMED'
+  const running = rental.status === 'IN_PROGRESS' || rental.status === 'EXTENDED'
+
+  // Repère d'exploitation, jamais une durée facturable (DEC-008).
+  const daysLeft = running ? calendarDaysUntil(rental.expectedReturnAt) : null
 
   const tabs: TabItem[] = [
     { key: 'informations', label: 'Informations', href: `/location/locations/${id}` },
@@ -121,6 +129,20 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
         <span className="text-sm text-muted">
           {formatPeriod(rental.plannedFrom, rental.plannedTo)}
         </span>
+        {/*
+          Repère de calendrier, pas de facturation : « attendu dans deux jours »
+          se lit sans ambiguïté, alors qu'un nombre de jours facturables
+          supposerait une règle d'arrondi qui n'est pas arrêtée (DEC-008).
+        */}
+        {daysLeft !== null && (
+          <Badge tone={daysLeft < 0 ? 'danger' : daysLeft === 0 ? 'warning' : 'neutral'}>
+            {daysLeft < 0
+              ? `Retour dépassé de ${Math.abs(daysLeft)} jour${Math.abs(daysLeft) > 1 ? 's' : ''}`
+              : daysLeft === 0
+                ? 'Retour attendu aujourd’hui'
+                : `Retour attendu dans ${daysLeft} jour${daysLeft > 1 ? 's' : ''}`}
+          </Badge>
+        )}
       </div>
 
       <Tabs items={tabs} current={tab} />
@@ -181,6 +203,13 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
             </Card>
           )}
 
+          {/*
+            Relevés du départ, remontés sur la fiche : ce sont EUX que le retour
+            comparera. Les avoir sous les yeux pendant la location, c'est
+            préparer le contrôle sans rien valoriser (DEC-025 §i).
+          */}
+          {running && <DepartureReadings rentalId={id} />}
+
           {(rental.conditions || rental.notes) && (
             <Card title="Conditions et observations">
               <dl>
@@ -227,6 +256,15 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
             </dl>
           </Card>
 
+          {canExtend && running && (
+            <Card
+              title="Prolonger"
+              description="Le véhicule reste engagé sans interruption ; le tarif du contrat ne change pas."
+            >
+              <ExtendPanel rentalId={id} expectedReturnAt={rental.expectedReturnAt} />
+            </Card>
+          )}
+
           {canUpdate && rental.status === 'PREPARING' && (
             <Card title="Confirmer le contrat" description="Le contrat est prêt pour le départ.">
               <ConfirmRentalPanel rentalId={id} />
@@ -252,6 +290,46 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
       </div>
       )}
     </>
+  )
+}
+
+/**
+ * Relevés du départ — ce que le retour comparera.
+ *
+ * Kilométrage et carburant relevés à la sortie du parc. Aucun écart n'est
+ * calculé et aucun montant n'est proposé : le rapprochement relève du contrôle
+ * de retour, et sa valorisation d'une règle qui n'existe pas (DEC-008).
+ */
+async function DepartureReadings({ rentalId }: { rentalId: string }) {
+  const inspections = await listInspections(rentalId)
+  const departure = inspections.find((inspection) => inspection.kind === 'DEPARTURE')
+
+  if (!departure) return null
+
+  return (
+    <Card
+      title="Relevés au départ"
+      description="Références du contrôle de retour. Aucun écart n’est calculé à ce stade."
+    >
+      <dl>
+        <InfoRow label="Kilométrage au départ">
+          {departure.mileage != null ? (
+            <span className="tabular">{departure.mileage.toLocaleString('fr-FR')} km</span>
+          ) : (
+            <Empty />
+          )}
+        </InfoRow>
+        <InfoRow label="Carburant au départ">
+          {departure.fuelLevel ? FUEL_LEVEL_LABELS[departure.fuelLevel] : <Empty />}
+        </InfoRow>
+        <InfoRow
+          label="Dommages préexistants"
+          hint="Relevés au départ : ils ne seront pas imputés au client."
+        >
+          {departure.preexistingDamages ?? <Empty />}
+        </InfoRow>
+      </dl>
+    </Card>
   )
 }
 

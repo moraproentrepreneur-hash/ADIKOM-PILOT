@@ -43,6 +43,14 @@ const ERROR_PATTERNS: readonly [RegExp, string][] = [
     /une location déjà partie ne s'annule pas|déjà partie/i,
     'Une location déjà partie ne s’annule pas : elle se termine par un retour.',
   ],
+  [
+    /seule une location en cours peut être prolongée/i,
+    'Seule une location en cours peut être prolongée.',
+  ],
+  [
+    /postérieure à la date attendue/i,
+    'La nouvelle date de retour doit être postérieure à celle actuellement attendue.',
+  ],
   [/Transition de location refusée/i, 'Ce changement d’état n’est pas permis à ce stade.'],
   [
     /exclusion|no_overlap|chevauche/i,
@@ -343,4 +351,71 @@ async function attachPhotos(
   }
 
   return rejected
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Prolongation                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Prolonge une location en cours.
+ *
+ * TOUT SE JOUE DANS `extend_rental` (migration 031).
+ *
+ * La fonction étend la période de l'occupation AVANT de déplacer la date
+ * attendue : si un autre engagement occupe le créneau, la contrainte
+ * d'exclusion refuse, et rien n'est modifié — ni le calendrier, ni la
+ * location. Une prolongation refusée ne laisse aucune trace partielle.
+ *
+ * LE TARIF N'EST PAS TOUCHÉ.
+ *
+ * `locked_amount` et `locked_unit` restent ceux du contrat. Module 05 §34
+ * évoque un « nouveau montant » sans en définir le calcul, et DEC-008 laisse
+ * ouvertes la règle d'arrondi de durée et le traitement du retard. Aucun
+ * montant n'est donc recalculé : le système ne valorise pas ce qu'aucune règle
+ * validée ne permet de valoriser.
+ */
+export async function extendRentalAction(
+  prevState: RentalFormState,
+  formData: FormData
+): Promise<RentalFormState> {
+  return guarded(
+    'locations:prolongation',
+    async () => {
+      await requirePermission(PERMISSIONS.RENTALS_EXTEND)
+
+      const rentalId = readText(formData, 'rentalId')
+      const newEnd = readText(formData, 'newEnd')
+      const reason = orNull(readText(formData, 'reason'))
+
+      if (!rentalId) return { error: 'Location introuvable.' }
+      if (!newEnd) {
+        return { fieldErrors: { newEnd: 'La nouvelle date de retour est obligatoire.' } }
+      }
+
+      // L'heure saisie est une heure DES COMORES (DEC-025 §e).
+      const endsAt = fromLocalInput(newEnd)
+      if (!endsAt) {
+        return { fieldErrors: { newEnd: 'Cette date n’est pas valide.' } }
+      }
+
+      const supabase = await createSupabaseServerClient()
+
+      const { error } = await supabase.rpc('extend_rental', {
+        p_rental_id: rentalId,
+        p_new_end: endsAt,
+        p_reason: reason,
+      })
+
+      if (error) throw new Error(error.message)
+
+      revalidatePath('/location/locations')
+      revalidatePath(`/location/locations/${rentalId}`)
+      return {
+        success:
+          'La location est prolongée. Le tarif verrouillé du contrat reste inchangé : la valorisation de la période supplémentaire relèvera de la facturation.',
+      }
+    },
+    ERROR_PATTERNS
+  )
 }

@@ -121,3 +121,36 @@ export const FUEL_LEVEL_ORDER: FuelLevel[] = [
 export const MAX_PHOTO_SIZE = 10 * 1024 * 1024
 
 export const ACCEPTED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
+
+/* -------------------------------------------------------------------------- */
+/*  Repères opérationnels                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Écart en jours civils entre aujourd'hui et une échéance, sur le fuseau
+ * d'affichage. Positif à venir, négatif dépassé, zéro le jour même.
+ *
+ * CE N'EST PAS UNE DURÉE FACTURABLE.
+ *
+ * C'est un repère d'exploitation : « le retour est attendu dans deux jours ».
+ * La durée facturable dépend d'une règle d'arrondi qui n'est pas arrêtée
+ * (DEC-008 : jour entamé, heure de retour, franchise — tous « non définis »),
+ * et aucun montant n'en est déduit ici. Confondre les deux produirait un
+ * chiffre commercial inventé.
+ */
+export function calendarDaysUntil(iso: string, timeZone = 'Indian/Comoro'): number | null {
+  const target = new Date(iso)
+  if (Number.isNaN(target.getTime())) return null
+
+  const asCivilDate = (date: Date) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date)
+    return Date.parse(`${parts}T00:00:00Z`)
+  }
+
+  return Math.round((asCivilDate(target) - asCivilDate(new Date())) / 86400000)
+}
