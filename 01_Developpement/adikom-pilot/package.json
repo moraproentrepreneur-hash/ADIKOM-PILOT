@@ -28,7 +28,8 @@
     "verify:referential": "node scripts/verify-referential.mjs",
     "verify:referential:ui": "node scripts/verify-referential-ui.mjs",
     "demo:seed": "node scripts/seed-demo.mjs",
-    "verify:documents": "node scripts/verify-documents.mjs"
+    "verify:documents": "node scripts/verify-documents.mjs",
+    "verify:partners": "node scripts/verify-partners.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",
