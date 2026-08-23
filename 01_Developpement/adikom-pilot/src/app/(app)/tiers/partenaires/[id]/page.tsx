@@ -187,9 +187,23 @@ export default async function PartnerDetailPage(props: PageProps<'/tiers/partena
                     {partner.statusReason}
                   </InfoRow>
                 )}
-                <InfoRow label="Véhicules rattachés">
-                  <span className="tabular">{partner.vehicleCount}</span>
-                </InfoRow>
+                {/*
+                  Le compteur ne s'affiche qu'avec `rental.fleet.view`.
+
+                  Il provient d'un décompte imbriqué sur `vehicles`, donc filtré
+                  par RLS : sans la permission, il vaut 0 — et « 0 véhicule
+                  rattaché » se lit comme une information, alors que c'est un
+                  refus d'accès. DEC-017 vaut aussi pour l'affichage : une
+                  donnée qu'on n'a pas le droit de voir se tait, elle ne se
+                  déclare pas absente.
+
+                  Même condition que l'onglet « Véhicules », qui disparaît déjà.
+                */}
+                {canViewFleet && (
+                  <InfoRow label="Véhicules rattachés">
+                    <span className="tabular">{partner.vehicleCount}</span>
+                  </InfoRow>
+                )}
                 <InfoRow label="Créée le">{formatDateTime(partner.createdAt)}</InfoRow>
                 <InfoRow label="Modifiée le">{formatDateTime(partner.updatedAt)}</InfoRow>
               </dl>

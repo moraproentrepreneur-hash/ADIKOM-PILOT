@@ -69,6 +69,8 @@ const PROFILES = [
   { key: 'archive', permissions: ['parties.partners.view', 'parties.partners.archive'] },
   // Attribution incohérente, volontairement éprouvée : archiver sans voir.
   { key: 'archiveonly', permissions: ['parties.partners.archive'] },
+  // Le compteur de véhicules dépend du parc, pas du partenaire.
+  { key: 'fleet', permissions: ['parties.partners.view', 'rental.fleet.view'] },
 ]
 
 async function createProfile(admin, profile) {
@@ -271,6 +273,18 @@ async function main() {
       check(
         (await page.getByText('Statut du partenaire').count()) === 0,
         'Bloc « Statut du partenaire » absent : archiver n’est pas inclus dans voir'
+      )
+
+      /*
+       * Le compteur de véhicules provient d'un décompte imbriqué sur
+       * `vehicles`, donc filtré par RLS. Sans `rental.fleet.view` il vaudrait 0,
+       * et « 0 véhicule rattaché » se lirait comme une information alors que
+       * c'est un refus d'accès (DEC-017). La ligne doit se taire, pas mentir.
+       */
+      await page.goto(`${base}/tiers/partenaires/${demo.id}`, { waitUntil: 'load' })
+      check(
+        (await page.getByText('Véhicules rattachés').count()) === 0,
+        'Compteur de véhicules absent sans « rental.fleet.view »'
       )
 
       await context.close()
@@ -533,6 +547,35 @@ async function main() {
 
       const read = await writeAsUser(accounts.archiveonly, url, anonKey, 'select', demo.id)
       check(read.rows === 0, 'RLS ne laisse rien lire sans « voir »', 'aucune ligne')
+    }
+
+    /* ------------------------------------------------------------------ */
+    console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('CAS 6 — VIEW + FLEET.VIEW : le compteur de véhicules reparaît\n')
+
+    {
+      const { context, page } = await signIn(browser, base, accounts.fleet)
+
+      await page.goto(`${base}/tiers/partenaires/${demo.id}`, { waitUntil: 'load' })
+
+      check(
+        (await page.getByText('Véhicules rattachés').count()) >= 1,
+        'Compteur de véhicules présent avec « rental.fleet.view »'
+      )
+
+      // Le compte réel, et non le 0 que renvoyait RLS sans la permission.
+      const { count } = await admin
+        .from('vehicles')
+        .select('id', { count: 'exact', head: true })
+        .eq('partner_id', demo.id)
+
+      check(
+        (await page.getByText(String(count), { exact: true }).count()) >= 1,
+        'Le nombre affiché est le nombre réel',
+        `${count} véhicule(s)`
+      )
+
+      await context.close()
     }
 
     /* ------------------------------------------------------------------ */
