@@ -139,7 +139,7 @@ export const NAVIGATION: NavEntry[] = [
         href: '/location/reservations',
         icon: CalendarCheck,
         permission: PERMISSIONS.RESERVATIONS_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Locations',

@@ -72,6 +72,101 @@ export function formatPeriod(from: string | null, to: string | null): string {
   return '—'
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Saisie d'un instant — la conversion que le navigateur ne fait pas          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Décalage du fuseau d'affichage à un instant donné, en millisecondes.
+ *
+ * Calculé par `Intl` plutôt qu'écrit en dur : le décalage des Comores vaut
+ * +3 h et ne change pas, mais l'inscrire ici en ferait une seconde définition
+ * du fuseau — exactement ce que DEC-025 §e interdit.
+ */
+function zoneOffsetMs(instant: Date): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: DISPLAY_TIMEZONE,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+      .formatToParts(instant)
+      .map((part) => [part.type, part.value])
+  ) as Record<string, string>
+
+  const asIfUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour) % 24,
+    Number(parts.minute),
+    Number(parts.second)
+  )
+
+  return asIfUtc - instant.getTime()
+}
+
+/**
+ * `<input type="datetime-local">` → instant ISO en UTC.
+ *
+ * LE PIÈGE QUE CETTE FONCTION FERME.
+ *
+ * Un champ `datetime-local` produit une heure NUE : « 2026-09-01T08:00 », sans
+ * fuseau. Transmise telle quelle à PostgreSQL, elle est lue dans le fuseau de
+ * la session — UTC sur Supabase. Une réservation saisie à 08:00 aux Comores
+ * était donc enregistrée à 08:00 UTC, et relue à 11:00. Trois heures de
+ * dérive, silencieuses, sur la donnée même qui commande la non-collision.
+ *
+ * L'heure saisie est ici interprétée sur `Indian/Comoro` (DEC-025 §e), puis
+ * convertie en instant. Toute écriture d'une période doit passer par elle.
+ *
+ * Les Comores n'observant pas d'heure d'été, une seule passe suffit ; un
+ * fuseau à changement horaire en demanderait une seconde.
+ */
+export function fromLocalInput(value: string | null | undefined): string | null {
+  if (!value) return null
+
+  const parsed = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(value)
+  if (!parsed) return null
+
+  const [, year, month, day, hour, minute] = parsed
+  const naive = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute))
+
+  return new Date(naive - zoneOffsetMs(new Date(naive))).toISOString()
+}
+
+/** Instant ISO → valeur d'un `<input type="datetime-local">`, sur le fuseau d'affichage. */
+export function toLocalInput(value: string | null | undefined): string {
+  if (!value) return ''
+
+  const instant = new Date(value)
+  if (Number.isNaN(instant.getTime())) return ''
+
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: DISPLAY_TIMEZONE,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+      .formatToParts(instant)
+      .map((part) => [part.type, part.value])
+  ) as Record<string, string>
+
+  // `hour12: false` peut rendre « 24 » pour minuit selon le moteur : ramené à 00.
+  const hour = String(Number(parts.hour) % 24).padStart(2, '0')
+
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}`
+}
+
 /** Date du jour au format attendu par un champ `<input type="date">`. */
 export function todayISO(): string {
   const now = new Date()

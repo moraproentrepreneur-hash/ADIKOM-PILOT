@@ -9,6 +9,7 @@ import { requirePermission } from '@/lib/auth/dal'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { guarded, orNull, readText, toFieldErrors } from '@/lib/server-action'
+import { fromLocalInput } from '@/lib/dates'
 import type { FormState } from '@/lib/form-state'
 import { ACCEPTED_DOCUMENT_TYPES, MAX_DOCUMENT_SIZE } from './constants'
 import { isKnownColor } from './constants'
@@ -562,12 +563,29 @@ export async function addImmobilizationAction(
         return { fieldErrors: { to: 'La fin doit être postérieure au début.' } }
       }
 
+      /*
+       * L'heure saisie est une heure DES COMORES, pas une heure UTC.
+       *
+       * Le champ `datetime-local` produit « 2026-09-01T08:00 », sans fuseau.
+       * Transmise telle quelle, PostgreSQL la lisait dans le fuseau de la
+       * session — UTC — et une immobilisation de 08:00 était enregistrée trois
+       * heures plus tard. La dérive touchait la donnée même qui commande la
+       * non-collision, et se serait propagée aux réservations qui partagent
+       * cette table (DEC-025 §e).
+       */
+      const startsAt = fromLocalInput(from)
+      const endsAt = fromLocalInput(to)
+
+      if (!startsAt || !endsAt) {
+        return { error: 'Les dates saisies ne sont pas valides.' }
+      }
+
       const supabase = await createSupabaseServerClient()
 
       const { error } = await supabase.from('vehicle_occupations').insert({
         vehicle_id: vehicleId,
         source: 'IMMOBILIZATION',
-        period: `[${from},${to})`,
+        period: `[${startsAt},${endsAt})`,
         reason,
         created_by: actor.id,
       })
