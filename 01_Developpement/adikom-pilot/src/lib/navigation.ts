@@ -146,7 +146,7 @@ export const NAVIGATION: NavEntry[] = [
         href: '/location/locations',
         icon: CarFront,
         permission: PERMISSIONS.RENTALS_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Parc automobile',

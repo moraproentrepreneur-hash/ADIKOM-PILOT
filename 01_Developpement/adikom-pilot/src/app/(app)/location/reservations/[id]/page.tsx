@@ -20,6 +20,7 @@ import {
 } from '@/features/reservations/data'
 import { ReservationForm } from '@/features/reservations/reservation-form'
 import { CancelPanel, ConfirmPanel } from '@/features/reservations/confirm-panel'
+import { ConvertPanel } from '@/features/rentals/rental-actions-panel'
 
 export const metadata: Metadata = { title: 'Réservation' }
 
@@ -38,17 +39,24 @@ export default async function ReservationDetailPage(
   const justCreated = searchParams.cree === '1'
   const justSaved = searchParams.enregistre === '1'
 
-  const [canUpdate, canConfirm, canCancel, canSeeAmounts] = await Promise.all([
+  const [canUpdate, canConfirm, canCancel, canSeeAmounts, canConvert] = await Promise.all([
     can(PERMISSIONS.RESERVATIONS_UPDATE),
     can(PERMISSIONS.RESERVATIONS_CONFIRM),
     can(PERMISSIONS.RESERVATIONS_CANCEL),
     // DEC-024 : le montant verrouillé est une information distincte.
     can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
+    // Créer une location est une capacité du module Locations, pas des
+    // réservations : c'est bien `rental.rentals.create` qui l'ouvre.
+    can(PERMISSIONS.RENTALS_CREATE),
   ])
 
   const shown = displayStatus(reservation.status, reservation.startsAt)
   const isOpen = reservation.status === 'DRAFT' || reservation.status === 'PENDING'
-  const isCancellable = isOpen || reservation.status === 'CONFIRMED' || reservation.status === 'PREPARING'
+  const isEngaged = reservation.status === 'CONFIRMED' || reservation.status === 'PREPARING'
+  const isCancellable = isOpen || isEngaged
+  // Seule une réservation engagée — véhicule affecté, tarif verrouillé — peut
+  // devenir un contrat. La base l'impose également.
+  const isConvertible = isEngaged && !reservation.rentalId
 
   return (
     <>
@@ -198,6 +206,15 @@ export default async function ReservationDetailPage(
                 description="Engage le véhicule sur la période et verrouille le tarif."
               >
                 <ConfirmSection reservation={reservation} />
+              </Card>
+            )}
+
+            {canConvert && isConvertible && (
+              <Card
+                title="Convertir en location"
+                description="Le contrat reprend le tarif verrouillé et l’engagement en cours."
+              >
+                <ConvertPanel reservationId={id} />
               </Card>
             )}
 
