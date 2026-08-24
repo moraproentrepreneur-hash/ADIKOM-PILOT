@@ -35,7 +35,8 @@
     "verify:reservations": "node scripts/verify-reservations.mjs",
     "verify:rentals": "node scripts/verify-rentals.mjs",
     "verify:checkout": "node scripts/verify-checkout.mjs",
-    "verify:rental-live": "node scripts/verify-rental-live.mjs"
+    "verify:rental-live": "node scripts/verify-rental-live.mjs",
+    "verify:rental-return": "node scripts/verify-rental-return.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",

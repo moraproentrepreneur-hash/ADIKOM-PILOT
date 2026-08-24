@@ -439,8 +439,10 @@ async function main() {
 
       check(Boolean(photos), 'Les deux photos sont rattachées à l’état des lieux')
       check(
-        (photos ?? []).every((p) => p.storage_path.startsWith(`inspections/${fixtures.inspectionId}/`)),
-        'Les photos sont rangées sous le préfixe inspections/{inspectionId}/ (DEC-025 §f)'
+        (photos ?? []).every((p) =>
+          p.storage_path.startsWith(`inspections/depart/${fixtures.inspectionId}/`)
+        ),
+        'Les photos sont rangées sous inspections/depart/{inspectionId}/ (DEC-025 §f)'
       )
 
       // La photo s'ouvre par la route, jamais par une URL stockée.

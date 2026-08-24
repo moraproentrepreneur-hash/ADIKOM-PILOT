@@ -51,6 +51,26 @@ const ERROR_PATTERNS: readonly [RegExp, string][] = [
     /postérieure à la date attendue/i,
     'La nouvelle date de retour doit être postérieure à celle actuellement attendue.',
   ],
+  [
+    /seule une location en cours peut être retournée/i,
+    'Seule une location en cours peut être retournée.',
+  ],
+  [
+    /retour de cette location est déjà enregistré/i,
+    'Le retour de cette location est déjà enregistré.',
+  ],
+  [
+    /jamais partie/i,
+    'Cette location n’est jamais partie : il n’y a rien à retourner.',
+  ],
+  [
+    /retour ne peut pas précéder le départ/i,
+    'La date de retour ne peut pas précéder celle du départ.',
+  ],
+  [
+    /kilométrage de retour/i,
+    'Le kilométrage de retour ne peut pas être inférieur à celui relevé au départ.',
+  ],
   [/Transition de location refusée/i, 'Ce changement d’état n’est pas permis à ce stade.'],
   [
     /exclusion|no_overlap|chevauche/i,
@@ -284,7 +304,13 @@ export async function startRentalAction(
 
       if (error) throw new Error(error.message)
 
-      const rejected = await attachPhotos(supabase, String(inspectionId), photos, actor.id)
+      const rejected = await attachPhotos(
+        supabase,
+        String(inspectionId),
+        photos,
+        actor.id,
+        'depart'
+      )
 
       revalidatePath('/location/locations')
       revalidatePath(`/location/locations/${rentalId}`)
@@ -313,7 +339,9 @@ async function attachPhotos(
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
   inspectionId: string,
   photos: File[],
-  actorId: string
+  actorId: string,
+  /** Segment de chemin : une photo de départ ne se confond pas avec un retour. */
+  kind: 'depart' | 'retour'
 ): Promise<number> {
   if (photos.length === 0) return 0
 
@@ -321,7 +349,7 @@ async function attachPhotos(
   let rejected = 0
 
   for (const photo of photos) {
-    const path = `inspections/${inspectionId}/${crypto.randomUUID()}-${safePhotoName(photo.name)}`
+    const path = `inspections/${kind}/${inspectionId}/${crypto.randomUUID()}-${safePhotoName(photo.name)}`
 
     const { error: uploadError } = await admin.storage
       .from('vehicle-documents')
@@ -414,6 +442,170 @@ export async function extendRentalAction(
       return {
         success:
           'La location est prolongée. Le tarif verrouillé du contrat reste inchangé : la valorisation de la période supplémentaire relèvera de la facturation.',
+      }
+    },
+    ERROR_PATTERNS
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Retour et contrôle                                                         */
+/* -------------------------------------------------------------------------- */
+
+const returnSchema = z.object({
+  returnedAt: z.string().min(1, 'La date et l’heure de retour sont obligatoires.'),
+  mileage: z
+    .string()
+    .trim()
+    .optional()
+    .refine((value) => !value || /^\d{1,9}$/.test(value), {
+      message: 'Le kilométrage doit être un nombre entier.',
+    }),
+  fuelLevel: z.enum(['', 'EMPTY', 'QUARTER', 'HALF', 'THREE_QUARTERS', 'FULL']).optional(),
+  exteriorCondition: z.string().trim().max(2000).optional(),
+  interiorCondition: z.string().trim().max(2000).optional(),
+  newDamages: z.string().trim().max(4000).optional(),
+  observations: z.string().trim().max(4000).optional(),
+})
+
+/**
+ * Enregistre le retour d'une location.
+ *
+ * `return_rental` (migration 036) écrit l'état des lieux de retour, la date
+ * réelle, les deux transitions de statut, la libération du calendrier et le
+ * statut du véhicule. Rien de cela n'est fait ici : une interruption entre deux
+ * écritures laisserait un véhicule rendu que le calendrier croirait encore
+ * engagé.
+ *
+ * AUCUN ÉCART N'EST VALORISÉ.
+ *
+ * Ni carburant manquant, ni kilométrage supplémentaire, ni retard, ni dommage.
+ * Ces barèmes n'existent pas (DEC-008) et le contrôle CONSTATE (DEC-025 §i).
+ */
+export async function returnRentalAction(
+  prevState: RentalFormState,
+  formData: FormData
+): Promise<RentalFormState> {
+  return guarded(
+    'locations:retour',
+    async () => {
+      const actor = await requirePermission(PERMISSIONS.RENTALS_RETURN)
+
+      const rentalId = readText(formData, 'rentalId')
+      if (!rentalId) return { error: 'Location introuvable.' }
+
+      const parsed = returnSchema.safeParse({
+        returnedAt: readText(formData, 'returnedAt'),
+        mileage: readText(formData, 'mileage'),
+        fuelLevel: readText(formData, 'fuelLevel'),
+        exteriorCondition: readText(formData, 'exteriorCondition'),
+        interiorCondition: readText(formData, 'interiorCondition'),
+        newDamages: readText(formData, 'newDamages'),
+        observations: readText(formData, 'observations'),
+      })
+
+      if (!parsed.success) return { fieldErrors: toFieldErrors(parsed.error) }
+
+      // L'heure saisie est une heure DES COMORES (DEC-025 §e).
+      const returnedAt = fromLocalInput(parsed.data.returnedAt)
+      if (!returnedAt) {
+        return { fieldErrors: { returnedAt: 'Cette date n’est pas valide.' } }
+      }
+
+      const photos = formData
+        .getAll('photos')
+        .filter((entry): entry is File => entry instanceof File && entry.size > 0)
+
+      for (const photo of photos) {
+        if (photo.size > MAX_PHOTO_SIZE) {
+          return { fieldErrors: { photos: 'Chaque photo doit peser moins de 10 Mo.' } }
+        }
+        if (!ACCEPTED_PHOTO_TYPES.includes(photo.type as (typeof ACCEPTED_PHOTO_TYPES)[number])) {
+          return { fieldErrors: { photos: 'Formats acceptés : JPEG, PNG, WebP.' } }
+        }
+      }
+
+      const supabase = await createSupabaseServerClient()
+
+      const { data: inspectionId, error } = await supabase.rpc('return_rental', {
+        p_rental_id: rentalId,
+        p_returned_at: returnedAt,
+        p_mileage: parsed.data.mileage ? Number(parsed.data.mileage) : null,
+        p_fuel_level: orNull(parsed.data.fuelLevel),
+        p_exterior_condition: orNull(parsed.data.exteriorCondition),
+        p_interior_condition: orNull(parsed.data.interiorCondition),
+        p_new_damages: orNull(parsed.data.newDamages),
+        p_observations: orNull(parsed.data.observations),
+      })
+
+      if (error) throw new Error(error.message)
+
+      const rejected = await attachPhotos(
+        supabase,
+        String(inspectionId),
+        photos,
+        actor.id,
+        'retour'
+      )
+
+      revalidatePath('/location/locations')
+      revalidatePath(`/location/locations/${rentalId}`)
+      revalidatePath('/location/parc')
+
+      redirect(
+        `/location/locations/${rentalId}?onglet=controle&rentre=1${rejected ? `&photos=${rejected}` : ''}`
+      )
+    },
+    ERROR_PATTERNS
+  )
+}
+
+/**
+ * Valide le contrôle de retour : « À contrôler » → « À facturer ».
+ *
+ * DEC-025 §b : c'est `rental.rentals.close` qui porte cet acte, sans qu'une
+ * permission de contrôle distincte soit créée. La location quitte
+ * l'exploitation et attend la facturation, qui relève de l'Étape 2.5.
+ *
+ * Une seule table écrite : aucune fonction atomique ici, elle n'aurait rien à
+ * rendre indivisible. Le déclencheur de transition reste le garde-fou, et le
+ * filtre `eq('status', 'TO_CONTROL')` évite qu'un double clic ne rejoue l'acte.
+ */
+export async function closeControlAction(
+  prevState: RentalFormState,
+  formData: FormData
+): Promise<RentalFormState> {
+  return guarded(
+    'locations:contrôle',
+    async () => {
+      const actor = await requirePermission(PERMISSIONS.RENTALS_CLOSE)
+
+      const rentalId = readText(formData, 'rentalId')
+      const observations = orNull(readText(formData, 'observations'))
+
+      if (!rentalId) return { error: 'Location introuvable.' }
+
+      const supabase = await createSupabaseServerClient()
+
+      const { error } = await supabase
+        .from('rentals')
+        .update({
+          status: 'TO_INVOICE',
+          status_reason: observations,
+          status_changed_at: new Date().toISOString(),
+          status_changed_by: actor.id,
+          updated_by: actor.id,
+        })
+        .eq('id', rentalId)
+        .eq('status', 'TO_CONTROL')
+
+      if (error) throw new Error(error.message)
+
+      revalidatePath('/location/locations')
+      revalidatePath(`/location/locations/${rentalId}`)
+      return {
+        success:
+          'Contrôle validé. La location passe « À facturer » : la valorisation relèvera de la facturation.',
       }
     },
     ERROR_PATTERNS

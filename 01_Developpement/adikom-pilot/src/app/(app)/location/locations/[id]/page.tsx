@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, ClipboardCheck, Image as ImageIcon, KeyRound } from 'lucide-react'
+import { ArrowLeft, ClipboardCheck, Image as ImageIcon, KeyRound, Undo2 } from 'lucide-react'
 
 import {
   Badge,
@@ -33,6 +33,7 @@ import {
   ConfirmRentalPanel,
 } from '@/features/rentals/rental-actions-panel'
 import { ExtendPanel } from '@/features/rentals/extend-panel'
+import { ControlPanel } from '@/features/rentals/control-panel'
 
 export const metadata: Metadata = { title: 'Location' }
 
@@ -52,15 +53,27 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
   )
   const requestedTab = typeof searchParams.onglet === 'string' ? searchParams.onglet : 'informations'
 
-  const [canUpdate, canCancel, canCheckout, canExtend, canSeeAmounts, canViewReservation] =
-    await Promise.all([
-      can(PERMISSIONS.RENTALS_UPDATE),
-      can(PERMISSIONS.RENTALS_CANCEL),
-      can(PERMISSIONS.RENTALS_CHECKOUT),
-      can(PERMISSIONS.RENTALS_EXTEND),
-      can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
-      can(PERMISSIONS.RESERVATIONS_VIEW),
-    ])
+  const [
+    canUpdate,
+    canCancel,
+    canCheckout,
+    canExtend,
+    canReturn,
+    canClose,
+    canSeeAmounts,
+    canViewReservation,
+  ] = await Promise.all([
+    can(PERMISSIONS.RENTALS_UPDATE),
+    can(PERMISSIONS.RENTALS_CANCEL),
+    can(PERMISSIONS.RENTALS_CHECKOUT),
+    can(PERMISSIONS.RENTALS_EXTEND),
+    can(PERMISSIONS.RENTALS_RETURN),
+    // DEC-025 §b : valider le contrôle relève de `close`, sans permission
+    // de contrôle distincte.
+    can(PERMISSIONS.RENTALS_CLOSE),
+    can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
+    can(PERMISSIONS.RESERVATIONS_VIEW),
+  ])
 
   const shown = displayStatus(rental.status, rental.expectedReturnAt)
   const beforeDeparture = rental.status === 'PREPARING' || rental.status === 'CONFIRMED'
@@ -72,6 +85,7 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
   const tabs: TabItem[] = [
     { key: 'informations', label: 'Informations', href: `/location/locations/${id}` },
     { key: 'etats', label: 'États des lieux', href: `/location/locations/${id}?onglet=etats` },
+    { key: 'controle', label: 'Contrôle', href: `/location/locations/${id}?onglet=controle` },
     { key: 'historique', label: 'Historique', planned: true },
   ]
 
@@ -97,6 +111,21 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
         </Notice>
       )}
 
+      {searchParams.rentre === '1' && (
+        <Notice tone="success" className="mb-5">
+          Retour enregistré. La location est <strong>à contrôler</strong>, la période est libérée
+          et le véhicule est revenu au parc.
+          {rejectedPhotos > 0 && (
+            <>
+              {' '}
+              En revanche, {rejectedPhotos} photo{rejectedPhotos > 1 ? 's n’ont' : ' n’a'} pas pu
+              être enregistrée{rejectedPhotos > 1 ? 's' : ''} : le retour, lui, est bien pris en
+              compte.
+            </>
+          )}
+        </Notice>
+      )}
+
       {justLeft && (
         <Notice tone="success" className="mb-5">
           Départ enregistré. La location est <strong>en cours</strong> et le véhicule est sorti du
@@ -119,6 +148,10 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
           canCheckout && rental.status === 'CONFIRMED' ? (
             <ButtonLink href={`/location/locations/${id}/depart`} icon={KeyRound}>
               Enregistrer le départ
+            </ButtonLink>
+          ) : canReturn && running ? (
+            <ButtonLink href={`/location/locations/${id}/retour`} icon={Undo2}>
+              Enregistrer le retour
             </ButtonLink>
           ) : undefined
         }
@@ -149,6 +182,14 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
 
       {tab === 'etats' ? (
         <InspectionsTab rentalId={id} />
+      ) : tab === 'controle' ? (
+        <ControlTab
+          rentalId={id}
+          canClose={canClose}
+          status={rental.status}
+          expectedReturnAt={rental.expectedReturnAt}
+          returnedAt={rental.returnedAt}
+        />
       ) : (
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
@@ -414,6 +455,155 @@ async function InspectionsTab({ rentalId }: { rentalId: string }) {
           )}
         </Card>
       ))}
+    </div>
+  )
+}
+
+/**
+ * Contrôle de retour — la comparaison, et rien qu'elle.
+ *
+ * Le rapprochement départ / retour est un CONSTAT : distance parcourue, écart
+ * de carburant, dommages préexistants opposés aux dommages nouveaux. Aucun
+ * montant n'en est tiré, et l'écran le dit — les barèmes de carburant, de
+ * kilométrage, de retard et de dommages ne sont pas définis (DEC-008,
+ * DEC-025 §i).
+ */
+async function ControlTab({
+  rentalId,
+  canClose,
+  status,
+  expectedReturnAt,
+  returnedAt,
+}: {
+  rentalId: string
+  canClose: boolean
+  status: string
+  expectedReturnAt: string
+  returnedAt: string | null
+}) {
+  const inspections = await listInspections(rentalId)
+  const departure = inspections.find((inspection) => inspection.kind === 'DEPARTURE')
+  const back = inspections.find((inspection) => inspection.kind === 'RETURN')
+
+  if (!back) {
+    return (
+      <Card title="Contrôle de retour">
+        <EmptyState
+          icon={ClipboardCheck}
+          title="Le véhicule n’est pas encore rentré"
+          description="La comparaison départ / retour sera possible dès que le retour aura été enregistré."
+        />
+      </Card>
+    )
+  }
+
+  const distance =
+    departure?.mileage != null && back.mileage != null ? back.mileage - departure.mileage : null
+
+  const fuelChanged =
+    departure?.fuelLevel != null &&
+    back.fuelLevel != null &&
+    departure.fuelLevel !== back.fuelLevel
+
+  const lateBy =
+    returnedAt && new Date(returnedAt).getTime() > new Date(expectedReturnAt).getTime()
+      ? calendarDaysUntil(expectedReturnAt)
+      : null
+
+  return (
+    <div className="space-y-5">
+      <Card
+        title="Comparaison départ / retour"
+        description="Constat. Aucun montant n’est calculé à ce stade."
+      >
+        <dl>
+          <InfoRow label="Kilométrage">
+            {departure?.mileage != null && back.mileage != null ? (
+              <span className="tabular">
+                {departure.mileage.toLocaleString('fr-FR')} km →{' '}
+                {back.mileage.toLocaleString('fr-FR')} km
+              </span>
+            ) : (
+              <Empty />
+            )}
+          </InfoRow>
+
+          <InfoRow label="Distance parcourue">
+            {distance != null ? (
+              <span className="tabular font-medium text-ink">
+                {distance.toLocaleString('fr-FR')} km
+              </span>
+            ) : (
+              <Empty />
+            )}
+          </InfoRow>
+
+          <InfoRow
+            label="Carburant"
+            hint={fuelChanged ? 'Écart constaté, non valorisé.' : undefined}
+          >
+            {departure?.fuelLevel && back.fuelLevel ? (
+              <span>
+                {FUEL_LEVEL_LABELS[departure.fuelLevel]} → {FUEL_LEVEL_LABELS[back.fuelLevel]}
+              </span>
+            ) : (
+              <Empty />
+            )}
+          </InfoRow>
+
+          <InfoRow label="Retour attendu">{formatDateTime(expectedReturnAt)}</InfoRow>
+          <InfoRow
+            label="Retour réel"
+            hint={
+              lateBy != null && lateBy < 0
+                ? `Dépassement de ${Math.abs(lateBy)} jour${Math.abs(lateBy) > 1 ? 's' : ''}, constaté sans valorisation.`
+                : undefined
+            }
+          >
+            {returnedAt ? formatDateTime(returnedAt) : <Empty />}
+          </InfoRow>
+        </dl>
+      </Card>
+
+      <Card
+        title="Dommages"
+        description="Ce qui était déjà là, et ce qui ne l’était pas."
+      >
+        <dl>
+          <InfoRow
+            label="Déjà présents au départ"
+            hint="Ne peuvent pas être reprochés au client."
+          >
+            {departure?.preexistingDamages ?? <Empty />}
+          </InfoRow>
+          <InfoRow
+            label="Constatés au retour"
+            hint="Constat enregistré. Leur valorisation relèvera de la facturation."
+          >
+            {back.preexistingDamages ?? <Empty />}
+          </InfoRow>
+        </dl>
+      </Card>
+
+      <Card title="États relevés">
+        <dl>
+          <InfoRow label="Extérieur au départ">{departure?.exteriorCondition ?? <Empty />}</InfoRow>
+          <InfoRow label="Extérieur au retour">{back.exteriorCondition ?? <Empty />}</InfoRow>
+          <InfoRow label="Intérieur au départ">{departure?.interiorCondition ?? <Empty />}</InfoRow>
+          <InfoRow label="Intérieur au retour">{back.interiorCondition ?? <Empty />}</InfoRow>
+          <InfoRow label="Observations du retour">{back.observations ?? <Empty />}</InfoRow>
+        </dl>
+      </Card>
+
+      {canClose && status === 'TO_CONTROL' && (
+        <Card
+          title="Valider le contrôle"
+          description="La location quittera l’exploitation et attendra sa facturation."
+          className="max-w-3xl"
+        >
+          <ControlPanel rentalId={rentalId} />
+        </Card>
+      )}
     </div>
   )
 }
