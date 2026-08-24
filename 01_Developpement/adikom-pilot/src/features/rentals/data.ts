@@ -149,8 +149,12 @@ function sanitizeSearch(term: string): string {
 export type RentalFilters = {
   search?: string
   status?: string
+  /** Plusieurs états à la fois — le Tableau de location en interroge par groupe. */
+  statuses?: RentalStatus[]
   clientId?: string
   vehicleId?: string
+  /** Catégorie du VÉHICULE : une location n'en porte pas, son véhicule si. */
+  categoryId?: string
 }
 
 /**
@@ -163,7 +167,14 @@ export type RentalFilters = {
 export async function listRentals(filters: RentalFilters = {}): Promise<RentalListItem[]> {
   const supabase = await createSupabaseServerClient()
 
-  let query = supabase.from('rentals').select(BASE_SELECT)
+  /*
+   * Filtrer sur la catégorie exige une jointure INTERNE sur le véhicule. Elle
+   * ne change rien au résultat par ailleurs : `vehicle_id` est `not null` sur
+   * une location, il y a donc toujours un véhicule à joindre.
+   */
+  const select = filters.categoryId ? BASE_SELECT.replace('vehicles (', 'vehicles!inner (') : BASE_SELECT
+
+  let query = supabase.from('rentals').select(select)
 
   const search = filters.search ? sanitizeSearch(filters.search) : ''
   if (search) {
@@ -171,8 +182,10 @@ export async function listRentals(filters: RentalFilters = {}): Promise<RentalLi
   }
 
   if (filters.status && filters.status !== 'LATE') query = query.eq('status', filters.status)
+  if (filters.statuses?.length) query = query.in('status', filters.statuses)
   if (filters.clientId) query = query.eq('client_id', filters.clientId)
   if (filters.vehicleId) query = query.eq('vehicle_id', filters.vehicleId)
+  if (filters.categoryId) query = query.eq('vehicles.category_id', filters.categoryId)
 
   const { data, error } = await query.order('expected_return_at', { ascending: false }).limit(200)
 

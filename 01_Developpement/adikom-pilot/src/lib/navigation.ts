@@ -132,7 +132,7 @@ export const NAVIGATION: NavEntry[] = [
         href: '/location',
         icon: ClipboardList,
         permission: PERMISSIONS.RENTAL_BOARD_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Réservations',

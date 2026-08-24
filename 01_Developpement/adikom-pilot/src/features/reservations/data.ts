@@ -148,7 +148,25 @@ function sanitizeSearch(term: string): string {
 export type ReservationFilters = {
   search?: string
   status?: string
+  /** Plusieurs états à la fois — le Tableau de location en interroge par groupe. */
+  statuses?: ReservationStatus[]
   clientId?: string
+  vehicleId?: string
+  /**
+   * Catégorie du VÉHICULE AFFECTÉ.
+   *
+   * Une réservation porte bien une catégorie « demandée », mais elle est
+   * facultative : réserver un véhicule précis n'oblige pas à nommer sa
+   * famille. Filtrer là-dessus écarterait donc les réservations les plus
+   * fermes — celles qui désignent déjà leur véhicule.
+   *
+   * Le filtre porte sur la catégorie RÉELLE du véhicule engagé. Une
+   * réservation sans véhicule affecté n'y répond pas : c'est sans effet pour
+   * le Tableau de location, qui ne montre que des réservations confirmées,
+   * lesquelles ont toujours un véhicule (contrainte
+   * `reservations_confirmed_complete`).
+   */
+  categoryId?: string
   from?: string
   to?: string
 }
@@ -166,7 +184,17 @@ export async function listReservations(
 ): Promise<ReservationListItem[]> {
   const supabase = await createSupabaseServerClient()
 
-  let query = supabase.from('reservations').select(BASE_SELECT)
+  /*
+   * Filtrer sur la catégorie du véhicule affecté exige une jointure INTERNE :
+   * sans elle, PostgREST ne saurait pas sur quoi porter la condition. Elle
+   * n'est posée QUE dans ce cas, afin que les réservations sans véhicule
+   * continuent d'apparaître partout ailleurs.
+   */
+  const select = filters.categoryId
+    ? BASE_SELECT.replace('vehicles (', 'vehicles!inner (')
+    : BASE_SELECT
+
+  let query = supabase.from('reservations').select(select)
 
   const search = filters.search ? sanitizeSearch(filters.search) : ''
   if (search) {
@@ -176,7 +204,10 @@ export async function listReservations(
   if (filters.status && filters.status !== 'EXPIRED') {
     query = query.eq('status', filters.status)
   }
+  if (filters.statuses?.length) query = query.in('status', filters.statuses)
   if (filters.clientId) query = query.eq('client_id', filters.clientId)
+  if (filters.vehicleId) query = query.eq('vehicle_id', filters.vehicleId)
+  if (filters.categoryId) query = query.eq('vehicles.category_id', filters.categoryId)
 
   /*
    * CHEVAUCHEMENT, et non inclusion : une réservation à cheval sur la borne de
