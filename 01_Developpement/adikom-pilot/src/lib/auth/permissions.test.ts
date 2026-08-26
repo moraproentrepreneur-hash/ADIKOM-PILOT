@@ -24,11 +24,24 @@ import { PERMISSIONS } from './permissions'
 const MIGRATIONS_DIR = resolve(import.meta.dirname, '../../../supabase/migrations')
 
 /**
- * Extrait les codes des listes VALUES alimentant le catalogue.
+ * Rejoue les migrations pour reconstituer le catalogue.
  *
  * La lecture démarre à la liste de colonnes `(code, module_code` — celle de la
  * CTE des permissions — afin d'ignorer les listes de modules et de menus qui la
  * précèdent et dont les valeurs ont exactement la même forme.
+ *
+ * LES MIGRATIONS NE SONT PAS QU'ADDITIVES.
+ *
+ * Une capacité peut être retirée : le 26/08/2026, deux permissions déclarées
+ * par la migration 032 se sont révélées sans fonctionnalité correspondante
+ * (CLAUDE.md §19 bis). Les fichiers étant rejoués dans l'ordre, un retrait
+ * annoncé par `-- CATALOGUE: RETRAIT <code>` défait l'insertion qui le
+ * précède — exactement comme la base l'a fait.
+ *
+ * Le retrait est ANNONCÉ plutôt que déduit d'un `delete`, dont la forme
+ * (tableau, `in (…)`, sous-requête) varierait d'une migration à l'autre et
+ * demanderait à ce lecteur d'interpréter du SQL. Une déclaration ne se
+ * trompe pas.
  */
 function readCatalogCodes(): string[] {
   const files = readdirSync(MIGRATIONS_DIR)
@@ -42,10 +55,19 @@ function readCatalogCodes(): string[] {
     if (!sql.includes('public.permissions')) continue
 
     const start = sql.indexOf('(code, module_code')
-    if (start === -1) continue
+    if (start !== -1) {
+      for (const match of sql.slice(start).matchAll(/^\s*\('([a-z0-9_.]+)',/gm)) {
+        codes.push(match[1])
+      }
+    }
 
-    for (const match of sql.slice(start).matchAll(/^\s*\('([a-z0-9_.]+)',/gm)) {
-      codes.push(match[1])
+    for (const match of sql.matchAll(/^--\s*CATALOGUE:\s*RETRAIT\s+([a-z0-9_.]+)\s*$/gm)) {
+      const removed = codes.indexOf(match[1])
+      expect(
+        removed,
+        `La migration ${name} retire ${match[1]}, qu'aucune migration n'avait déclarée.`
+      ).toBeGreaterThan(-1)
+      codes.splice(removed, 1)
     }
   }
 
@@ -90,6 +112,25 @@ describe('catalogue des permissions', () => {
       missing,
       `Ces permissions ne seraient jamais vérifiées : ${missing.join(', ')}`
     ).toEqual([])
+  })
+
+  /**
+   * Une capacité retirée ne revient pas par la petite porte.
+   *
+   * `rental.reservations.download` et `.print` n'ont jamais eu de document à
+   * produire : une réservation n'est pas une pièce remise au client. Les
+   * réintroduire — dans une migration ou dans les constantes — rendrait de
+   * nouveau attribuable un droit qui ne débloque rien.
+   *
+   * Le contrôle porte sur les DEUX côtés : le catalogue reconstitué et le
+   * TypeScript. Les deux tests de parité ci-dessus ne le remplaceraient pas —
+   * ils passeraient très bien si ces codes revenaient des deux côtés à la fois.
+   */
+  it('ne réintroduit pas les capacités documentaires sans objet', () => {
+    const retirees = ['rental.reservations.download', 'rental.reservations.print']
+
+    expect(retirees.filter((code) => catalogCodes.includes(code))).toEqual([])
+    expect(retirees.filter((code) => tsCodes.includes(code))).toEqual([])
   })
 
   it('respecte la convention de nommage module.menu[.sousmenu].action', () => {

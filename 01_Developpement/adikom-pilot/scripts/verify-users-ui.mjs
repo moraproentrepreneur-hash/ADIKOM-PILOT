@@ -140,12 +140,26 @@ async function main() {
       ko('Exactement deux onglets', tabs.join(' · ') || 'aucun')
     }
 
+    /*
+     * Le catalogue est LU, pas récité : ce contrôle figeait 148, un nombre
+     * qu'une migration a rendu faux. C'est l'égalité avec le catalogue réel
+     * qui a du sens, pas la constante.
+     */
+    const catalogue = createClient(
+      required('NEXT_PUBLIC_SUPABASE_URL'),
+      required('SUPABASE_SERVICE_ROLE_KEY'),
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+    const { count: catalogueSize } = await catalogue
+      .from('permissions')
+      .select('id', { count: 'exact', head: true })
+
     await page.goto(`${base}/utilisateurs/${createdId}?onglet=permissions`, { waitUntil: 'load' })
     const perms = await mainText()
-    if (/permission/i.test(perms) && /sur 148/.test(perms)) {
-      ok('Onglet Permissions : synthèse affichée')
+    if (/permission/i.test(perms) && new RegExp(`sur ${catalogueSize}`).test(perms)) {
+      ok('Onglet Permissions : synthèse affichée', `sur ${catalogueSize}`)
     } else {
-      ko('Onglet Permissions : synthèse affichée')
+      ko('Onglet Permissions : synthèse affichée', `attendu « sur ${catalogueSize} »`)
     }
     if (/Gestion de location/.test(perms)) ok('Arborescence des modules présente')
     else ko('Arborescence des modules présente')
@@ -154,10 +168,13 @@ async function main() {
     // Le Super Admin dispose du droit de modifier les permissions individuelles :
     // l'onglet expose un sélecteur à trois états par permission du catalogue.
     const selectorCount = await page.locator('main form fieldset').count()
-    if (selectorCount === 148) {
+    if (selectorCount === catalogueSize) {
       ok('Permissions individuelles modifiables', `${selectorCount} sélecteurs`)
     } else {
-      ko('Permissions individuelles modifiables', `${selectorCount} sélecteurs`)
+      ko(
+        'Permissions individuelles modifiables',
+        `${selectorCount} sélecteurs pour ${catalogueSize} permissions`
+      )
     }
 
     // --------------------------------------------------- 5. Modification --

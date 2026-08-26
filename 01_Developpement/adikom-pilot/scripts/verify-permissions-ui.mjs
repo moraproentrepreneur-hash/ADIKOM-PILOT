@@ -181,9 +181,32 @@ async function main() {
       timeout: 20000,
     })
 
+    /*
+     * Le catalogue est LU, pas récité.
+     *
+     * Ce contrôle figeait 148 ; il est resté vrai jusqu'à ce qu'une migration
+     * ajoute six capacités, puis en retire deux. Ce qui compte n'a jamais été
+     * le nombre, mais l'égalité : l'écran doit exposer CHAQUE permission du
+     * catalogue, faute de quoi certaines deviennent inattribuables.
+     */
+    const catalogue = createClient(
+      required('NEXT_PUBLIC_SUPABASE_URL'),
+      required('SUPABASE_SERVICE_ROLE_KEY'),
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+    const { count: expectedSelectors } = await catalogue
+      .from('permissions')
+      .select('id', { count: 'exact', head: true })
+
     const selectors = await page.locator('form fieldset').count()
-    if (selectors === 148) ok('Les 148 permissions sont modifiables', `${selectors} sélecteurs`)
-    else ko('Les 148 permissions sont modifiables', `${selectors} sélecteurs`)
+    if (selectors === expectedSelectors) {
+      ok('Chaque permission du catalogue est modifiable', `${selectors} sélecteurs`)
+    } else {
+      ko(
+        'Chaque permission du catalogue est modifiable',
+        `${selectors} sélecteurs pour ${expectedSelectors} permissions`
+      )
+    }
 
     const radios = await page.locator(`input[name="perm:${TARGET_CODE}"]`).count()
     if (radios === 3) ok('Trois états proposés par permission', 'Non défini · Accorder · Refuser')

@@ -64,10 +64,14 @@ export const PERMISSIONS = {
   RESERVATIONS_UPDATE: 'rental.reservations.update',
   RESERVATIONS_CONFIRM: 'rental.reservations.confirm',
   RESERVATIONS_CANCEL: 'rental.reservations.cancel',
-  // DEC-024 : trois capacités distinctes, aucune incluse dans « voir ».
+  // DEC-024 : exporter n'est pas inclus dans « voir ».
+  //
+  // Pas de `.download` ni de `.print` ici : aucun document de réservation
+  // n'existe. Une réservation n'est pas une pièce remise au client — les
+  // documents contractuels sont rattachés à la LOCATION. Déclarer ces deux
+  // capacités laissait croire qu'on pouvait les attribuer ; elles ont été
+  // retirées du catalogue le 26/08/2026 (migration 037).
   RESERVATIONS_EXPORT: 'rental.reservations.export',
-  RESERVATIONS_DOWNLOAD: 'rental.reservations.download',
-  RESERVATIONS_PRINT: 'rental.reservations.print',
 
   RENTALS_VIEW: 'rental.rentals.view',
   RENTALS_CREATE: 'rental.rentals.create',

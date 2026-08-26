@@ -424,14 +424,23 @@ begin
 end $$;
 
 
--- --- 13. Catalogue : 154 permissions, les six nouvelles présentes --------------------------
+-- --- 13. Catalogue : 152 permissions, les quatre capacités servies présentes ---------------
+--
+-- Quatre, et non six. `rental.reservations.download` et `.print` ont été
+-- retirées le 26/08/2026 : aucun document de réservation n'existe, et un
+-- catalogue qui déclare une capacité inexistante trompe qui attribue les
+-- droits (CLAUDE.md §19 bis, migration 037).
 do $$
 declare
   attendues text[] := array[
-    'rental.reservations.export', 'rental.reservations.download', 'rental.reservations.print',
-    'rental.rentals.export',      'rental.rentals.download',      'rental.rentals.print'
+    'rental.reservations.export',
+    'rental.rentals.export', 'rental.rentals.download', 'rental.rentals.print'
+  ];
+  retirees text[] := array[
+    'rental.reservations.download', 'rental.reservations.print'
   ];
   manquantes text[];
+  survivantes text[];
   total int;
   peu_sensibles int;
 begin
@@ -441,6 +450,17 @@ begin
 
   if manquantes is not null then
     raise exception 'Permissions documentaires manquantes : %', manquantes;
+  end if;
+
+  -- Le retrait est vérifié POSITIVEMENT : sans cela, une migration 037 non
+  -- appliquée passerait inaperçue tant que le total reste juste par ailleurs.
+  select array_agg(c) into survivantes
+  from unnest(retirees) c
+  where exists (select 1 from public.permissions p where p.code = c);
+
+  if survivantes is not null then
+    raise exception
+      'Permissions sans fonctionnalité encore au catalogue : %', survivantes;
   end if;
 
   -- DEC-025 §j : toutes sensibles — elles exposent client, période et montant.
@@ -453,11 +473,11 @@ begin
 
   select count(*) into total from public.permissions;
 
-  if total <> 154 then
-    raise exception 'Catalogue attendu à 154 permissions, obtenu %.', total;
+  if total <> 152 then
+    raise exception 'Catalogue attendu à 152 permissions, obtenu %.', total;
   end if;
 
-  raise notice '[OK] 13. Catalogue : 154 permissions, les 6 capacités du cycle sont sensibles.';
+  raise notice '[OK] 13. Catalogue : 152 permissions, les 4 capacités du cycle sont sensibles.';
 end $$;
 
 
