@@ -23,6 +23,16 @@ import {
 } from '@/features/fleet/data'
 import { listPricingRules } from '@/features/pricing/data'
 import { UNIT_LABELS } from '@/features/pricing/constants'
+import {
+  displayStatus as displayReservationStatus,
+  listReservations,
+  STATUS_LABELS as RESERVATION_STATUS,
+} from '@/features/reservations/data'
+import {
+  displayStatus as displayRentalStatus,
+  listRentals,
+  STATUS_LABELS as RENTAL_STATUS,
+} from '@/features/rentals/data'
 
 /**
  * Registre des exports.
@@ -179,6 +189,140 @@ export const EXPORTS: Record<string, ExportDefinition> = {
         { header: 'Kilométrage', width: 14, format: 'number', value: (r) => r.mileage },
         { header: 'Statut', width: 16, value: (r) => VEHICLE_STATUS[r.status] },
       ])
+    },
+  },
+
+  reservations: {
+    title: 'Réservations',
+    viewPermission: PERMISSIONS.RESERVATIONS_VIEW,
+    permission: PERMISSIONS.RESERVATIONS_EXPORT,
+    entityType: 'reservations',
+    moduleCode: 'rental',
+    async build(filters) {
+      const rows = await listReservations({
+        search: filters.q,
+        status: filters.statut,
+        clientId: filters.client,
+      })
+
+      /*
+       * Le TARIF VERROUILLÉ est une condition commerciale : il ne sort qu'avec
+       * `rental.rentals.financial.view`, comme à l'écran. Sans ce droit, la
+       * colonne n'existe pas — plutôt que d'exister vide, ce qui laisserait
+       * croire qu'aucun tarif n'a été figé (DEC-017, DEC-024).
+       */
+      const mayReadAmounts = await can(PERMISSIONS.RENTALS_FINANCIAL_VIEW)
+
+      return dataset(
+        rows,
+        [
+          { header: 'Réservation', width: 20, value: (r) => r.reservationNo },
+          { header: 'Client', width: 32, value: (r) => r.clientLabel },
+          { header: 'Début', width: 18, format: 'date', value: (r) => toExcelDate(r.startsAt) },
+          { header: 'Fin', width: 18, format: 'date', value: (r) => toExcelDate(r.endsAt) },
+          { header: 'Catégorie', width: 24, value: (r) => r.categoryLabel },
+          { header: 'Véhicule', width: 30, value: (r) => r.vehicleLabel },
+          {
+            header: 'Statut',
+            width: 20,
+            value: (r) => RESERVATION_STATUS[displayReservationStatus(r.status, r.startsAt)],
+          },
+          ...(mayReadAmounts
+            ? ([
+                {
+                  header: 'Tarif verrouillé',
+                  width: 18,
+                  format: 'amount' as const,
+                  value: (r: (typeof rows)[number]) => r.lockedAmount,
+                },
+                {
+                  header: 'Unité',
+                  width: 12,
+                  value: (r: (typeof rows)[number]) => (r.lockedUnit ? UNIT_LABELS[r.lockedUnit] : null),
+                },
+              ])
+            : []),
+        ],
+        mayReadAmounts ? 'Engagements et tarifs verrouillés' : 'Engagements'
+      )
+    },
+  },
+
+  locations: {
+    title: 'Locations',
+    viewPermission: PERMISSIONS.RENTALS_VIEW,
+    permission: PERMISSIONS.RENTALS_EXPORT,
+    entityType: 'rentals',
+    moduleCode: 'rental',
+    async build(filters) {
+      const rows = await listRentals({
+        search: filters.q,
+        status: filters.statut,
+        clientId: filters.client,
+        vehicleId: filters.vehicule,
+      })
+
+      const mayReadAmounts = await can(PERMISSIONS.RENTALS_FINANCIAL_VIEW)
+
+      /*
+       * Exploitation, pas facturation. Aucune durée facturable, aucun total,
+       * aucun frais : ces règles ne sont pas définies (DEC-008), et un tableur
+       * qui les afficherait ferait autorité alors qu'il les aurait inventées.
+       * Les dates réelles suffisent à qui veut compter lui-même.
+       */
+      return dataset(
+        rows,
+        [
+          { header: 'Location', width: 20, value: (r) => r.rentalNo },
+          { header: 'Client', width: 32, value: (r) => r.clientLabel },
+          { header: 'Véhicule', width: 30, value: (r) => r.vehicleLabel },
+          {
+            header: 'Départ prévu',
+            width: 18,
+            format: 'date',
+            value: (r) => toExcelDate(r.plannedFrom),
+          },
+          {
+            header: 'Départ réel',
+            width: 18,
+            format: 'date',
+            value: (r) => toExcelDate(r.startedAt),
+          },
+          {
+            header: 'Retour attendu',
+            width: 18,
+            format: 'date',
+            value: (r) => toExcelDate(r.expectedReturnAt),
+          },
+          {
+            header: 'Retour réel',
+            width: 18,
+            format: 'date',
+            value: (r) => toExcelDate(r.returnedAt),
+          },
+          {
+            header: 'Statut',
+            width: 20,
+            value: (r) => RENTAL_STATUS[displayRentalStatus(r.status, r.expectedReturnAt)],
+          },
+          ...(mayReadAmounts
+            ? ([
+                {
+                  header: 'Tarif verrouillé',
+                  width: 18,
+                  format: 'amount' as const,
+                  value: (r: (typeof rows)[number]) => r.lockedAmount,
+                },
+                {
+                  header: 'Unité',
+                  width: 12,
+                  value: (r: (typeof rows)[number]) => UNIT_LABELS[r.lockedUnit],
+                },
+              ])
+            : []),
+        ],
+        mayReadAmounts ? 'Exécution et tarifs verrouillés' : 'Exécution'
+      )
     },
   },
 

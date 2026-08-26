@@ -5,6 +5,12 @@ import { SupplierSheetDocument } from '@/features/suppliers/documents/supplier-s
 import { PartnerSheetDocument } from '@/features/partners/documents/partner-sheet'
 import { VehicleSheetDocument } from '@/features/fleet/documents/vehicle-sheet'
 import { PricingGridDocument } from '@/features/pricing/documents/pricing-grid'
+import {
+  DepartureReportDocument,
+  RentalContractDocument,
+  ReturnReportDocument,
+} from '@/features/rentals/documents/rental-documents'
+import type { Inspection, RentalDetail } from '@/features/rentals/data'
 import { documentFileName, issuedOnLabel, renderDocument } from './render'
 import type { DocumentIdentity } from './identity'
 import type { ClientDetail } from '@/features/clients/data'
@@ -591,6 +597,172 @@ describe('grille tarifaire', () => {
         })
       )
     )
+  })
+})
+
+
+/* -------------------------------------------------------------------------- */
+/*  Documents de location — contrat, bon de départ, PV de retour               */
+/* -------------------------------------------------------------------------- */
+
+const RENTAL: RentalDetail = {
+  id: '00000000-0000-0000-0000-000000000080',
+  rentalNo: 'LOC-2026-000001',
+  clientId: CLIENT.id,
+  clientLabel: 'CLIENT DEMO 01',
+  vehicleId: VEHICLE.id,
+  vehicleLabel: 'Toyota Land Cruiser — AB-123-CD',
+  plannedFrom: '2026-09-01T05:00:00.000Z',
+  plannedTo: '2026-09-04T05:00:00.000Z',
+  startedAt: '2026-09-01T06:00:00.000Z',
+  expectedReturnAt: '2026-09-04T05:00:00.000Z',
+  returnedAt: '2026-09-04T04:00:00.000Z',
+  status: 'TO_CONTROL',
+  lockedAmount: 120000,
+  lockedUnit: 'DAY',
+  reservationId: null,
+  reservationNo: null,
+  lockedRuleId: null,
+  lockedSource: 'CATEGORY',
+  lockedAt: '2026-08-25T06:00:00.000Z',
+  conditions: 'Restitution avec le plein.',
+  notes: null,
+  statusReason: null,
+  statusChangedAt: null,
+  createdAt: '2026-08-25T06:00:00.000Z',
+  updatedAt: '2026-09-04T04:00:00.000Z',
+}
+
+const DEPARTURE_INSPECTION: Inspection = {
+  id: '00000000-0000-0000-0000-000000000081',
+  kind: 'DEPARTURE',
+  performedAt: '2026-09-01T06:00:00.000Z',
+  mileage: 50000,
+  fuelLevel: 'FULL',
+  exteriorCondition: 'Carrosserie propre',
+  interiorCondition: 'Sellerie correcte',
+  preexistingDamages: 'Rayure portière avant droite',
+  observations: null,
+  photos: [{ id: 'p1', fileName: 'depart.png', caption: null }],
+}
+
+const RETURN_INSPECTION: Inspection = {
+  id: '00000000-0000-0000-0000-000000000082',
+  kind: 'RETURN',
+  performedAt: '2026-09-04T04:00:00.000Z',
+  mileage: 50800,
+  fuelLevel: 'HALF',
+  exteriorCondition: 'Propre',
+  interiorCondition: 'Correct',
+  preexistingDamages: 'Rétroviseur droit fissuré',
+  observations: 'Retour sans incident',
+  photos: [],
+}
+
+const FULL_PARTS = {
+  identity: IDENTITY,
+  rental: RENTAL,
+  client: CLIENT,
+  vehicle: VEHICLE,
+  inspections: [DEPARTURE_INSPECTION, RETURN_INSPECTION],
+  showAmounts: true,
+  issuedOn: ISSUED,
+}
+
+/**
+ * CHAQUE MODÈLE, DANS SES DEUX ÉTATS EXTRÊMES.
+ *
+ * La panne du 22/08/2026 est née d'une branche jamais rendue. Ces documents
+ * en comportent plusieurs : sans droit sur le client, sans droit sur le
+ * véhicule, sans droit financier, sans départ, sans retour. Chacune est
+ * exercée ici — c'est la seule façon de savoir qu'un style refusé par
+ * `@react-pdf/renderer` ne s'y cache pas.
+ */
+describe('contrat de location', () => {
+  it('produit un PDF complet', async () => {
+    expectPdf(await renderDocument(RentalContractDocument(FULL_PARTS)))
+  })
+
+  it('rend un contrat sans droit sur le client, le véhicule ni les montants', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalContractDocument({
+          ...FULL_PARTS,
+          client: null,
+          vehicle: null,
+          showAmounts: false,
+        })
+      )
+    )
+  })
+
+  it('rend un contrat sans conditions particulières', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalContractDocument({ ...FULL_PARTS, rental: { ...RENTAL, conditions: null } })
+      )
+    )
+  })
+})
+
+describe('bon de départ', () => {
+  it('produit un PDF avec l’état des lieux de départ', async () => {
+    expectPdf(await renderDocument(DepartureReportDocument(FULL_PARTS)))
+  })
+
+  /** Location jamais partie : la section le DIT, elle n'est pas vide. */
+  it('rend un bon de départ sans aucun état des lieux', async () => {
+    expectPdf(
+      await renderDocument(
+        DepartureReportDocument({
+          ...FULL_PARTS,
+          inspections: [],
+          rental: { ...RENTAL, status: 'CONFIRMED', startedAt: null, returnedAt: null },
+        })
+      )
+    )
+  })
+
+  it('rend un bon de départ sans droit financier', async () => {
+    expectPdf(await renderDocument(DepartureReportDocument({ ...FULL_PARTS, showAmounts: false })))
+  })
+})
+
+describe('procès-verbal de retour', () => {
+  it('produit un PDF comparant départ et retour', async () => {
+    expectPdf(await renderDocument(ReturnReportDocument(FULL_PARTS)))
+  })
+
+  /** Parti mais pas rentré : la section retour l'annonce. */
+  it('rend un PV alors que le véhicule n’est pas rentré', async () => {
+    expectPdf(
+      await renderDocument(
+        ReturnReportDocument({
+          ...FULL_PARTS,
+          inspections: [DEPARTURE_INSPECTION],
+          rental: { ...RENTAL, status: 'IN_PROGRESS', returnedAt: null },
+        })
+      )
+    )
+  })
+
+  /** Aucun relevé de kilométrage : la distance n'est pas déterminable. */
+  it('rend un PV sans kilométrage relevé', async () => {
+    expectPdf(
+      await renderDocument(
+        ReturnReportDocument({
+          ...FULL_PARTS,
+          inspections: [
+            { ...DEPARTURE_INSPECTION, mileage: null, fuelLevel: null },
+            { ...RETURN_INSPECTION, mileage: null, fuelLevel: null },
+          ],
+        })
+      )
+    )
+  })
+
+  it('rend un PV sans aucun état des lieux', async () => {
+    expectPdf(await renderDocument(ReturnReportDocument({ ...FULL_PARTS, inspections: [] })))
   })
 })
 

@@ -4,6 +4,7 @@ import { CarFront, Search } from 'lucide-react'
 
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from '@/components/ui/primitives'
 import { Input, Select } from '@/components/ui/form'
+import { ExportButton } from '@/components/ui/export-button'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDateTime } from '@/lib/dates'
@@ -34,8 +35,10 @@ export default async function RentalsPage(props: PageProps<'/location/locations'
 
   const filters = { search: read('q'), status: read('statut') }
 
-  const [rentals, canSeeAmounts] = await Promise.all([
+  const [rentals, canExport, canSeeAmounts] = await Promise.all([
     listRentals(filters),
+    // DEC-024 : exporter est une capacite distincte de consulter.
+    can(PERMISSIONS.RENTALS_EXPORT),
     // DEC-024 : voir une location ne donne pas accès à ses montants.
     can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
   ])
@@ -47,6 +50,14 @@ export default async function RentalsPage(props: PageProps<'/location/locations'
       <PageHeader
         title="Locations"
         description="Contrats en cours d’exécution, de la préparation à la facturation."
+        actions={
+          canExport ? (
+            <ExportButton
+              module="locations"
+              filters={{ q: filters.search, statut: filters.status }}
+            />
+          ) : undefined
+        }
       />
 
       <form method="get" className="mb-5">

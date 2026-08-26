@@ -37,7 +37,8 @@
     "verify:checkout": "node scripts/verify-checkout.mjs",
     "verify:rental-live": "node scripts/verify-rental-live.mjs",
     "verify:rental-return": "node scripts/verify-rental-return.mjs",
-    "verify:dashboard": "node scripts/verify-rental-dashboard.mjs"
+    "verify:dashboard": "node scripts/verify-rental-dashboard.mjs",
+    "verify:rental-documents": "node scripts/verify-rental-documents.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",

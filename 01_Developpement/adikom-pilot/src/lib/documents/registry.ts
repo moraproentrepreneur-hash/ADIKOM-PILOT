@@ -24,6 +24,12 @@ import {
 } from '@/features/fleet/data'
 import { PricingGridDocument } from '@/features/pricing/documents/pricing-grid'
 import { listPricingRules } from '@/features/pricing/data'
+import {
+  DepartureReportDocument,
+  RentalContractDocument,
+  ReturnReportDocument,
+} from '@/features/rentals/documents/rental-documents'
+import { getRentalDetail, listInspections } from '@/features/rentals/data'
 
 /**
  * Registre des documents.
@@ -81,6 +87,73 @@ export type DocumentDefinition = {
   printPermission: PermissionCode
   /** `null` si l'enregistrement n'existe pas ou n'est pas lisible. */
   build: (id: string) => Promise<BuiltDocument | null>
+}
+
+/**
+ * Fabrique les trois documents du cycle de location.
+ *
+ * Ils chargent exactement les mêmes données ; seule la pièce produite change.
+ * Écrire trois fois ce chargement aurait laissé trois occasions de diverger —
+ * et de laisser fuir, dans l'un d'eux, ce que les deux autres protègent.
+ *
+ * CHAQUE LECTURE EST CONDITIONNÉE À SON PROPRE DROIT.
+ *
+ * Le client, le véhicule et les montants relèvent de permissions distinctes de
+ * `rental.rentals.view`. Ce qui n'est pas accessible n'est pas chargé, donc ne
+ * peut pas figurer dans le PDF : un document n'expose jamais plus que l'écran
+ * (DEC-024). Le modèle, lui, le MENTIONNE plutôt que de le taire (DEC-017).
+ */
+function rentalDocument(
+  label: string,
+  render: (props: {
+    identity: Awaited<ReturnType<typeof getDocumentIdentity>>
+    rental: NonNullable<Awaited<ReturnType<typeof getRentalDetail>>>
+    client: Awaited<ReturnType<typeof getClientDetail>>
+    vehicle: Awaited<ReturnType<typeof getVehicleDetail>>
+    inspections: Awaited<ReturnType<typeof listInspections>>
+    showAmounts: boolean
+    issuedOn: string
+  }) => ReactElement<DocumentProps>
+): DocumentDefinition {
+  return {
+    entityType: 'rentals',
+    moduleCode: 'rental',
+    viewPermission: PERMISSIONS.RENTALS_VIEW,
+    downloadPermission: PERMISSIONS.RENTALS_DOWNLOAD,
+    printPermission: PERMISSIONS.RENTALS_PRINT,
+
+    async build(id) {
+      const rental = await getRentalDetail(id)
+      if (!rental) return null
+
+      const [mayReadClient, mayReadFleet, showAmounts] = await Promise.all([
+        can(PERMISSIONS.CLIENTS_VIEW),
+        can(PERMISSIONS.FLEET_VIEW),
+        can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
+      ])
+
+      const [client, vehicle, inspections, identity] = await Promise.all([
+        mayReadClient ? getClientDetail(rental.clientId) : Promise.resolve(null),
+        mayReadFleet ? getVehicleDetail(rental.vehicleId) : Promise.resolve(null),
+        listInspections(id),
+        getDocumentIdentity(),
+      ])
+
+      return {
+        element: render({
+          identity,
+          rental,
+          client,
+          vehicle,
+          inspections,
+          showAmounts,
+          issuedOn: issuedOnLabel(),
+        }),
+        reference: rental.rentalNo,
+        label,
+      }
+    },
+  }
 }
 
 export const DOCUMENTS: Record<string, DocumentDefinition> = {
@@ -235,6 +308,19 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
       }
     },
   },
+
+  /* ------------------------------------------------------------ Location -- */
+  //
+  // TROIS DOCUMENTS, UNE SEULE LOCATION.
+  //
+  // Le registre est indexé par TYPE, pas par entité : trois entrées pointent
+  // le même contrat et produisent trois pièces différentes. Elles partagent
+  // les mêmes permissions — voir, télécharger, imprimer une location — parce
+  // qu'aucune ne constitue une capacité que l'administrateur aurait à
+  // attribuer séparément des deux autres.
+  contrats: rentalDocument('Contrat-location', RentalContractDocument),
+  departs: rentalDocument('Bon-depart', DepartureReportDocument),
+  retours: rentalDocument('PV-retour', ReturnReportDocument),
 
   /* -------------------------------------------------------- Tarification -- */
   tarification: {

@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/primitives'
 import { Notice } from '@/components/ui/feedback'
 import { Tabs, type TabItem } from '@/components/ui/tabs'
+import { DocumentToolbar } from '@/components/ui/document-toolbar'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate, formatDateTime, formatPeriod } from '@/lib/dates'
@@ -36,6 +37,12 @@ import { ExtendPanel } from '@/features/rentals/extend-panel'
 import { ControlPanel } from '@/features/rentals/control-panel'
 
 export const metadata: Metadata = { title: 'Location' }
+
+/** « Contrat. » · « Contrat et bon de départ. » · « A, B et C. » */
+function enumerate(items: string[]): string {
+  if (items.length === 1) return `${items[0]}.`
+  return `${items.slice(0, -1).join(', ')} et ${items[items.length - 1]}.`
+}
 
 export default async function RentalDetailPage(props: PageProps<'/location/locations/[id]'>) {
   await requirePermissionOrRedirect(PERMISSIONS.RENTALS_VIEW)
@@ -73,6 +80,13 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
     can(PERMISSIONS.RENTALS_CLOSE),
     can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
     can(PERMISSIONS.RESERVATIONS_VIEW),
+  ])
+
+  // DEC-024 : produire un document et l'imprimer sont deux capacités
+  // distinctes de la consultation, attribuables séparément.
+  const [canDownload, canPrint] = await Promise.all([
+    can(PERMISSIONS.RENTALS_DOWNLOAD),
+    can(PERMISSIONS.RENTALS_PRINT),
   ])
 
   const shown = displayStatus(rental.status, rental.expectedReturnAt)
@@ -315,6 +329,62 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
           {canCancel && beforeDeparture && (
             <Card title="Annuler" description="Possible tant que la location n’est pas partie.">
               <CancelRentalPanel rentalId={id} />
+            </Card>
+          )}
+
+          {/*
+            Trois documents, une seule location : le contrat, le bon remis au
+            départ et le procès-verbal signé au retour. Chacun n'est proposé
+            qu'une fois la pièce a un sens — un bon de départ avant le départ
+            ne décrirait rien.
+          */}
+          {(canDownload || canPrint) && (
+            <Card
+              title="Documents"
+              /*
+               * La description ÉNUMÈRE ce qui est réellement disponible.
+               * Annoncer trois pièces alors qu'une seule existe encore ferait
+               * chercher les deux autres — la même faute que d'afficher « 0 »
+               * pour une donnée simplement pas encore produite (DEC-017).
+               */
+              description={enumerate([
+                'Contrat',
+                ...(rental.startedAt ? ['bon de départ'] : []),
+                ...(rental.returnedAt ? ['procès-verbal de retour'] : []),
+              ])}
+            >
+              <div className="space-y-4">
+                <RentalDocument
+                  type="contrats"
+                  id={id}
+                  title="Contrat de location"
+                  label={`contrat ${rental.rentalNo}`}
+                  canDownload={canDownload}
+                  canPrint={canPrint}
+                />
+
+                {rental.startedAt && (
+                  <RentalDocument
+                    type="departs"
+                    id={id}
+                    title="Bon de départ"
+                    label={`bon de départ ${rental.rentalNo}`}
+                    canDownload={canDownload}
+                    canPrint={canPrint}
+                  />
+                )}
+
+                {rental.returnedAt && (
+                  <RentalDocument
+                    type="retours"
+                    id={id}
+                    title="Procès-verbal de retour"
+                    label={`PV de retour ${rental.rentalNo}`}
+                    canDownload={canDownload}
+                    canPrint={canPrint}
+                  />
+                )}
+              </div>
             </Card>
           )}
 
@@ -604,6 +674,44 @@ async function ControlTab({
           <ControlPanel rentalId={rentalId} />
         </Card>
       )}
+    </div>
+  )
+}
+
+/**
+ * Une pièce documentaire, avec sa barre d'actions.
+ *
+ * Trois documents cohabitent sur la même fiche : chacun est annoncé par son
+ * nom, faute de quoi trois barres identiques laisseraient l'utilisateur
+ * deviner laquelle produit quoi. La barre elle-même est celle de tous les
+ * autres référentiels — un seul PDF sert l'aperçu, le téléchargement et
+ * l'impression.
+ */
+function RentalDocument({
+  type,
+  id,
+  title,
+  label,
+  canDownload,
+  canPrint,
+}: {
+  type: string
+  id: string
+  title: string
+  label: string
+  canDownload: boolean
+  canPrint: boolean
+}) {
+  return (
+    <div>
+      <p className="mb-2 text-xs font-medium text-ink">{title}</p>
+      <DocumentToolbar
+        type={type}
+        id={id}
+        label={label}
+        canDownload={canDownload}
+        canPrint={canPrint}
+      />
     </div>
   )
 }

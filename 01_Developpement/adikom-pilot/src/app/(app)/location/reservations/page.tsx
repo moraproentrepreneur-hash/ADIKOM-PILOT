@@ -4,6 +4,7 @@ import { CalendarCheck, Search } from 'lucide-react'
 
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from '@/components/ui/primitives'
 import { Input, Select } from '@/components/ui/form'
+import { ExportButton } from '@/components/ui/export-button'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDateTime } from '@/lib/dates'
@@ -27,9 +28,11 @@ export default async function ReservationsPage(props: PageProps<'/location/reser
 
   const filters = { search: read('q'), status: read('statut') }
 
-  const [reservations, canCreate, canSeeAmounts] = await Promise.all([
+  const [reservations, canCreate, canExport, canSeeAmounts] = await Promise.all([
     listReservations(filters),
     can(PERMISSIONS.RESERVATIONS_CREATE),
+    // DEC-024 : exporter est une capacite distincte de consulter.
+    can(PERMISSIONS.RESERVATIONS_EXPORT),
     /*
      * DEC-024 : voir une réservation ne donne pas accès à son montant.
      * DEC-017 : sans ce droit, la colonne DISPARAÎT — afficher un tiret
@@ -46,11 +49,19 @@ export default async function ReservationsPage(props: PageProps<'/location/reser
         title="Réservations"
         description="Engagements pris sur un véhicule et une période, avant leur transformation en location."
         actions={
-          canCreate ? (
-            <ButtonLink href="/location/reservations/nouvelle" icon={CalendarCheck}>
-              Nouvelle réservation
-            </ButtonLink>
-          ) : undefined
+          <>
+            {canExport && (
+              <ExportButton
+                module="reservations"
+                filters={{ q: filters.search, statut: filters.status }}
+              />
+            )}
+            {canCreate && (
+              <ButtonLink href="/location/reservations/nouvelle" icon={CalendarCheck}>
+                Nouvelle réservation
+              </ButtonLink>
+            )}
+          </>
         }
       />
 
