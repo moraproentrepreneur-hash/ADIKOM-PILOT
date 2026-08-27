@@ -17,6 +17,7 @@ import {
   Settings,
   ShieldCheck,
   Tags,
+  TriangleAlert,
   Truck,
   UserCog,
   Users,
@@ -160,6 +161,13 @@ export const NAVIGATION: NavEntry[] = [
         href: '/location/tarification',
         icon: Tags,
         permission: PERMISSIONS.PRICING_VIEW,
+        status: 'ready',
+      },
+      {
+        label: 'Dommages & Incidents',
+        href: '/location/incidents',
+        icon: TriangleAlert,
+        permission: PERMISSIONS.INCIDENTS_VIEW,
         status: 'ready',
       },
       {

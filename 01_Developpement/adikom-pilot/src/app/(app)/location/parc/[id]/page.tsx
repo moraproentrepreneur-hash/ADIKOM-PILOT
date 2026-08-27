@@ -34,6 +34,12 @@ import { listCategoryOptions } from '@/features/fleet/data'
 import { listSupplierOptions } from '@/features/suppliers/data'
 import { listPartnerOptions } from '@/features/partners/data'
 import { listPricingRules } from '@/features/pricing/data'
+import {
+  KIND_LABELS as INCIDENT_KIND_LABELS,
+  listVehicleIncidents,
+  STATUS_LABELS as INCIDENT_STATUS_LABELS,
+  STATUS_TONES as INCIDENT_STATUS_TONES,
+} from '@/features/incidents/data'
 import { formatPrice } from '@/features/pricing/constants'
 
 export const metadata: Metadata = { title: 'Fiche véhicule' }
@@ -66,6 +72,7 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
     canPricing,
     canDownload,
     canPrint,
+    canIncidents,
   ] = await Promise.all([
     can(PERMISSIONS.FLEET_UPDATE),
     can(PERMISSIONS.FLEET_STATUS_UPDATE),
@@ -77,6 +84,7 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
     // distinctes de la consultation, attribuables séparément.
     can(PERMISSIONS.FLEET_DOWNLOAD),
     can(PERMISSIONS.FLEET_PRINT),
+    can(PERMISSIONS.INCIDENTS_VIEW),
   ])
 
   const tabs: TabItem[] = [
@@ -88,6 +96,14 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
       : []),
     ...(canPricing
       ? [{ key: 'tarifs', label: 'Tarifs', href: `/location/parc/${id}?onglet=tarifs` }]
+      : []),
+    /*
+     * DEC-017 : sans `rental.incidents.view`, l'onglet DISPARAÎT. Le laisser
+     * afficher une liste vide reviendrait à certifier que ce véhicule n'a
+     * jamais connu d'incident, alors qu'on ne fait que refuser la lecture.
+     */
+    ...(canIncidents
+      ? [{ key: 'incidents', label: 'Incidents', href: `/location/parc/${id}?onglet=incidents` }]
       : []),
     { key: 'locations', label: 'Locations', planned: true },
     { key: 'maintenance', label: 'Maintenance', planned: true },
@@ -170,6 +186,8 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
         <DocumentsTab vehicleId={id} />
       ) : tab === 'tarifs' ? (
         <PricingTab vehicleId={id} categoryId={vehicle.categoryId} />
+      ) : tab === 'incidents' ? (
+        <IncidentsTab vehicleId={id} />
       ) : editing && canUpdate ? (
         <EditPanel vehicleId={id} />
       ) : (
@@ -443,6 +461,63 @@ async function PricingTab({ vehicleId, categoryId }: { vehicleId: string; catego
                 <Tags className="mr-1 size-3.5" aria-hidden />
                 {rule.clientId ? 'Préférentiel' : 'Standard'}
               </Badge>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+/**
+ * Incidents connus de ce véhicule.
+ *
+ * L'HISTOIRE DU VÉHICULE, PAS CELLE D'UNE LOCATION.
+ *
+ * Un incident survenu hors exploitation y figure au même titre qu'un dommage
+ * constaté au retour : c'est le véhicule qui les a subis, et c'est sa fiche qui
+ * doit permettre de les retrouver des mois plus tard.
+ *
+ * L'onglet lui-même n'existe que si le lecteur peut consulter les incidents :
+ * sans le droit, il ne s'affiche pas vide (DEC-017).
+ */
+async function IncidentsTab({ vehicleId }: { vehicleId: string }) {
+  const incidents = await listVehicleIncidents(vehicleId)
+
+  return (
+    <Card
+      title="Incidents"
+      description="Constats enregistrés sur ce véhicule. Aucun montant : les barèmes ne sont pas définis."
+    >
+      {incidents.length === 0 ? (
+        <p className="py-6 text-center text-sm text-muted">
+          Aucun incident n’a été constaté sur ce véhicule.
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {incidents.map((incident) => (
+            <li key={incident.id} className="rounded-control border border-line p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Link
+                    href={`/location/incidents/${incident.id}`}
+                    className="font-medium text-adikom-500 hover:underline"
+                  >
+                    {INCIDENT_KIND_LABELS[incident.kind]}
+                  </Link>
+                  <p className="mt-0.5 text-xs text-muted tabular">
+                    {incident.incidentNo} · {formatDateTime(incident.occurredAt)}
+                  </p>
+                </div>
+                <Badge tone={INCIDENT_STATUS_TONES[incident.status]}>
+                  {INCIDENT_STATUS_LABELS[incident.status]}
+                </Badge>
+              </div>
+              <p className="mt-2 text-sm text-muted">{incident.description}</p>
+              <p className="mt-2 text-xs text-muted">
+                {incident.damageCount} dommage{incident.damageCount > 1 ? 's' : ''} constaté
+                {incident.damageCount > 1 ? 's' : ''}
+              </p>
             </li>
           ))}
         </ul>

@@ -1,7 +1,14 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, ClipboardCheck, Image as ImageIcon, KeyRound, Undo2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  ClipboardCheck,
+  Image as ImageIcon,
+  KeyRound,
+  TriangleAlert,
+  Undo2,
+} from 'lucide-react'
 
 import {
   Badge,
@@ -88,6 +95,10 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
     can(PERMISSIONS.RENTALS_DOWNLOAD),
     can(PERMISSIONS.RENTALS_PRINT),
   ])
+
+  // Déclarer un incident relève du module Incidents, pas des locations : un
+  // exploitant peut suivre un contrat sans avoir le droit d'ouvrir un constat.
+  const canDeclareIncident = await can(PERMISSIONS.INCIDENTS_CREATE)
 
   const shown = displayStatus(rental.status, rental.expectedReturnAt)
   const beforeDeparture = rental.status === 'PREPARING' || rental.status === 'CONFIRMED'
@@ -200,6 +211,7 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
         <ControlTab
           rentalId={id}
           canClose={canClose}
+          canDeclareIncident={canDeclareIncident}
           status={rental.status}
           expectedReturnAt={rental.expectedReturnAt}
           returnedAt={rental.returnedAt}
@@ -541,12 +553,14 @@ async function InspectionsTab({ rentalId }: { rentalId: string }) {
 async function ControlTab({
   rentalId,
   canClose,
+  canDeclareIncident,
   status,
   expectedReturnAt,
   returnedAt,
 }: {
   rentalId: string
   canClose: boolean
+  canDeclareIncident: boolean
   status: string
   expectedReturnAt: string
   returnedAt: string | null
@@ -653,6 +667,28 @@ async function ControlTab({
             {back.preexistingDamages ?? <Empty />}
           </InfoRow>
         </dl>
+
+        {/*
+          Le champ ci-dessus est du TEXTE : il décrit, il ne se compte pas et
+          ne se suit pas d'une location à l'autre. Ouvrir un incident transforme
+          ce constat en dommages identifiés, que la maintenance saura reprendre.
+          Rien n'est déclenché automatiquement : c'est une décision, pas une
+          conséquence (Workflow 05 §44).
+        */}
+        {canDeclareIncident && (
+          <div className="mt-4 border-t border-line pt-4">
+            <ButtonLink
+              href={`/location/incidents/nouveau?location=${rentalId}&etat=${back.id}`}
+              icon={TriangleAlert}
+              tone="secondary"
+            >
+              Déclarer un incident
+            </ButtonLink>
+            <p className="mt-2 text-xs text-muted">
+              Le véhicule ne sera pas immobilisé et aucune maintenance ne sera créée.
+            </p>
+          </div>
+        )}
       </Card>
 
       <Card title="États relevés">
