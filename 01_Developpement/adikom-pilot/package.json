@@ -42,7 +42,8 @@
     "db:verify:incidents": "node scripts/run-sql.mjs supabase/tests/incidents.sql",
     "verify:incidents": "node scripts/verify-incidents.mjs",
     "db:verify:maintenance": "node scripts/run-sql.mjs supabase/tests/maintenance.sql",
-    "verify:maintenance": "node scripts/verify-maintenance.mjs"
+    "verify:maintenance": "node scripts/verify-maintenance.mjs",
+    "verify:capabilities": "node scripts/verify-capabilities.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",
