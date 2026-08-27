@@ -175,7 +175,7 @@ export const NAVIGATION: NavEntry[] = [
         href: '/location/maintenance',
         icon: Wrench,
         permission: PERMISSIONS.MAINTENANCE_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
     ],
   },

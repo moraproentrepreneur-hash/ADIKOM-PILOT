@@ -1,10 +1,11 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Image as ImageIcon, TriangleAlert } from 'lucide-react'
+import { ArrowLeft, Image as ImageIcon, TriangleAlert, Wrench } from 'lucide-react'
 
 import {
   Badge,
+  ButtonLink,
   Card,
   Empty,
   EmptyState,
@@ -40,9 +41,12 @@ export default async function IncidentDetailPage(props: PageProps<'/location/inc
   const justCreated = searchParams.cree === '1'
   const rejectedPhotos = Number(typeof searchParams.photos === 'string' ? searchParams.photos : 0)
 
-  const [canUpdate, canReadRentals] = await Promise.all([
+  const [canUpdate, canReadRentals, canCreateMaintenance] = await Promise.all([
     can(PERMISSIONS.INCIDENTS_UPDATE),
     can(PERMISSIONS.RENTALS_VIEW),
+    // Faire reparer releve du module Maintenance, pas des incidents : un
+    // utilisateur peut constater sans avoir le droit d'engager une intervention.
+    can(PERMISSIONS.MAINTENANCE_CREATE),
   ])
 
   const open = incident.status === 'OPEN' || incident.status === 'IN_PROGRESS'
@@ -223,10 +227,34 @@ export default async function IncidentDetailPage(props: PageProps<'/location/inc
             </Card>
           )}
 
+          {/*
+            UNE DÉCISION, JAMAIS UN DÉCLENCHEMENT.
+            Constater qu'un véhicule est abîmé et décider de le réparer sont
+            deux actes distincts : le second est ici un lien, que quelqu'un
+            choisit de suivre (Workflow 05 §44 appliqué à l'amont).
+          */}
+          {canCreateMaintenance && open && (
+            <Card
+              title="Faire réparer"
+              description="Ce constat ne déclenche aucune intervention de lui-même."
+            >
+              <ButtonLink
+                href={`/location/maintenance/nouvelle?incident=${incident.id}`}
+                icon={Wrench}
+                tone="secondary"
+              >
+                Créer une maintenance
+              </ButtonLink>
+              <p className="mt-2 text-xs text-muted">
+                Le véhicule et l’incident seront repris ; l’immobilisation restera votre choix.
+              </p>
+            </Card>
+          )}
+
           <Card title="Étape suivante">
             <p className="text-sm text-muted">
               {open
-                ? 'Ce constat n’a déclenché aucune intervention. La maintenance, son coût et son éventuelle imputation à un fournisseur relèvent d’un lot ultérieur.'
+                ? 'Le coût d’une éventuelle intervention et son imputation à un fournisseur relèvent d’un lot ultérieur.'
                 : 'Cet incident est clos. Il reste consultable dans l’historique du véhicule.'}
             </p>
           </Card>

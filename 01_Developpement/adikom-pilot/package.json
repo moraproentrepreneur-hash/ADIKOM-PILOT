@@ -40,7 +40,9 @@
     "verify:dashboard": "node scripts/verify-rental-dashboard.mjs",
     "verify:rental-documents": "node scripts/verify-rental-documents.mjs",
     "db:verify:incidents": "node scripts/run-sql.mjs supabase/tests/incidents.sql",
-    "verify:incidents": "node scripts/verify-incidents.mjs"
+    "verify:incidents": "node scripts/verify-incidents.mjs",
+    "db:verify:maintenance": "node scripts/run-sql.mjs supabase/tests/maintenance.sql",
+    "verify:maintenance": "node scripts/verify-maintenance.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",

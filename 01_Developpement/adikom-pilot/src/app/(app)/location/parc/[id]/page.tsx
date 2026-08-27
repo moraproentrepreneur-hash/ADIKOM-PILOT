@@ -40,6 +40,13 @@ import {
   STATUS_LABELS as INCIDENT_STATUS_LABELS,
   STATUS_TONES as INCIDENT_STATUS_TONES,
 } from '@/features/incidents/data'
+import {
+  listVehicleMaintenances,
+  ORIGIN_LABELS as MAINTENANCE_ORIGIN_LABELS,
+  PRIORITY_LABELS as MAINTENANCE_PRIORITY_LABELS,
+  STATUS_LABELS as MAINTENANCE_STATUS_LABELS,
+  STATUS_TONES as MAINTENANCE_STATUS_TONES,
+} from '@/features/maintenance/data'
 import { formatPrice } from '@/features/pricing/constants'
 
 export const metadata: Metadata = { title: 'Fiche véhicule' }
@@ -73,6 +80,7 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
     canDownload,
     canPrint,
     canIncidents,
+    canMaintenance,
   ] = await Promise.all([
     can(PERMISSIONS.FLEET_UPDATE),
     can(PERMISSIONS.FLEET_STATUS_UPDATE),
@@ -85,6 +93,7 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
     can(PERMISSIONS.FLEET_DOWNLOAD),
     can(PERMISSIONS.FLEET_PRINT),
     can(PERMISSIONS.INCIDENTS_VIEW),
+    can(PERMISSIONS.MAINTENANCE_VIEW),
   ])
 
   const tabs: TabItem[] = [
@@ -105,8 +114,16 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
     ...(canIncidents
       ? [{ key: 'incidents', label: 'Incidents', href: `/location/parc/${id}?onglet=incidents` }]
       : []),
+    ...(canMaintenance
+      ? [
+          {
+            key: 'maintenance',
+            label: 'Maintenance',
+            href: `/location/parc/${id}?onglet=maintenance`,
+          },
+        ]
+      : []),
     { key: 'locations', label: 'Locations', planned: true },
-    { key: 'maintenance', label: 'Maintenance', planned: true },
     { key: 'rentabilite', label: 'Rentabilité', planned: true },
   ]
 
@@ -188,6 +205,8 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
         <PricingTab vehicleId={id} categoryId={vehicle.categoryId} />
       ) : tab === 'incidents' ? (
         <IncidentsTab vehicleId={id} />
+      ) : tab === 'maintenance' ? (
+        <MaintenanceTab vehicleId={id} />
       ) : editing && canUpdate ? (
         <EditPanel vehicleId={id} />
       ) : (
@@ -517,6 +536,66 @@ async function IncidentsTab({ vehicleId }: { vehicleId: string }) {
               <p className="mt-2 text-xs text-muted">
                 {incident.damageCount} dommage{incident.damageCount > 1 ? 's' : ''} constaté
                 {incident.damageCount > 1 ? 's' : ''}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+/**
+ * Interventions connues de ce véhicule.
+ *
+ * La ligne dit ce qui compte pour le parc : l'intervention a-t-elle SORTI le
+ * véhicule du service, ou non ? Une maintenance sans période d'immobilisation
+ * ne bloque aucun calendrier, et l'écrire évite de croire qu'un véhicule était
+ * indisponible parce qu'il était suivi.
+ *
+ * Aucun coût n'y figure : les montants relèvent d'un lot ultérieur.
+ *
+ * L'onglet n'existe que si le lecteur peut consulter les maintenances : sans le
+ * droit, il ne s'affiche pas vide (DEC-017).
+ */
+async function MaintenanceTab({ vehicleId }: { vehicleId: string }) {
+  const maintenances = await listVehicleMaintenances(vehicleId)
+
+  return (
+    <Card
+      title="Maintenance"
+      description="Interventions déclarées sur ce véhicule. Les coûts relèvent d’une étape ultérieure."
+    >
+      {maintenances.length === 0 ? (
+        <p className="py-6 text-center text-sm text-muted">
+          Aucune intervention n’a été déclarée sur ce véhicule.
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {maintenances.map((maintenance) => (
+            <li key={maintenance.id} className="rounded-control border border-line p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Link
+                    href={`/location/maintenance/${maintenance.id}`}
+                    className="font-medium text-adikom-500 hover:underline"
+                  >
+                    {maintenance.reason}
+                  </Link>
+                  <p className="mt-0.5 text-xs text-muted tabular">
+                    {maintenance.maintenanceNo} ·{' '}
+                    {MAINTENANCE_ORIGIN_LABELS[maintenance.origin]} ·{' '}
+                    {MAINTENANCE_PRIORITY_LABELS[maintenance.priority]}
+                  </p>
+                </div>
+                <Badge tone={MAINTENANCE_STATUS_TONES[maintenance.status]}>
+                  {MAINTENANCE_STATUS_LABELS[maintenance.status]}
+                </Badge>
+              </div>
+              <p className="mt-2 text-xs text-muted">
+                {maintenance.immobilizationFrom
+                  ? `Immobilisé du ${formatDateTime(maintenance.immobilizationFrom)} au ${formatDateTime(maintenance.immobilizationTo)}`
+                  : 'Sans immobilisation — le véhicule est resté louable'}
               </p>
             </li>
           ))}
