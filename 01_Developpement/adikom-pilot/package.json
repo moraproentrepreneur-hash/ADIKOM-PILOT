@@ -45,7 +45,9 @@
     "verify:maintenance": "node scripts/verify-maintenance.mjs",
     "verify:capabilities": "node scripts/verify-capabilities.mjs",
     "db:verify:maintenance-costs": "node scripts/run-sql.mjs supabase/tests/maintenance_costs.sql",
-    "verify:maintenance-costs": "node scripts/verify-maintenance-costs.mjs"
+    "verify:maintenance-costs": "node scripts/verify-maintenance-costs.mjs",
+    "db:verify:imputations": "node scripts/run-sql.mjs supabase/tests/imputations.sql",
+    "verify:imputations": "node scripts/verify-imputations.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",

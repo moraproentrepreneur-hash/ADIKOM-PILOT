@@ -229,7 +229,7 @@ export const NAVIGATION: NavEntry[] = [
         href: '/facturation/imputations',
         icon: BarChart3,
         permission: PERMISSIONS.IMPUTATIONS_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Paiements divers',

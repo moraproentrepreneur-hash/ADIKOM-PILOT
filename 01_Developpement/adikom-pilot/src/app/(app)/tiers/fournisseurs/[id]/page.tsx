@@ -35,6 +35,13 @@ import {
   PaymentStateButton,
 } from '@/features/suppliers/payment-details'
 import { listVehicles, STATUS_LABELS as VEHICLE_STATUS_LABELS, STATUS_TONES as VEHICLE_STATUS_TONES } from '@/features/fleet/data'
+import { listSupplierImputations } from '@/features/imputations/data'
+import {
+  formatAmount as formatImputationAmount,
+  IMPUTATION_STATUS_LABELS,
+  IMPUTATION_STATUS_TONES,
+  isAwaitingInvoice,
+} from '@/features/imputations/constants'
 
 export const metadata: Metadata = { title: 'Fiche fournisseur' }
 
@@ -52,18 +59,30 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
   const justCreated = searchParams.cree === '1'
   const justSaved = searchParams.enregistre === '1'
 
-  const [canUpdate, canArchive, canViewBank, canUpdateBank, canViewFleet, canDownload, canPrint] =
-    await Promise.all([
-      can(PERMISSIONS.SUPPLIERS_UPDATE),
-      can(PERMISSIONS.SUPPLIERS_ARCHIVE),
-      can(PERMISSIONS.SUPPLIERS_BANK_VIEW),
-      can(PERMISSIONS.SUPPLIERS_BANK_UPDATE),
-      can(PERMISSIONS.FLEET_VIEW),
-      // DEC-024 : produire un document et l'imprimer sont deux capacités
-      // distinctes de la consultation, attribuables séparément.
-      can(PERMISSIONS.SUPPLIERS_DOWNLOAD),
-      can(PERMISSIONS.SUPPLIERS_PRINT),
-    ])
+  const [
+    canUpdate,
+    canArchive,
+    canViewBank,
+    canUpdateBank,
+    canViewFleet,
+    canDownload,
+    canPrint,
+    canViewImputations,
+  ] = await Promise.all([
+    can(PERMISSIONS.SUPPLIERS_UPDATE),
+    can(PERMISSIONS.SUPPLIERS_ARCHIVE),
+    can(PERMISSIONS.SUPPLIERS_BANK_VIEW),
+    can(PERMISSIONS.SUPPLIERS_BANK_UPDATE),
+    can(PERMISSIONS.FLEET_VIEW),
+    // DEC-024 : produire un document et l'imprimer sont deux capacités
+    // distinctes de la consultation, attribuables séparément.
+    can(PERMISSIONS.SUPPLIERS_DOWNLOAD),
+    can(PERMISSIONS.SUPPLIERS_PRINT),
+    // LOT 4 : l'onglet liste des imputations, il relève donc de leur propre
+    // capacité. Sans elle, il DISPARAÎT — l'afficher vide laisserait croire
+    // qu'aucune dépense n'a été imputée à ce fournisseur (DEC-017).
+    can(PERMISSIONS.IMPUTATIONS_VIEW),
+  ])
 
   const tabs: TabItem[] = [
     { key: 'informations', label: 'Informations', href: `/tiers/fournisseurs/${id}` },
@@ -86,7 +105,18 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
         ]
       : []),
     { key: 'factures', label: 'Factures', planned: true },
-    { key: 'imputations', label: 'Imputations', planned: true },
+    // L'onglet n'existe pas sans la capacité : un onglet « à venir » affiché à
+    // qui n'a pas le droit de voir mentirait deux fois — sur l'existence de la
+    // fonctionnalité, et sur la raison de son absence (DEC-017).
+    ...(canViewImputations
+      ? [
+          {
+            key: 'imputations',
+            label: 'Imputations',
+            href: `/tiers/fournisseurs/${id}?onglet=imputations`,
+          },
+        ]
+      : []),
     { key: 'reglements', label: 'Règlements', planned: true },
     { key: 'documents', label: 'Documents', planned: true },
   ]
@@ -152,6 +182,8 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
 
       {tab === 'vehicules' ? (
         <VehiclesTab supplierId={id} />
+      ) : tab === 'imputations' ? (
+        <SupplierImputationsTab supplierId={id} />
       ) : tab === 'paiement' ? (
         <PaymentTab
           supplierId={id}
@@ -239,6 +271,102 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
         </div>
       )}
     </>
+  )
+}
+
+/**
+ * Imputations du fournisseur — Workflow 06 §23 et §42.
+ *
+ * CE QUE CET ONGLET MONTRE, ET CE QU'IL REFUSE DE MONTRER.
+ *
+ * §42 demande, à terme, montant brut, total imputé et montant net. Le brut et
+ * le net supposent des FACTURES FOURNISSEURS, qui relèvent de l'Étape 2.5 :
+ * les afficher aujourd'hui reviendrait à inventer des montants (DEC-013).
+ *
+ * L'onglet montre donc ce qui existe réellement — la liste des imputations et
+ * leurs totaux par état — et DIT que le net à payer viendra avec la
+ * facturation, plutôt que d'afficher un zéro qui se lirait « rien à payer ».
+ */
+async function SupplierImputationsTab({ supplierId }: { supplierId: string }) {
+  const imputations = await listSupplierImputations(supplierId)
+
+  // DEC-010 : sommes d'entiers, aucun flottant.
+  const awaitingTotal = imputations
+    .filter((imputation) => isAwaitingInvoice(imputation.status, imputation.supplierInvoiceId))
+    .reduce((total, imputation) => total + imputation.amount, 0)
+
+  const preparingTotal = imputations
+    .filter((imputation) => imputation.status === 'DRAFT' || imputation.status === 'TO_VALIDATE')
+    .reduce((total, imputation) => total + imputation.amount, 0)
+
+  return (
+    <div className="space-y-5">
+      <Notice tone="warning">
+        Une imputation ne réduit un montant dû qu’une fois <strong>rattachée à une facture
+        fournisseur</strong>. Aucune facture n’est encore gérée : les totaux ci-dessous ne
+        constituent <strong>ni une dette, ni un net à payer, ni un paiement</strong>.
+      </Notice>
+
+      <Card title="Totaux" description="Calculés depuis les opérations réellement enregistrées (§42).">
+        <dl>
+          <InfoRow
+            label="En attente de facture"
+            hint="Imputations validées, sans facture rattachée (§31)."
+          >
+            <span className="tabular">{formatImputationAmount(awaitingTotal)}</span>
+          </InfoRow>
+          <InfoRow label="En préparation" hint="Brouillons et imputations à valider.">
+            <span className="tabular">{formatImputationAmount(preparingTotal)}</span>
+          </InfoRow>
+          <InfoRow label="Montant brut, net à payer, solde">
+            <span className="text-muted">
+              Non calculés : ils supposent des factures fournisseurs, qui relèvent d’une étape
+              ultérieure.
+            </span>
+          </InfoRow>
+        </dl>
+      </Card>
+
+      <Card title="Imputations" description="Chaque imputation reste identifiable (§22, §23).">
+        {imputations.length === 0 ? (
+          <EmptyState
+            icon={CarFront}
+            title="Aucune imputation"
+            description="Aucune dépense de maintenance n’a été imputée à ce fournisseur."
+          />
+        ) : (
+          <ul className="divide-y divide-line">
+            {imputations.map((imputation) => (
+              <li key={imputation.id} className="py-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link
+                      href={`/facturation/imputations/${imputation.id}`}
+                      className="font-medium text-adikom-500 hover:underline tabular"
+                    >
+                      {imputation.imputationNo}
+                    </Link>
+                    <p className="text-xs text-muted">
+                      {imputation.maintenanceNo ?? 'Maintenance non communiquée'}
+                      {imputation.vehicleLabel ? ` · ${imputation.vehicleLabel}` : ''} ·{' '}
+                      {formatDateTime(imputation.createdAt)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-medium tabular">
+                      {formatImputationAmount(imputation.amount)}
+                    </span>
+                    <Badge tone={IMPUTATION_STATUS_TONES[imputation.status]}>
+                      {IMPUTATION_STATUS_LABELS[imputation.status]}
+                    </Badge>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
   )
 }
 

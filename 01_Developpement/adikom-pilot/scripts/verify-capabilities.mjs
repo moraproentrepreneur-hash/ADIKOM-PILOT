@@ -108,6 +108,40 @@ const PROFILES = {
     'rental.maintenance.cost.view',
     'rental.maintenance.cost.update',
   ],
+  /*
+   * LOT 4 — les cinq capacités d'imputation, isolées.
+   *
+   * Règles permissions §36 : « Un utilisateur ne doit pas automatiquement
+   * disposer de toutes ces permissions. » Chaque profil n'en porte qu'une,
+   * plus les lectures nécessaires pour que RLS ne masque pas la ligne visée.
+   */
+  imp_view: [...READERS, 'billing.imputations.view'],
+  imp_create: [
+    ...READERS,
+    'rental.maintenance.cost.view',
+    'billing.imputations.view',
+    'billing.imputations.create',
+  ],
+  imp_update: [
+    ...READERS,
+    'rental.maintenance.cost.view',
+    'billing.imputations.view',
+    'billing.imputations.update',
+  ],
+  imp_validate: [...READERS, 'billing.imputations.view', 'billing.imputations.validate'],
+  imp_cancel: [...READERS, 'billing.imputations.view', 'billing.imputations.cancel'],
+  // Le compte complet du domaine `billing`, pour les contrôles positifs.
+  imp_full: [
+    ...READERS,
+    'rental.maintenance.cost.view',
+    'rental.maintenance.cost.update',
+    'rental.maintenance.create',
+    'billing.imputations.view',
+    'billing.imputations.create',
+    'billing.imputations.update',
+    'billing.imputations.validate',
+    'billing.imputations.cancel',
+  ],
 }
 
 async function createProfile(admin, key, codes) {
@@ -164,7 +198,13 @@ async function main() {
 
   const accounts = {}
   const sessions = {}
-  const fixtures = { vehicleIds: [], reservations: [], rentals: [], maintenances: [] }
+  const fixtures = {
+    vehicleIds: [],
+    reservations: [],
+    rentals: [],
+    maintenances: [],
+    imputations: [],
+  }
 
   /** Session PostgREST d'un profil : exactement ce dont dispose un appelant. */
   async function session(key) {
@@ -184,6 +224,12 @@ async function main() {
   /** Un refus est-il bien un refus de DROIT, et non un simple effet nul ? */
   function refused(result) {
     return Boolean(result.error)
+  }
+
+  /** La ligne est-elle encore là ? Preuve qu'un refus silencieux a protégé. */
+  async function stillThere(client, id) {
+    const { data } = await client.from('imputations').select('id').eq('id', id).maybeSingle()
+    return Boolean(data)
   }
 
   try {
@@ -219,6 +265,47 @@ async function main() {
         .single()
       fixtures.vehicleIds.push(vehicle.id)
     }
+
+    /*
+     * LOT 4 — un fournisseur et un véhicule qu'il met à disposition.
+     *
+     * Workflow 06 §4 : sans rattachement fournisseur, aucune imputation n'est
+     * possible. Les cinq véhicules ci-dessus appartiennent à ADIKOM (`OWNED`)
+     * et ne s'y prêtent donc pas.
+     */
+    const { data: supplierNo } = await admin.rpc('next_number', { p_entity_key: 'supplier' })
+    const { data: supplier, error: supplierError } = await admin
+      .from('suppliers')
+      .insert({
+        supplier_no: supplierNo,
+        type: 'VEHICLE_SUPPLIER',
+        legal_name: `${MARK} — Fournisseur`,
+        phone: '+269 000',
+        status: 'ACTIVE',
+      })
+      .select('id')
+      .single()
+    if (supplierError) throw new Error(`fournisseur : ${supplierError.message}`)
+    fixtures.supplierId = supplier.id
+
+    const { data: suppliedNo } = await admin.rpc('next_number', { p_entity_key: 'vehicle' })
+    const { data: supplied, error: suppliedError } = await admin
+      .from('vehicles')
+      .insert({
+        vehicle_no: suppliedNo,
+        category_id: category.id,
+        brand: 'AUDIT',
+        model: `CAP ${STAMP} SUP`,
+        plate: `AC-${STAMP}S`,
+        origin: 'SUPPLIED',
+        current_supplier_id: supplier.id,
+        status: 'AVAILABLE',
+      })
+      .select('id')
+      .single()
+    if (suppliedError) throw new Error(`véhicule fourni : ${suppliedError.message}`)
+    fixtures.vehicleIds.push(supplied.id)
+    fixtures.suppliedVehicleId = supplied.id
 
     const { data: clientNo } = await admin.rpc('next_number', { p_entity_key: 'client' })
     const { data: client } = await admin
@@ -672,6 +759,244 @@ async function main() {
 
     /* ------------------------------------------------------------------ */
     console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('IMPUTATIONS — CINQ ACTES, CINQ CAPACITÉS (LOT 4)\n')
+
+    {
+      const owner = await session('imp_full')
+
+      // Une maintenance sur le véhicule FOURNI, avec un montant imputable.
+      const { data: created } = await owner.rpc('create_maintenance', {
+        p_vehicle_id: fixtures.suppliedVehicleId,
+        p_origin: 'BREAKDOWN',
+        p_reason: `${MARK} — imputation`,
+      })
+      const imputable = String(created)
+      fixtures.maintenances.push(imputable)
+
+      await owner.rpc('record_maintenance_costs', {
+        p_maintenance_id: imputable,
+        p_actual_cost: 300000,
+        p_imputable_amount: 300000,
+      })
+
+      /* --- CRÉER : ni une capacité de maintenance, ni une autre du domaine. */
+      const mntEditor = await session('mnt_cost_edit')
+      const forgedByMaintenance = await mntEditor.rpc('create_imputation', {
+        p_maintenance_id: imputable,
+        p_supplier_id: fixtures.supplierId,
+        p_amount: 100000,
+        p_justification: 'Tentative depuis une capacité de maintenance',
+      })
+      check(
+        refused(forgedByMaintenance),
+        'create_imputation refusée à `maintenance.cost.update`',
+        'imputer n’est pas une capacité de maintenance'
+      )
+
+      const viewer = await session('imp_view')
+      const createByViewer = await viewer.rpc('create_imputation', {
+        p_maintenance_id: imputable,
+        p_supplier_id: fixtures.supplierId,
+        p_amount: 100000,
+        p_justification: 'Tentative avec la seule lecture',
+      })
+      check(refused(createByViewer), 'create_imputation refusée sans `imputations.create`')
+
+      // Et par INSERT direct sur la table, hors de toute fonction.
+      const forgeInsert = await viewer.from('imputations').insert({
+        imputation_no: `IMP-FORGE-${STAMP}`,
+        maintenance_id: imputable,
+        supplier_id: fixtures.supplierId,
+        amount: 100000,
+        justification: 'Insertion directe',
+      })
+      check(refused(forgeInsert), 'INSERT direct dans `imputations` refusé de même')
+
+      /* --- CRÉER exige AUSSI de pouvoir lire le plafond (Module 07 §41). */
+      const validator = await session('imp_validate')
+      const blindCeiling = await validator.rpc('create_imputation', {
+        p_maintenance_id: imputable,
+        p_supplier_id: fixtures.supplierId,
+        p_amount: 100000,
+        p_justification: 'Tentative sans lecture du plafond',
+      })
+      check(
+        refused(blindCeiling),
+        'create_imputation refusée sans `maintenance.cost.view`',
+        'on n’impute pas une dépense qu’on n’a pas le droit de voir'
+      )
+
+      /* --- Le porteur exact, lui, passe. */
+      const creator = await session('imp_create')
+      const { data: madeId, error: madeError } = await creator.rpc('create_imputation', {
+        p_maintenance_id: imputable,
+        p_supplier_id: fixtures.supplierId,
+        p_amount: 200000,
+        p_justification: 'Panne mécanique imputable selon les conditions de mise à disposition.',
+      })
+      check(!refused({ error: madeError }), 'La capacité `create` prépare l’imputation',
+        madeError?.message ?? '')
+      const impId = String(madeId)
+      if (madeId) fixtures.imputations.push(impId)
+
+      /* --- LE PLAFOND, contrôlé côté serveur (Module 07 §40 et §41). */
+      const overflow = await creator.rpc('create_imputation', {
+        p_maintenance_id: imputable,
+        p_supplier_id: fixtures.supplierId,
+        p_amount: 100001,
+        p_justification: 'Dépassement volontaire du montant imputable.',
+      })
+      check(refused(overflow), 'Le plafond imputable refuse le dépassement au KMF près')
+
+      /* --- SOUMETTRE relève de `update`, jamais de `validate`. */
+      const submitByValidator = await validator.rpc('submit_imputation', {
+        p_imputation_id: impId,
+      })
+      check(refused(submitByValidator), 'submit_imputation refusée sans `imputations.update`')
+
+      const patchSubmit = await validator
+        .from('imputations')
+        .update({ status: 'TO_VALIDATE' })
+        .eq('id', impId)
+      check(refused(patchSubmit), 'PATCH direct vers « À valider » refusé de même')
+
+      const updater = await session('imp_update')
+      const submitted = await updater.rpc('submit_imputation', { p_imputation_id: impId })
+      check(!refused(submitted), 'La capacité `update` soumet à validation',
+        submitted.error?.message ?? '')
+
+      /* --- VALIDER : ni `create`, ni `update`, ni une capacité de maintenance. */
+      const validateByUpdater = await updater.rpc('validate_imputation', {
+        p_imputation_id: impId,
+      })
+      check(refused(validateByUpdater), 'validate_imputation refusée sans `imputations.validate`')
+
+      const patchValidate = await updater
+        .from('imputations')
+        .update({ status: 'VALIDATED', validated_at: new Date().toISOString() })
+        .eq('id', impId)
+      check(refused(patchValidate), 'PATCH direct vers « Validée » refusé de même')
+
+      const validateByMaintenance = await mntEditor.rpc('validate_imputation', {
+        p_imputation_id: impId,
+      })
+      check(
+        refused(validateByMaintenance),
+        'Ni `maintenance.validate` ni `maintenance.close` ne valident une imputation'
+      )
+
+      const { data: stillPending } = await admin
+        .from('imputations')
+        .select('status')
+        .eq('id', impId)
+        .maybeSingle()
+      check(stillPending?.status === 'TO_VALIDATE', 'L’imputation n’a pas bougé',
+        stillPending?.status)
+
+      const validated = await validator.rpc('validate_imputation', {
+        p_imputation_id: impId,
+        p_reason: 'Conforme aux conditions',
+      })
+      check(!refused(validated), 'La capacité `validate` valide l’imputation',
+        validated.error?.message ?? '')
+
+      /* --- LA FRONTIÈRE DE L'ÉTAPE 2.5 (DEC-013). */
+      const owner2 = await session('imp_full')
+
+      const toImputed = await owner2
+        .from('imputations')
+        .update({ status: 'IMPUTED' })
+        .eq('id', impId)
+      check(
+        refused(toImputed),
+        '« Imputée » reste hors d’atteinte : elle suppose une facture (Étape 2.5)'
+      )
+
+      const forgeInvoice = await owner2
+        .from('imputations')
+        .update({ supplier_invoice_id: crypto.randomUUID() })
+        .eq('id', impId)
+      check(refused(forgeInvoice), 'Rattacher une facture forgée est refusé')
+
+      const { data: intactImp } = await admin
+        .from('imputations')
+        .select('status, supplier_invoice_id')
+        .eq('id', impId)
+        .maybeSingle()
+      check(
+        intactImp?.status === 'VALIDATED' && intactImp?.supplier_invoice_id === null,
+        'L’imputation reste « Validée », sans facture',
+        `${intactImp?.status}`
+      )
+
+      /* --- VERROU après validation (Workflow 06 §39). */
+      const lateEdit = await updater.rpc('update_imputation', {
+        p_imputation_id: impId,
+        p_amount: 150000,
+        p_justification: 'Correction après validation, refusée.',
+      })
+      check(refused(lateEdit), 'Une imputation validée ne se modifie plus')
+
+      const latePatch = await owner2.from('imputations').update({ amount: 150000 }).eq('id', impId)
+      check(refused(latePatch), 'PATCH direct du montant refusé de même')
+
+      /* --- ANNULER exige `cancel`, et rien d'autre. */
+      const cancelByUpdater = await updater.rpc('cancel_imputation', { p_imputation_id: impId })
+      check(refused(cancelByUpdater), 'cancel_imputation refusée sans `imputations.cancel`')
+
+      const patchCancel = await updater
+        .from('imputations')
+        .update({ status: 'CANCELLED', cancelled_at: new Date().toISOString() })
+        .eq('id', impId)
+      check(refused(patchCancel), 'PATCH direct vers « Annulée » refusé de même')
+
+      const canceller = await session('imp_cancel')
+      const cancelled = await canceller.rpc('cancel_imputation', {
+        p_imputation_id: impId,
+        p_reason: 'Erreur constatée',
+      })
+      check(!refused(cancelled), 'La capacité `cancel` annule l’imputation',
+        cancelled.error?.message ?? '')
+
+      /* --- LECTURE : le montant d'une imputation n'est pas un coût. */
+      const noBilling = await session('mnt_cost_edit')
+      const blindRead = await noBilling.from('imputations').select('id').eq('id', impId)
+      check(
+        (blindRead.data?.length ?? 0) === 0,
+        'RLS ne livre aucune imputation sans `billing.imputations.view`'
+      )
+
+      const seen = await viewer.from('imputations').select('amount').eq('id', impId).maybeSingle()
+      check(seen.data?.amount === 200000, 'Avec `imputations.view`, l’imputation est lisible')
+
+      // Et voir une imputation ne donne pas accès au coût de la maintenance.
+      const blindCost = await viewer
+        .from('maintenance_costs')
+        .select('actual_cost')
+        .eq('maintenance_id', imputable)
+      check(
+        (blindCost.data?.length ?? 0) === 0,
+        '`imputations.view` ne donne pas accès aux coûts de maintenance'
+      )
+
+      /* --- SUPPRESSION : jamais. */
+      const removal = await owner2.from('imputations').delete().eq('id', impId)
+      check(refused(removal) || (await stillThere(admin, impId)), 'Aucune suppression possible')
+
+      /* --- AUCUN EFFET SUR L'ÉTAPE 2.5. */
+      const { data: costsIntact } = await admin
+        .from('maintenance_costs')
+        .select('imputable_amount, actual_cost')
+        .eq('maintenance_id', imputable)
+        .maybeSingle()
+      check(
+        costsIntact?.imputable_amount === 300000 && costsIntact?.actual_cost === 300000,
+        'Le cycle complet n’a modifié aucun montant du LOT 3'
+      )
+    }
+
+    /* ------------------------------------------------------------------ */
+    console.log('\n──────────────────────────────────────────────────────────────')
     console.log('CATALOGUE ET DONNÉES DEMO\n')
 
     {
@@ -693,7 +1018,16 @@ async function main() {
   } finally {
     for (const client of Object.values(sessions)) await client.auth.signOut()
 
+    for (const id of fixtures.imputations) {
+      await admin.from('imputation_documents').delete().eq('imputation_id', id)
+      await admin.from('imputations').delete().eq('id', id)
+    }
     for (const id of fixtures.maintenances) {
+      await admin.from('imputations').delete().eq('maintenance_id', id)
+      await admin.from('maintenance_documents').delete().eq('maintenance_id', id)
+      await admin.from('maintenance_quotes').delete().eq('maintenance_id', id)
+      await admin.from('maintenance_cost_lines').delete().eq('maintenance_id', id)
+      await admin.from('maintenance_costs').delete().eq('maintenance_id', id)
       await admin.from('vehicle_occupations').delete().eq('source_id', id)
       await admin.from('vehicle_maintenances').delete().eq('id', id)
     }
@@ -711,8 +1045,10 @@ async function main() {
     if (fixtures.clientId) await admin.from('clients').delete().eq('id', fixtures.clientId)
     for (const vehicleId of fixtures.vehicleIds) {
       await admin.from('vehicle_occupations').delete().eq('vehicle_id', vehicleId)
+      await admin.from('vehicle_supplier_history').delete().eq('vehicle_id', vehicleId)
       await admin.from('vehicles').delete().eq('id', vehicleId)
     }
+    if (fixtures.supplierId) await admin.from('suppliers').delete().eq('id', fixtures.supplierId)
     if (fixtures.categoryId) {
       await admin.from('vehicle_categories').delete().eq('id', fixtures.categoryId)
     }

@@ -48,6 +48,17 @@ import {
   QuotePanel,
 } from '@/features/maintenance/costs-panels'
 import { listProviderOptions } from '@/features/maintenance/data'
+import {
+  getImputableBudget,
+  listImputationSupplierOptions,
+  listMaintenanceImputations,
+} from '@/features/imputations/data'
+import {
+  IMPUTATION_STATUS_EFFECT,
+  IMPUTATION_STATUS_LABELS,
+  IMPUTATION_STATUS_TONES,
+} from '@/features/imputations/constants'
+import { CreateImputationPanel } from '@/features/imputations/panels'
 
 export const metadata: Metadata = { title: 'Maintenance' }
 
@@ -74,6 +85,8 @@ export default async function MaintenanceDetailPage(
     canReadSuppliers,
     canSeeCosts,
     canEditCosts,
+    canSeeImputations,
+    canCreateImputation,
   ] = await Promise.all([
     can(PERMISSIONS.MAINTENANCE_UPDATE),
     can(PERMISSIONS.MAINTENANCE_VALIDATE),
@@ -86,12 +99,26 @@ export default async function MaintenanceDetailPage(
     // vide affirmerait que l'intervention n'a rien coûté.
     can(PERMISSIONS.MAINTENANCE_COST_VIEW),
     can(PERMISSIONS.MAINTENANCE_COST_UPDATE),
+    // LOT 4 : imputer relève du domaine `billing`, jamais d'une capacité de
+    // maintenance. Même règle DEC-017 : sans le droit de voir, l'onglet
+    // disparaît — il ne s'affiche pas vide.
+    can(PERMISSIONS.IMPUTATIONS_VIEW),
+    can(PERMISSIONS.IMPUTATIONS_CREATE),
   ])
 
   const tabs: TabItem[] = [
     { key: 'intervention', label: 'Intervention', href: `/location/maintenance/${id}` },
     ...(canSeeCosts
       ? [{ key: 'couts', label: 'Coûts', href: `/location/maintenance/${id}?onglet=couts` }]
+      : []),
+    ...(canSeeImputations
+      ? [
+          {
+            key: 'imputations',
+            label: 'Imputations',
+            href: `/location/maintenance/${id}?onglet=imputations`,
+          },
+        ]
       : []),
   ]
 
@@ -135,7 +162,14 @@ export default async function MaintenanceDetailPage(
 
       {tabs.length > 1 && <Tabs items={tabs} current={tab} />}
 
-      {tab === 'couts' ? (
+      {tab === 'imputations' ? (
+        <ImputationsTab
+          maintenanceId={id}
+          maintenanceCancelled={maintenance.status === 'CANCELLED'}
+          canCreate={canCreateImputation}
+          canSeeCosts={canSeeCosts}
+        />
+      ) : tab === 'couts' ? (
         <CostsTab
           maintenanceId={id}
           locked={maintenance.status === 'COMPLETED' || maintenance.status === 'CANCELLED'}
@@ -344,10 +378,12 @@ export default async function MaintenanceDetailPage(
           <Card title="Étape suivante">
             <p className="text-sm text-muted">
               {maintenance.status === 'COMPLETED'
-                ? 'Cette intervention est terminée : ses données financières sont verrouillées. Une éventuelle imputation à un fournisseur relève d’un lot ultérieur.'
+                ? 'Cette intervention est terminée : ses données financières sont verrouillées. Une imputation reste possible tant que le montant imputable n’est pas épuisé.'
                 : canSeeCosts
-                  ? 'Les montants, devis et justificatifs se saisissent dans l’onglet Coûts. Aucune imputation n’en découle.'
-                  : 'L’imputation d’un coût à un fournisseur relève d’un lot ultérieur.'}
+                  ? 'Les montants, devis et justificatifs se saisissent dans l’onglet Coûts. Aucune imputation n’en découle : elle se décide séparément.'
+                  : canSeeImputations
+                    ? 'Les imputations à un fournisseur se préparent dans l’onglet Imputations.'
+                    : 'L’imputation d’un coût à un fournisseur relève d’une capacité distincte.'}
             </p>
           </Card>
         </div>
@@ -637,6 +673,176 @@ async function CostsTab({
               {locked
                 ? 'Les données financières sont verrouillées : cette maintenance est terminée ou annulée.'
                 : 'Votre compte peut consulter ces montants, mais pas les saisir.'}
+            </p>
+          </Card>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Les imputations issues de cette dépense — Étape 2.4, LOT 4.
+ *
+ * N'EST RENDU QU'AVEC `billing.imputations.view`.
+ *
+ * IMPUTER N'EST PAS UNE CAPACITÉ DE MAINTENANCE.
+ *
+ * Workflow 06 §2 : la maintenance constate et chiffre, l'imputation décide de
+ * la part déduite. Deux actes, deux domaines de capacités — `rental.maintenance.*`
+ * ne donne aucun droit ici, et réciproquement (DEC-024).
+ *
+ * LE PLAFOND EST AFFICHÉ, JAMAIS SUPPOSÉ.
+ *
+ * Il vit dans `maintenance_costs`, dont la lecture exige
+ * `rental.maintenance.cost.view`. Sans cette capacité, l'écran dit qu'il ne
+ * peut pas le montrer — il n'affiche ni « 0 KMF », ni un reste imputable
+ * inventé (DEC-017).
+ */
+async function ImputationsTab({
+  maintenanceId,
+  maintenanceCancelled,
+  canCreate,
+  canSeeCosts,
+}: {
+  maintenanceId: string
+  maintenanceCancelled: boolean
+  canCreate: boolean
+  canSeeCosts: boolean
+}) {
+  const [imputations, budget, suppliers] = await Promise.all([
+    listMaintenanceImputations(maintenanceId),
+    getImputableBudget(maintenanceId, { canSeeCosts }),
+    canCreate ? listImputationSupplierOptions(maintenanceId) : Promise.resolve(null),
+  ])
+
+  // §10 : un montant imputable nul signifie « charge supportée par ADIKOM ».
+  // Ce n'est pas la même chose qu'un plafond non arrêté.
+  const zeroCeiling = budget.ceiling === 0
+  const noCeiling = canSeeCosts && budget.ceiling === null
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-3">
+      <div className="space-y-5 lg:col-span-2">
+        <Notice tone="warning">
+          Une imputation <strong>n’est pas un paiement</strong> et ne réduit un montant dû qu’une
+          fois rattachée à une facture fournisseur. La facturation fournisseur relève d’une étape
+          ultérieure : les imputations validées restent <strong>en attente de facture</strong>.
+        </Notice>
+
+        <Card
+          title="Montant imputable"
+          description="Le plafond arrêté par la maintenance, et ce que les imputations en ont consommé."
+        >
+          <dl>
+            <InfoRow label="Plafond imputable" hint="Arrêté dans l’onglet Coûts (Workflow 06 §7).">
+              {!canSeeCosts ? (
+                <span className="text-muted">
+                  Votre compte ne peut pas consulter les coûts de maintenance.
+                </span>
+              ) : budget.ceiling === null ? (
+                <span className="text-muted">Non arrêté</span>
+              ) : (
+                <span className="tabular">{formatAmount(budget.ceiling)}</span>
+              )}
+            </InfoRow>
+
+            <InfoRow label="Déjà imputé" hint="Somme des imputations non annulées (§40).">
+              <span className="tabular">{formatAmount(budget.used)}</span>
+            </InfoRow>
+
+            <InfoRow
+              label="Reste imputable"
+              hint="Plafond − déjà imputé. Contrôlé côté serveur (Module 07 §41)."
+            >
+              {budget.remaining === null ? (
+                <span className="text-muted">
+                  {canSeeCosts ? 'Indéterminable — aucun plafond arrêté' : 'Non communiqué'}
+                </span>
+              ) : (
+                <span className="tabular">{formatAmount(budget.remaining)}</span>
+              )}
+            </InfoRow>
+          </dl>
+
+          {zeroCeiling && (
+            <p className="mt-4 border-t border-line pt-4 text-sm text-muted">
+              Le montant imputable est <strong>nul</strong> : la dépense reste à la charge d’ADIKOM
+              (Workflow 06 §10). Aucune imputation fournisseur n’est possible.
+            </p>
+          )}
+
+          {noCeiling && (
+            <p className="mt-4 border-t border-line pt-4 text-sm text-muted">
+              Aucun montant imputable n’a encore été arrêté. Il doit l’être dans l’onglet
+              <strong> Coûts</strong> avant qu’une imputation puisse être préparée.
+            </p>
+          )}
+        </Card>
+
+        <Card title="Imputations" description="Chaque imputation reste identifiable (§22).">
+          {imputations.length === 0 ? (
+            <EmptyState
+              icon={FileText}
+              title="Aucune imputation"
+              description="Cette dépense n’a été imputée à aucun fournisseur : elle reste à la charge d’ADIKOM."
+            />
+          ) : (
+            <ul className="divide-y divide-line">
+              {imputations.map((imputation) => (
+                <li key={imputation.id} className="py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Link
+                        href={`/facturation/imputations/${imputation.id}`}
+                        className="font-medium text-adikom-500 hover:underline tabular"
+                      >
+                        {imputation.imputationNo}
+                      </Link>
+                      <p className="text-xs text-muted">
+                        {imputation.supplierLabel ?? 'Fournisseur non communiqué'} ·{' '}
+                        {formatDateTime(imputation.createdAt)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium tabular">
+                        {formatAmount(imputation.amount)}
+                      </span>
+                      <Badge tone={IMPUTATION_STATUS_TONES[imputation.status]}>
+                        {IMPUTATION_STATUS_LABELS[imputation.status]}
+                      </Badge>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs text-muted">
+                    {IMPUTATION_STATUS_EFFECT[imputation.status]}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      <div className="space-y-5">
+        {canCreate && !maintenanceCancelled && !zeroCeiling && !noCeiling ? (
+          <Card title="Préparer une imputation">
+            <CreateImputationPanel
+              maintenanceId={maintenanceId}
+              suppliers={suppliers}
+              remaining={budget.remaining}
+              canSeeCeiling={canSeeCosts}
+            />
+          </Card>
+        ) : (
+          <Card title="Préparer une imputation">
+            <p className="text-sm text-muted">
+              {maintenanceCancelled
+                ? 'Cette maintenance est annulée : elle ne donne lieu à aucune imputation.'
+                : zeroCeiling
+                  ? 'Le montant imputable est nul : la dépense reste à la charge d’ADIKOM.'
+                  : noCeiling
+                    ? 'Aucun montant imputable n’a été arrêté : il doit l’être avant toute imputation.'
+                    : 'Votre compte peut consulter les imputations, mais pas en préparer.'}
             </p>
           </Card>
         )}

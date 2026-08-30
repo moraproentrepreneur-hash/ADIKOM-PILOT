@@ -380,14 +380,25 @@ begin
     raise exception 'Le statut de la maintenance a changé : %.', v_mnt;
   end if;
 
-  -- Aucune table d'imputation, de facture ou de paiement n'existe encore : le
-  -- LOT 3 ne pouvait donc rien y écrire, et ne doit pas les avoir créées.
+  /*
+   * Ni facture ni paiement n'existe : le LOT 3 ne pouvait rien y écrire, et ne
+   * doit pas les avoir créées.
+   *
+   * `imputations` a quitté cette liste le 29/08/2026 : le LOT 4 l'a livrée.
+   * Ce que ce contrôle doit désormais prouver, c'est que SAISIR UN COÛT n'en
+   * crée aucune — la garantie du §44, pas l'absence de la table.
+   */
   select array_agg(tablename) into v_tbl
   from pg_tables
   where schemaname = 'public'
-    and tablename in ('imputations', 'supplier_invoices', 'customer_invoices', 'payments');
+    and tablename in ('supplier_invoices', 'customer_invoices', 'payments');
   if v_tbl is not null then
     raise exception 'Le LOT 3 a créé des objets hors périmètre : %.', v_tbl;
+  end if;
+
+  -- Saisir un coût ne produit AUCUNE imputation (Workflow 05 §44).
+  if exists (select 1 from public.imputations where maintenance_id = v_id) then
+    raise exception 'Saisir un coût a créé une imputation.';
   end if;
 
   raise notice '[OK] 11. Aucun effet : ni occupation, ni statut, ni imputation, ni facture.';

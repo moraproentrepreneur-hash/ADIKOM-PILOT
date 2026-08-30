@@ -59,6 +59,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-023 | Convention des références de documents | Décision ADIKOM | Validée — **implémentation reportée** | 2026-08-21 |
 | DEC-024 | Attribution indépendante des capacités | Règle d'architecture | Validée — **permanente** | 2026-08-22 |
 | DEC-025 | Cadrage de l'Étape 2.3 — cycle d'exploitation | Arbitrages ADIKOM | Validée — **clôt DEC-014** | 2026-08-24 |
+| DEC-026 | Imputation fournisseur — LOT 4 de l'Étape 2.4 | Arbitrages et contradiction | Appliquée — **tranche une contradiction** | 2026-08-29 |
 
 ---
 
@@ -1254,6 +1255,164 @@ passer une location de « En préparation » à « À facturer ».
   `is_vehicle_available`, `vehicle_calendar`, `resolve_pricing_rule`,
   `next_number`, moteur documentaire et moteur d'export sont réemployés tels
   quels.
+
+---
+
+## DEC-026 — Imputation fournisseur (LOT 4 de l'Étape 2.4)
+
+**Date :** 29 août 2026
+**Portée :** métier, technique et sécurité
+**Statut :** appliquée · **tranche une contradiction entre règles métier et DEC-013**
+
+### Contexte
+
+DEC-021 désigne l'Étape 2.4 : *Dommages → Incidents → Maintenance → Imputation
+fournisseur*. Les LOTs 1 à 3 sont livrés. Le LOT 4 construit le dernier
+maillon, sur un point de friction connu : **la facture fournisseur, dont
+`Imputée` dépend, appartient à l'Étape 2.5 et n'existe pas.**
+
+### a. Contradiction tranchée — quel statut réduit le montant dû
+
+`05_Regles_Metier/04_Fournisseurs.md` §31 et `05_Regles_Metier/03_Finance.md`
+§29 posent : « Montant brut − imputations **validées** = Net à payer ».
+
+**DEC-013** pose : le montant dû est réduit **uniquement** au statut `Imputée`,
+c'est-à-dire validée **et** rattachée à une facture fournisseur.
+
+Les deux ne peuvent pas coexister : une imputation `Validée` sans facture
+réduirait un solde selon les règles métier, et ne le réduirait pas selon
+DEC-013.
+
+**DEC-013 prévaut** (§1 du présent journal : une décision consignée ici est
+postérieure et plus spécifique). Elle s'appuie elle-même sur `Workflow 06` §12
+et §31, plus précis que les deux règles citées.
+
+**Conséquence : le LOT 4 ne réduit aucun solde. Nulle part.**
+
+### b. Le LOT 4 s'arrête à `Validée`
+
+`Workflow 06` §31 nomme « **imputation en attente de facture** » ce que DEC-013
+décrit comme validée sans facture rattachée. Ce n'est **pas un sixième
+statut** : c'est la lecture de `VALIDATED` + `supplier_invoice_id IS NULL`.
+L'état est **dérivé, jamais stocké** — un statut qui doublerait une donnée
+existante pourrait la contredire.
+
+`IMPUTED` figure dans l'énumération par fidélité à `Workflow 06` §13, et la
+transition qui y mène est **refusée par la base, avec son motif**. Même
+traitement que les statuts dérivés de **DEC-025 §a** : présents, non
+atteignables, signalés. L'Étape 2.5 remplacera le déclencheur et rattachera
+l'acte à sa capacité — comme elle devra le faire pour `TO_INVOICE → INVOICED`
+et `INVOICED → CLOSED`, restées sans capacité depuis la migration 041.
+
+### c. Le montant imputable est un plafond, jamais une copie
+
+`Workflow 06` §37 distingue « montant autorisé à imputer » et « montant
+effectivement imputé ». `Module 07` §40 et §41 imposent que la somme des
+imputations ne dépasse pas le premier, **et que le contrôle soit fait côté
+serveur**.
+
+`maintenance_costs.imputable_amount` est donc **lu**, jamais recopié. La somme
+exclut les imputations annulées : §40 pose que l'annulation réintègre le
+montant, et §54 le montre chiffré.
+
+Trois cas non documentés sont tranchés, sans barème inventé (**DEC-008**) :
+
+| Cas | Décision |
+|---|---|
+| Montant imputable **non arrêté** | **Refus**, message explicite. Un plafond invisible n'est pas un plafond infini. |
+| Montant imputable **nul** | **Refus** — `Workflow 06` §10 : « charge supportée par ADIKOM ». |
+| **Abaisser** le plafond sous le déjà-imputé | **Refus** — sinon §40 serait violé sans qu'aucune imputation ne bouge. Le relèvement reste permis. |
+
+### d. Quel fournisseur — §4 et §33
+
+`Workflow 06` §4 désigne le fournisseur du véhicule ; §33 admet « **ou** qu'une
+autre relation justifie l'imputation », sans la nommer.
+
+Retenu : le fournisseur **actuel** du véhicule, **ou** l'un de ceux qui l'ont
+fourni, que `vehicle_supplier_history` conserve précisément pour cela (`Règles
+fournisseurs` §60 et §62). Un fournisseur sans aucune relation, présente ou
+passée, avec le véhicule est exactement l'incohérence que §33 interdit : il est
+refusé.
+
+Le **prestataire** de la maintenance (`provider_supplier_id`) n'entre pas dans
+ce calcul : `Workflow 05` §29 exige de le distinguer du fournisseur du
+véhicule, **même quand c'est la même entité**.
+
+### e. Aucune permission créée — catalogue à 153
+
+`billing.imputations.view · create · update · validate · cancel` existent
+depuis la migration 007, sous le commentaire « opération financière la plus
+sensible du système ». Elles couvrent exactement ce que `Règles permissions`
+§36 exige de distinguer.
+
+**Soumettre à validation** relève de `billing.imputations.update` : c'est le
+dernier geste de la préparation, que §38 range sous la modification. Aucune
+capacité n'est créée pour lui — le catalogue décrit ce que le SaaS sait faire
+(**DEC-024**, précédent **DEC-025 §b**).
+
+Aucune capacité documentaire (`export`, `download`, `print`) n'est créée : le
+LOT 4 ne produit ni export ni document. Une permission ne se crée pas « au cas
+où ».
+
+### f. La conséquence, assumée, du refus de `SECURITY DEFINER`
+
+Les déclencheurs s'exécutent avec les droits de l'appelant, RLS comprise. Le
+plafond vit dans `maintenance_costs` (lecture sous
+`rental.maintenance.cost.view`), le rattachement fournisseur dans `vehicles`
+(lecture sous `rental.fleet.view`). **Un appelant qui ne détient pas ces droits
+ne lit rien — et le contrôle refuse, au lieu de passer sur une somme muette.**
+
+`create_imputation` exige donc, nommément, `billing.imputations.create` **et**
+`rental.maintenance.view` **et** `rental.maintenance.cost.view`. Ce n'est pas
+une capacité impliquée par une autre : les trois sont attribuables séparément,
+et la fonction les exige toutes les trois. **On n'impute pas une dépense qu'on
+n'a pas le droit de voir.**
+
+L'inverse est vrai aussi : `billing.imputations.view` **ne donne aucun accès**
+aux coûts de maintenance. Les deux domaines restent des périmètres
+d'attribution distincts.
+
+### g. Verrouillage — §38 et §39
+
+Une imputation `VALIDATED`, `IMPUTED` ou `CANCELLED` fige son montant, son
+fournisseur, sa maintenance et sa justification. Ses **justificatifs** aussi :
+§39 exige qu'une correction suive une procédure contrôlée, et une pièce ajoutée
+après coup changerait ce sur quoi la validation a porté. Il n'existe **aucun
+chemin de déverrouillage**. Reste l'annulation (§40), qui conserve
+l'historique.
+
+La **contrepassation** (§41) n'est pas implémentée : le document lui-même la
+renvoie à « l'implémentation financière ». Elle relève de l'Étape 2.5.
+
+### h. Ce que le LOT 4 ne fait pas
+
+Aucune facture fournisseur, aucun paiement, aucun solde, aucun net à payer,
+aucune clôture financière. Aucune valorisation d'un dommage. Aucun effet sur le
+calendrier, le parc, la maintenance, la réservation ou la location.
+`Workflow 05` §44 est respecté intégralement : **une opération ne déclenche
+jamais automatiquement une autre opération métier.**
+
+L'onglet **Imputations** de la fiche fournisseur affiche les totaux réellement
+enregistrés — en attente de facture, en préparation — et **dit** que le montant
+brut, le net à payer et le solde supposent des factures, qui viendront avec
+l'Étape 2.5. Il n'affiche pas de zéro qui se lirait « rien à payer ».
+
+### Conséquences
+
+- Migration **046** : un type, deux tables, contraintes, index, quatre
+  déclencheurs de contrôle, cinq fonctions atomiques `SECURITY INVOKER`, RLS,
+  audit, interdiction de suppression, révocation d'`EXECUTE` à PUBLIC
+  (**DEC-022**).
+- Un déclencheur est ajouté à `maintenance_costs` (LOT 3) : le plafond ne
+  descend plus sous le déjà-imputé.
+- Aucune règle de numérotation créée : `imputation → IMP`, année, six chiffres,
+  remise à zéro annuelle, enregistrée depuis la migration 005 et jamais
+  consommée jusqu'ici.
+- Recettes : `db:verify:imputations` (21 contrôles), `verify:imputations`
+  (46 contrôles), et `verify:capabilities` porté de 40 à 67 contrôles.
+- La recette du LOT 3 cesse d'exiger l'absence de la table `imputations` — le
+  LOT 4 l'a livrée — et vérifie désormais que **saisir un coût n'en crée
+  aucune**, ce qui est la garantie réellement en jeu (§44).
 
 ---
 
