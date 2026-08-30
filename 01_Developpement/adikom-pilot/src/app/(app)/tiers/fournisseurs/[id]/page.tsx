@@ -42,6 +42,12 @@ import {
   IMPUTATION_STATUS_TONES,
   isAwaitingInvoice,
 } from '@/features/imputations/constants'
+import { listSupplierInvoicesForSupplier } from '@/features/supplier-invoices/data'
+import {
+  displayStatus as displayInvoiceStatus,
+  SUPPLIER_INVOICE_STATUS_LABELS,
+  SUPPLIER_INVOICE_STATUS_TONES,
+} from '@/features/supplier-invoices/constants'
 
 export const metadata: Metadata = { title: 'Fiche fournisseur' }
 
@@ -68,6 +74,7 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
     canDownload,
     canPrint,
     canViewImputations,
+    canViewInvoices,
   ] = await Promise.all([
     can(PERMISSIONS.SUPPLIERS_UPDATE),
     can(PERMISSIONS.SUPPLIERS_ARCHIVE),
@@ -82,6 +89,8 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
     // capacité. Sans elle, il DISPARAÎT — l'afficher vide laisserait croire
     // qu'aucune dépense n'a été imputée à ce fournisseur (DEC-017).
     can(PERMISSIONS.IMPUTATIONS_VIEW),
+    // LOT 5 : même règle pour les factures — l'onglet suit sa propre capacité.
+    can(PERMISSIONS.SUPPLIER_INVOICES_VIEW),
   ])
 
   const tabs: TabItem[] = [
@@ -104,7 +113,15 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
           },
         ]
       : []),
-    { key: 'factures', label: 'Factures', planned: true },
+    ...(canViewInvoices
+      ? [
+          {
+            key: 'factures',
+            label: 'Factures',
+            href: `/tiers/fournisseurs/${id}?onglet=factures`,
+          },
+        ]
+      : []),
     // L'onglet n'existe pas sans la capacité : un onglet « à venir » affiché à
     // qui n'a pas le droit de voir mentirait deux fois — sur l'existence de la
     // fonctionnalité, et sur la raison de son absence (DEC-017).
@@ -182,8 +199,10 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
 
       {tab === 'vehicules' ? (
         <VehiclesTab supplierId={id} />
+      ) : tab === 'factures' ? (
+        <SupplierInvoicesTab supplierId={id} canSeeImputations={canViewImputations} />
       ) : tab === 'imputations' ? (
-        <SupplierImputationsTab supplierId={id} />
+        <SupplierImputationsTab supplierId={id} canSeeInvoices={canViewInvoices} />
       ) : tab === 'paiement' ? (
         <PaymentTab
           supplierId={id}
@@ -275,19 +294,136 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
 }
 
 /**
+ * Factures du fournisseur — Règles fournisseurs §32 et §33.
+ *
+ * « Référence, date, échéance, montant, imputations, montant net, paiements,
+ * solde, statut. » Tout y est SAUF les paiements et le solde : aucun règlement
+ * n'est géré. L'onglet le DIT, plutôt que d'afficher un zéro qui se lirait
+ * « rien à payer » (DEC-017).
+ */
+async function SupplierInvoicesTab({
+  supplierId,
+  canSeeImputations,
+}: {
+  supplierId: string
+  canSeeImputations: boolean
+}) {
+  const invoices = await listSupplierInvoicesForSupplier(supplierId, { canSeeImputations })
+
+  // DEC-010 : sommes d'entiers, aucun flottant. Les factures annulées sortent
+  // du total : une dette annulée n'est pas due.
+  const live = invoices.filter((invoice) => invoice.status !== 'CANCELLED')
+  const grossTotal = live.reduce((total, invoice) => total + invoice.grossAmount, 0)
+  const netTotal = canSeeImputations
+    ? live.reduce((total, invoice) => total + (invoice.netPayable ?? 0), 0)
+    : null
+
+  return (
+    <div className="space-y-5">
+      <Notice tone="info">
+        Une facture validée reconnaît une <strong>dette</strong>. Les <strong>règlements</strong>
+        {' '}relèvent d’une étape ultérieure : ni montant payé ni solde ne sont calculés.
+      </Notice>
+
+      <Card
+        title="Totaux"
+        description="Factures non annulées de ce fournisseur (Règles fournisseurs §32)."
+      >
+        <dl>
+          <InfoRow label="Montant brut facturé">
+            <span className="font-medium tabular">{formatImputationAmount(grossTotal)}</span>
+          </InfoRow>
+          <InfoRow label="Net à payer" hint="Montant brut moins les imputations rattachées.">
+            {netTotal === null ? (
+              <span className="text-muted">
+                Votre compte ne peut pas consulter les imputations : le net à payer n’est pas
+                calculable.
+              </span>
+            ) : (
+              <span className="font-medium tabular">{formatImputationAmount(netTotal)}</span>
+            )}
+          </InfoRow>
+          <InfoRow label="Payé et solde">
+            <span className="text-muted">
+              Inconnus du système : aucun règlement fournisseur n’est encore géré.
+            </span>
+          </InfoRow>
+        </dl>
+      </Card>
+
+      <Card title="Factures" description="Chaque facture reste identifiable (§33).">
+        {invoices.length === 0 ? (
+          <EmptyState
+            icon={CarFront}
+            title="Aucune facture"
+            description="Aucune facture reçue de ce fournisseur n’a été enregistrée."
+          />
+        ) : (
+          <ul className="divide-y divide-line">
+            {invoices.map((invoice) => {
+              const shown = displayInvoiceStatus(
+                invoice.status,
+                invoice.dueDate,
+                invoice.netPayable
+              )
+
+              return (
+                <li key={invoice.id} className="py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Link
+                        href={`/facturation/fournisseurs/${invoice.id}`}
+                        className="font-medium text-adikom-500 hover:underline tabular"
+                      >
+                        {invoice.invoiceNo}
+                      </Link>
+                      <p className="text-xs text-muted">
+                        {formatDate(invoice.invoiceDate)}
+                        {invoice.dueDate ? ` · échéance ${formatDate(invoice.dueDate)}` : ''}
+                        {invoice.externalRef ? ` · ${invoice.externalRef}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-right">
+                        <span className="block font-medium tabular">
+                          {formatImputationAmount(invoice.grossAmount)}
+                        </span>
+                        <span className="block text-xs text-muted tabular">
+                          {invoice.netPayable === null
+                            ? 'net non calculable'
+                            : `net ${formatImputationAmount(invoice.netPayable)}`}
+                        </span>
+                      </span>
+                      <Badge tone={SUPPLIER_INVOICE_STATUS_TONES[shown]}>
+                        {SUPPLIER_INVOICE_STATUS_LABELS[shown]}
+                      </Badge>
+                    </div>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+/**
  * Imputations du fournisseur — Workflow 06 §23 et §42.
  *
- * CE QUE CET ONGLET MONTRE, ET CE QU'IL REFUSE DE MONTRER.
- *
- * §42 demande, à terme, montant brut, total imputé et montant net. Le brut et
- * le net supposent des FACTURES FOURNISSEURS, qui relèvent de l'Étape 2.5 :
- * les afficher aujourd'hui reviendrait à inventer des montants (DEC-013).
- *
- * L'onglet montre donc ce qui existe réellement — la liste des imputations et
- * leurs totaux par état — et DIT que le net à payer viendra avec la
- * facturation, plutôt que d'afficher un zéro qui se lirait « rien à payer ».
+ * §42 demande montant brut, total imputé et montant net. Le brut et le net
+ * appartiennent aux FACTURES : ils sont montrés dans l'onglet Factures, où ils
+ * ont un sens facture par facture. Cet onglet montre l'autre face — d'où
+ * viennent les déductions, et lesquelles attendent encore une facture.
  */
-async function SupplierImputationsTab({ supplierId }: { supplierId: string }) {
+async function SupplierImputationsTab({
+  supplierId,
+  canSeeInvoices,
+}: {
+  supplierId: string
+  canSeeInvoices: boolean
+}) {
   const imputations = await listSupplierImputations(supplierId)
 
   // DEC-010 : sommes d'entiers, aucun flottant.
@@ -299,16 +435,26 @@ async function SupplierImputationsTab({ supplierId }: { supplierId: string }) {
     .filter((imputation) => imputation.status === 'DRAFT' || imputation.status === 'TO_VALIDATE')
     .reduce((total, imputation) => total + imputation.amount, 0)
 
+  const imputedTotal = imputations
+    .filter((imputation) => imputation.status === 'IMPUTED')
+    .reduce((total, imputation) => total + imputation.amount, 0)
+
   return (
     <div className="space-y-5">
       <Notice tone="warning">
         Une imputation ne réduit un montant dû qu’une fois <strong>rattachée à une facture
-        fournisseur</strong>. Aucune facture n’est encore gérée : les totaux ci-dessous ne
-        constituent <strong>ni une dette, ni un net à payer, ni un paiement</strong>.
+        validée</strong> (DEC-013). Même alors, elle n’est <strong>pas un paiement</strong> :
+        aucun compte n’est mouvementé.
       </Notice>
 
       <Card title="Totaux" description="Calculés depuis les opérations réellement enregistrées (§42).">
         <dl>
+          <InfoRow
+            label="Imputé sur des factures"
+            hint="Imputations rattachées : elles réduisent un net à payer."
+          >
+            <span className="font-medium tabular">{formatImputationAmount(imputedTotal)}</span>
+          </InfoRow>
           <InfoRow
             label="En attente de facture"
             hint="Imputations validées, sans facture rattachée (§31)."
@@ -318,11 +464,19 @@ async function SupplierImputationsTab({ supplierId }: { supplierId: string }) {
           <InfoRow label="En préparation" hint="Brouillons et imputations à valider.">
             <span className="tabular">{formatImputationAmount(preparingTotal)}</span>
           </InfoRow>
-          <InfoRow label="Montant brut, net à payer, solde">
-            <span className="text-muted">
-              Non calculés : ils supposent des factures fournisseurs, qui relèvent d’une étape
-              ultérieure.
-            </span>
+          <InfoRow label="Montant brut et net à payer">
+            {canSeeInvoices ? (
+              <Link
+                href={`/tiers/fournisseurs/${supplierId}?onglet=factures`}
+                className="text-adikom-500 hover:underline"
+              >
+                Voir l’onglet Factures
+              </Link>
+            ) : (
+              <span className="text-muted">
+                Ils appartiennent aux factures, que votre compte ne peut pas consulter.
+              </span>
+            )}
           </InfoRow>
         </dl>
       </Card>

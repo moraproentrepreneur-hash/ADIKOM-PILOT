@@ -32,8 +32,10 @@ export type ImputationListItem = {
   imputationNo: string
   status: ImputationStatus
   amount: number
-  /** `null` par construction au LOT 4 : la facture relève de l'Étape 2.5. */
+  /** Renseignée depuis le LOT 5 : c'est elle qui fait passer à « Imputée ». */
   supplierInvoiceId: string | null
+  /** `null` sans `billing.supplier_invoices.view` — l'écran le dit (DEC-017). */
+  supplierInvoiceNo: string | null
   createdAt: string
   maintenanceId: string
   /** `null` sans `rental.maintenance.view` — l'écran le dit (DEC-017). */
@@ -42,10 +44,11 @@ export type ImputationListItem = {
   supplierId: string
   /** `null` sans `parties.suppliers.view`. */
   supplierLabel: string | null
+  /** §11 : pourquoi ce montant est déduit. La réponse suit l'imputation partout. */
+  justification: string
 }
 
 export type ImputationDetail = ImputationListItem & {
-  justification: string
   statusReason: string | null
   validatedAt: string | null
   cancelledAt: string | null
@@ -62,9 +65,10 @@ export type ImputationDocument = {
 
 const BASE_SELECT = `
   id, imputation_no, status, amount, supplier_invoice_id, created_at,
-  maintenance_id, supplier_id,
+  maintenance_id, supplier_id, justification,
   vehicle_maintenances ( maintenance_no, vehicles ( brand, model, plate ) ),
-  suppliers ( supplier_no, legal_name, trade_name )
+  suppliers ( supplier_no, legal_name, trade_name ),
+  supplier_invoices ( invoice_no )
 `
 
 type RawRow = {
@@ -76,11 +80,13 @@ type RawRow = {
   created_at: string
   maintenance_id: string
   supplier_id: string
+  justification: string
   vehicle_maintenances?: {
     maintenance_no: string
     vehicles?: { brand: string; model: string; plate: string | null } | null
   } | null
   suppliers?: { supplier_no: string; legal_name: string; trade_name: string | null } | null
+  supplier_invoices?: { invoice_no: string } | null
 }
 
 function toListItem(row: RawRow): ImputationListItem {
@@ -93,6 +99,9 @@ function toListItem(row: RawRow): ImputationListItem {
     status: row.status,
     amount: row.amount,
     supplierInvoiceId: row.supplier_invoice_id,
+    // Ressource embarquée : sans `billing.supplier_invoices.view`, l'imputation
+    // reste lisible, pas le numéro de la facture qui la porte (DEC-024).
+    supplierInvoiceNo: row.supplier_invoices?.invoice_no ?? null,
     createdAt: row.created_at,
     maintenanceId: row.maintenance_id,
     // Ressources embarquées : RLS s'applique à CHACUNE indépendamment. Un
@@ -106,6 +115,7 @@ function toListItem(row: RawRow): ImputationListItem {
     supplierLabel: supplier
       ? `${supplier.trade_name ?? supplier.legal_name} (${supplier.supplier_no})`
       : null,
+    justification: row.justification,
   }
 }
 
@@ -114,6 +124,8 @@ export type ImputationFilters = {
   status?: string
   supplierId?: string
   maintenanceId?: string
+  /** Imputations portées par une facture donnée (Workflow 06 §22, §24). */
+  supplierInvoiceId?: string
   /** Filtre dérivé (§31) : validée et sans facture rattachée. */
   awaitingInvoice?: boolean
 }
@@ -137,6 +149,9 @@ export async function listImputations(
   if (filters.status) query = query.eq('status', filters.status)
   if (filters.supplierId) query = query.eq('supplier_id', filters.supplierId)
   if (filters.maintenanceId) query = query.eq('maintenance_id', filters.maintenanceId)
+  if (filters.supplierInvoiceId) {
+    query = query.eq('supplier_invoice_id', filters.supplierInvoiceId)
+  }
 
   // §31 : « imputation en attente de facture ». État dérivé, filtré sur ses
   // deux composantes plutôt que sur un statut inventé.
@@ -159,8 +174,7 @@ export async function getImputationDetail(id: string): Promise<ImputationDetail 
   const { data, error } = await supabase
     .from('imputations')
     .select(
-      `${BASE_SELECT}, justification, status_reason, validated_at, cancelled_at,
-       imputed_at, updated_at`
+      `${BASE_SELECT}, status_reason, validated_at, cancelled_at, imputed_at, updated_at`
     )
     .eq('id', id)
     .maybeSingle()
@@ -171,7 +185,6 @@ export async function getImputationDetail(id: string): Promise<ImputationDetail 
   if (!data) return null
 
   const row = data as unknown as RawRow & {
-    justification: string
     status_reason: string | null
     validated_at: string | null
     cancelled_at: string | null
@@ -181,7 +194,6 @@ export async function getImputationDetail(id: string): Promise<ImputationDetail 
 
   return {
     ...toListItem(row),
-    justification: row.justification,
     statusReason: row.status_reason,
     validatedAt: row.validated_at,
     cancelledAt: row.cancelled_at,
@@ -210,6 +222,30 @@ export async function listSupplierImputations(
   supplierId: string
 ): Promise<ImputationListItem[]> {
   return listImputations({ supplierId })
+}
+
+/**
+ * Imputations portées par une facture — Workflow 06 §22 et §24.
+ *
+ * « Pourquoi 300 000 KMF ont-ils été déduits de cette facture fournisseur ? »
+ * (Module 07 §39). La réponse doit être retrouvable depuis la facture elle-même.
+ */
+export async function listInvoiceImputations(
+  supplierInvoiceId: string
+): Promise<ImputationListItem[]> {
+  return listImputations({ supplierInvoiceId })
+}
+
+/**
+ * Imputations validées d'un fournisseur, en attente de facture (§31).
+ *
+ * Ce sont les seules qu'un rattachement peut consommer : ni brouillon, ni
+ * annulée, ni déjà rattachée.
+ */
+export async function listAttachableImputations(
+  supplierId: string
+): Promise<ImputationListItem[]> {
+  return listImputations({ supplierId, awaitingInvoice: true })
 }
 
 /**

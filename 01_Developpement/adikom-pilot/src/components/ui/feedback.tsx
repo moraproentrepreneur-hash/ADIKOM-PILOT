@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react'
 import { useFormStatus } from 'react-dom'
-import { AlertCircle, AlertTriangle, CheckCircle2, LoaderCircle } from 'lucide-react'
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, LoaderCircle } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -16,18 +16,27 @@ import { cn } from '@/lib/utils'
  * correction.
  */
 
-type NoticeTone = 'error' | 'success' | 'warning'
+/**
+ * `info` accompagne une information de contexte qui n'appelle aucune action —
+ * ce qu'un module fait, et ce qu'il ne fait pas encore. La présenter en
+ * avertissement dirait à tort qu'il y a quelque chose à corriger. Le ton reprend
+ * les couleurs `info` du badge, afin que les deux se lisent comme un seul
+ * langage (Design System, CLAUDE.md §37).
+ */
+type NoticeTone = 'error' | 'success' | 'warning' | 'info'
 
 const NOTICE_STYLES: Record<NoticeTone, string> = {
   error: 'border-danger-soft bg-danger-soft text-danger',
   success: 'border-success-soft bg-success-soft text-success',
   warning: 'border-warning-soft bg-warning-soft text-warning',
+  info: 'border-info-soft bg-info-soft text-info',
 }
 
 const NOTICE_ICONS: Record<NoticeTone, LucideIcon> = {
   error: AlertCircle,
   success: CheckCircle2,
   warning: AlertTriangle,
+  info: Info,
 }
 
 export function Notice({
@@ -43,7 +52,7 @@ export function Notice({
 
   return (
     <div
-      role={tone === 'success' ? 'status' : 'alert'}
+      role={tone === 'success' || tone === 'info' ? 'status' : 'alert'}
       className={cn(
         'flex items-start gap-2.5 rounded-control border px-3.5 py-3 text-sm',
         NOTICE_STYLES[tone],

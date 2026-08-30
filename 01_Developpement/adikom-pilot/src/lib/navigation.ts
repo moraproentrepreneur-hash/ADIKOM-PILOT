@@ -222,7 +222,7 @@ export const NAVIGATION: NavEntry[] = [
         href: '/facturation/fournisseurs',
         icon: FileText,
         permission: PERMISSIONS.SUPPLIER_INVOICES_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Imputations',

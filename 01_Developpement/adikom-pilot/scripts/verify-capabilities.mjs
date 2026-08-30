@@ -142,6 +142,61 @@ const PROFILES = {
     'billing.imputations.validate',
     'billing.imputations.cancel',
   ],
+  /*
+   * LOT 5 — les capacités de facturation fournisseur, isolées.
+   *
+   * `parties.suppliers.view` accompagne chacune : on n'enregistre ni ne
+   * contrôle la dette d'un fournisseur qu'on n'a pas le droit de voir. Ce n'est
+   * pas une capacité impliquée (DEC-024), c'est une capacité EXIGÉE — et le
+   * refus la nomme.
+   */
+  inv_view: [...READERS, 'parties.suppliers.view', 'billing.supplier_invoices.view'],
+  inv_create: [
+    ...READERS,
+    'parties.suppliers.view',
+    'billing.supplier_invoices.view',
+    'billing.supplier_invoices.create',
+  ],
+  inv_update: [
+    ...READERS,
+    'parties.suppliers.view',
+    'billing.supplier_invoices.view',
+    'billing.supplier_invoices.update',
+  ],
+  inv_validate: [
+    ...READERS,
+    'parties.suppliers.view',
+    'billing.supplier_invoices.view',
+    'billing.supplier_invoices.validate',
+  ],
+  inv_cancel: [
+    ...READERS,
+    'parties.suppliers.view',
+    'billing.supplier_invoices.view',
+    'billing.supplier_invoices.cancel',
+    'billing.imputations.view',
+  ],
+  // Rattacher exige `imputations.update` ET les deux lectures : ce profil les
+  // porte, celui qui suit n'en porte qu'une.
+  inv_full: [
+    ...READERS,
+    'parties.suppliers.view',
+    'billing.supplier_invoices.view',
+    'billing.supplier_invoices.create',
+    'billing.supplier_invoices.update',
+    'billing.supplier_invoices.validate',
+    'billing.supplier_invoices.cancel',
+    'billing.imputations.view',
+    'billing.imputations.update',
+  ],
+  // Peut modifier une imputation, mais ne voit AUCUNE facture : le plafond de
+  // Workflow 06 §20 porterait sur une somme muette. Le rattachement est refusé.
+  imp_blind_invoice: [
+    ...READERS,
+    'rental.maintenance.cost.view',
+    'billing.imputations.view',
+    'billing.imputations.update',
+  ],
 }
 
 async function createProfile(admin, key, codes) {
@@ -204,6 +259,7 @@ async function main() {
     rentals: [],
     maintenances: [],
     imputations: [],
+    invoices: [],
   }
 
   /** Session PostgREST d'un profil : exactement ce dont dispose un appelant. */
@@ -909,7 +965,7 @@ async function main() {
         .eq('id', impId)
       check(
         refused(toImputed),
-        '« Imputée » reste hors d’atteinte : elle suppose une facture (Étape 2.5)'
+        '« Imputée » ne se DÉCLARE pas : elle suppose une facture rattachée (DEC-013)'
       )
 
       const forgeInvoice = await owner2
@@ -997,6 +1053,261 @@ async function main() {
 
     /* ------------------------------------------------------------------ */
     console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('FACTURES FOURNISSEURS — CINQ ACTES, CINQ CAPACITÉS (LOT 5)\n')
+
+    {
+      const creator = await session('inv_create')
+      const viewer = await session('inv_view')
+      const updater = await session('inv_update')
+      const validator = await session('inv_validate')
+      const canceller = await session('inv_cancel')
+      const owner = await session('inv_full')
+
+      /* --- CRÉER exige `create`, et rien d'autre. */
+      const createByViewer = await viewer.rpc('create_supplier_invoice', {
+        p_supplier_id: fixtures.supplierId,
+        p_invoice_date: '2026-08-01',
+      })
+      check(refused(createByViewer), 'create_supplier_invoice refusée sans `supplier_invoices.create`')
+
+      const createByUpdater = await updater.rpc('create_supplier_invoice', {
+        p_supplier_id: fixtures.supplierId,
+        p_invoice_date: '2026-08-01',
+      })
+      check(
+        refused(createByUpdater),
+        '`supplier_invoices.update` ne crée pas une facture',
+        'modifier n’est pas enregistrer'
+      )
+
+      const forgeInsert = await viewer.from('supplier_invoices').insert({
+        invoice_no: `FAC-F-FORGE-${STAMP}`,
+        supplier_id: fixtures.supplierId,
+        invoice_date: '2026-08-01',
+      })
+      check(refused(forgeInsert), 'INSERT direct dans `supplier_invoices` refusé de même')
+
+      const { data: madeId, error: madeError } = await creator.rpc('create_supplier_invoice', {
+        p_supplier_id: fixtures.supplierId,
+        p_invoice_date: '2026-08-01',
+        p_due_date: '2026-09-01',
+        p_external_ref: `FRN-${STAMP}`,
+        p_notes: `${MARK} — facture`,
+      })
+      check(!refused({ error: madeError }), 'La capacité `create` enregistre la facture',
+        madeError?.message ?? '')
+
+      const invId = String(madeId)
+      if (madeId) fixtures.invoices.push(invId)
+
+      /* --- UNE FACTURE NAÎT EN BROUILLON, y compris par INSERT direct. */
+      const bornValidated = await creator.from('supplier_invoices').insert({
+        invoice_no: `FAC-F-FORGE2-${STAMP}`,
+        supplier_id: fixtures.supplierId,
+        invoice_date: '2026-08-01',
+        status: 'VALIDATED',
+        validated_at: new Date().toISOString(),
+      })
+      check(
+        refused(bornValidated),
+        'Une facture ne naît pas validée : `validate` n’est pas contournable par INSERT'
+      )
+
+      /* --- LES LIGNES relèvent de la saisie. */
+      const lineByValidator = await validator.rpc('add_supplier_invoice_line', {
+        p_invoice_id: invId,
+        p_label: 'Tentative',
+        p_amount: 100000,
+      })
+      check(refused(lineByValidator), 'add_supplier_invoice_line refusée à `validate` seul')
+
+      const lineOk = await creator.rpc('add_supplier_invoice_line', {
+        p_invoice_id: invId,
+        p_label: `${MARK} — mise à disposition`,
+        p_amount: 500000,
+      })
+      check(!refused(lineOk), 'La capacité `create` chiffre la facture', lineOk.error?.message ?? '')
+
+      /* --- SOUMETTRE relève de `update`. */
+      const submitByValidator = await validator.rpc('submit_supplier_invoice', {
+        p_invoice_id: invId,
+      })
+      check(refused(submitByValidator), 'submit_supplier_invoice refusée sans `update`')
+
+      const submitted = await updater.rpc('submit_supplier_invoice', { p_invoice_id: invId })
+      check(!refused(submitted), 'La capacité `update` soumet au contrôle',
+        submitted.error?.message ?? '')
+
+      /* --- VALIDER exige `validate`, et le PATCH direct ne l'esquive pas. */
+      const validateByUpdater = await updater.rpc('validate_supplier_invoice', {
+        p_invoice_id: invId,
+      })
+      check(refused(validateByUpdater), 'validate_supplier_invoice refusée sans `validate`')
+
+      const patchValidate = await updater
+        .from('supplier_invoices')
+        .update({ status: 'VALIDATED', validated_at: new Date().toISOString() })
+        .eq('id', invId)
+      check(refused(patchValidate), 'PATCH direct vers « Validée » refusé de même')
+
+      const validated = await validator.rpc('validate_supplier_invoice', {
+        p_invoice_id: invId,
+        p_reason: 'Contrôlée',
+      })
+      check(!refused(validated), 'La capacité `validate` reconnaît la dette',
+        validated.error?.message ?? '')
+
+      /* --- LES ÉTATS DE RÈGLEMENT NE SE DÉCLARENT PAS. */
+      const declarePaid = await owner
+        .from('supplier_invoices')
+        .update({ status: 'PAID' })
+        .eq('id', invId)
+      check(
+        refused(declarePaid),
+        '« Payée » reste hors d’atteinte : elle découle de règlements, non gérés'
+      )
+
+      const declareOverdue = await owner
+        .from('supplier_invoices')
+        .update({ status: 'OVERDUE' })
+        .eq('id', invId)
+      check(refused(declareOverdue), '« En retard » ne s’écrit pas : il se calcule (DEC-025 §a)')
+
+      /* --- LES LIGNES SONT FIGÉES après validation. */
+      const lateLine = await updater.rpc('add_supplier_invoice_line', {
+        p_invoice_id: invId,
+        p_label: 'Ligne ajoutée après coup',
+        p_amount: 50000,
+      })
+      check(refused(lateLine), 'Aucune ligne ne s’ajoute à une facture validée')
+
+      /* --- RATTACHER : `imputations.update` ET les deux lectures. */
+      const owner2 = await session('imp_full')
+      const { data: mntId } = await owner2.rpc('create_maintenance', {
+        p_vehicle_id: fixtures.suppliedVehicleId,
+        p_origin: 'BREAKDOWN',
+        p_reason: `${MARK} — rattachement`,
+      })
+      fixtures.maintenances.push(String(mntId))
+
+      await owner2.rpc('record_maintenance_costs', {
+        p_maintenance_id: mntId,
+        p_actual_cost: 300000,
+        p_imputable_amount: 300000,
+      })
+
+      const { data: impToAttach } = await owner2.rpc('create_imputation', {
+        p_maintenance_id: mntId,
+        p_supplier_id: fixtures.supplierId,
+        p_amount: 300000,
+        p_justification: `${MARK} — rattachement à la facture`,
+      })
+      fixtures.imputations.push(String(impToAttach))
+      await owner2.rpc('submit_imputation', { p_imputation_id: impToAttach })
+
+      const impValidator = await session('imp_validate')
+      await impValidator.rpc('validate_imputation', { p_imputation_id: impToAttach })
+
+      const attachByValidator = await impValidator.rpc('attach_imputation_to_invoice', {
+        p_imputation_id: impToAttach,
+        p_invoice_id: invId,
+      })
+      check(
+        refused(attachByValidator),
+        'attach_imputation_to_invoice refusée à `imputations.validate`',
+        'valider n’est pas rattacher'
+      )
+
+      const blindInvoice = await session('imp_blind_invoice')
+      const attachBlind = await blindInvoice.rpc('attach_imputation_to_invoice', {
+        p_imputation_id: impToAttach,
+        p_invoice_id: invId,
+      })
+      check(
+        refused(attachBlind),
+        'Rattacher est refusé sans `supplier_invoices.view`',
+        'un plafond invisible n’est pas un plafond infini'
+      )
+
+      const attached = await owner.rpc('attach_imputation_to_invoice', {
+        p_imputation_id: impToAttach,
+        p_invoice_id: invId,
+      })
+      check(!refused(attached), 'Avec les trois capacités, le rattachement aboutit',
+        attached.error?.message ?? '')
+
+      const { data: nowImputed } = await admin
+        .from('imputations')
+        .select('status, supplier_invoice_id')
+        .eq('id', impToAttach)
+        .maybeSingle()
+      check(
+        nowImputed?.status === 'IMPUTED' && nowImputed?.supplier_invoice_id === invId,
+        'L’imputation est « Imputée » et porte sa facture',
+        `${nowImputed?.status}`
+      )
+
+      /* --- ANNULER : `cancel`, et jamais sur une facture encore réduite. */
+      const cancelByUpdater = await updater.rpc('cancel_supplier_invoice', {
+        p_invoice_id: invId,
+      })
+      check(refused(cancelByUpdater), 'cancel_supplier_invoice refusée sans `cancel`')
+
+      const cancelWithImputation = await canceller.rpc('cancel_supplier_invoice', {
+        p_invoice_id: invId,
+        p_reason: 'Tentative',
+      })
+      check(
+        refused(cancelWithImputation),
+        'Une facture portant une imputation ne s’annule pas',
+        'la déduction doit d’abord en être détachée'
+      )
+
+      /* --- DÉTACHER relève d'`imputations.update`. */
+      const detachByValidator = await impValidator.rpc('detach_imputation_from_invoice', {
+        p_imputation_id: impToAttach,
+      })
+      check(refused(detachByValidator), 'detach_imputation_from_invoice refusée à `validate`')
+
+      const detached = await owner.rpc('detach_imputation_from_invoice', {
+        p_imputation_id: impToAttach,
+        p_reason: 'Recette',
+      })
+      check(!refused(detached), 'La capacité `imputations.update` détache',
+        detached.error?.message ?? '')
+
+      const cancelled = await canceller.rpc('cancel_supplier_invoice', {
+        p_invoice_id: invId,
+        p_reason: 'Facture reçue en double',
+      })
+      check(!refused(cancelled), 'Détachée, la facture s’annule', cancelled.error?.message ?? '')
+
+      /* --- LECTURE ET SUPPRESSION. */
+      const noInvoice = await session('imp_full')
+      const blindRead = await noInvoice.from('supplier_invoices').select('id').eq('id', invId)
+      check(
+        (blindRead.data?.length ?? 0) === 0,
+        'RLS ne livre aucune facture sans `supplier_invoices.view`'
+      )
+
+      const seen = await viewer
+        .from('supplier_invoices')
+        .select('invoice_no')
+        .eq('id', invId)
+        .maybeSingle()
+      check(Boolean(seen.data?.invoice_no), 'Avec `supplier_invoices.view`, la facture est lisible')
+
+      const removal = await owner.from('supplier_invoices').delete().eq('id', invId)
+      const { data: stillHere } = await admin
+        .from('supplier_invoices')
+        .select('id')
+        .eq('id', invId)
+        .maybeSingle()
+      check(refused(removal) || Boolean(stillHere), 'Aucune suppression possible')
+    }
+
+    /* ------------------------------------------------------------------ */
+    console.log('\n──────────────────────────────────────────────────────────────')
     console.log('CATALOGUE ET DONNÉES DEMO\n')
 
     {
@@ -1018,9 +1329,20 @@ async function main() {
   } finally {
     for (const client of Object.values(sessions)) await client.auth.signOut()
 
+    /*
+     * Une imputation rattachée retient sa facture (`on delete restrict`), et
+     * son rattachement ne se retire QUE par le détachement : la base refuse un
+     * `UPDATE` qui laisserait « Imputée » sans facture. Le nettoyage emprunte
+     * donc le même chemin que l'utilisateur.
+     */
     for (const id of fixtures.imputations) {
+      await admin.rpc('detach_imputation_from_invoice', { p_imputation_id: id })
       await admin.from('imputation_documents').delete().eq('imputation_id', id)
       await admin.from('imputations').delete().eq('id', id)
+    }
+    for (const id of fixtures.invoices) {
+      await admin.from('supplier_invoice_lines').delete().eq('supplier_invoice_id', id)
+      await admin.from('supplier_invoices').delete().eq('id', id)
     }
     for (const id of fixtures.maintenances) {
       await admin.from('imputations').delete().eq('maintenance_id', id)

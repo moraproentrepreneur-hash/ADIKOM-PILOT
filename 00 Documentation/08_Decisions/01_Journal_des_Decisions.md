@@ -60,6 +60,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-024 | Attribution indépendante des capacités | Règle d'architecture | Validée — **permanente** | 2026-08-22 |
 | DEC-025 | Cadrage de l'Étape 2.3 — cycle d'exploitation | Arbitrages ADIKOM | Validée — **clôt DEC-014** | 2026-08-24 |
 | DEC-026 | Imputation fournisseur — LOT 4 de l'Étape 2.4 | Arbitrages et contradiction | Appliquée — **tranche une contradiction** | 2026-08-29 |
+| DEC-027 | Facture fournisseur — LOT 5 de l'Étape 2.5 | Arbitrages | Appliquée — **ouvre DEC-013** | 2026-08-30 |
 
 ---
 
@@ -1416,6 +1417,177 @@ l'Étape 2.5. Il n'affiche pas de zéro qui se lirait « rien à payer ».
 
 ---
 
+## DEC-027 — Facture fournisseur (LOT 5 de l'Étape 2.5)
+
+**Date :** 30 août 2026
+**Portée :** métier, technique et sécurité
+**Statut :** appliquée · **ouvre l'effet financier réservé par DEC-013**
+
+### Contexte
+
+DEC-021 désigne l'Étape 2.5 : *Facturation → Paiements → Soldes → Clôture*. Le
+LOT 4 s'est arrêté à `Validée` faute de facture fournisseur (DEC-026 §b). Le
+LOT 5 livre cette facture, et **le rattachement** — c'est-à-dire le seul acte du
+système qui réduise un montant dû.
+
+### a. Le LOT 5 s'arrête avant le paiement
+
+Le lot livre : la facture reçue, ses lignes, son cycle, le rattachement d'une
+imputation, le détachement, le net à payer.
+
+Il ne livre **ni règlement, ni compte financier, ni solde, ni clôture, ni
+facture client, ni taxe** (DEC-014 : régime non défini). `Module 07 §57` pose
+`Solde = Net à payer − Σ paiements validés` : la formule est respectée en
+n'affichant **aucun** solde, plutôt qu'un zéro qui se lirait « rien à payer ».
+
+`PARTIALLY_PAID` et `PAID` figurent à l'énumération par fidélité à `Module 07`
+§31, et les transitions qui y mènent sont **refusées, avec leur motif** — même
+traitement que `IMPUTED` au LOT 4. `OVERDUE` est **dérivé**, jamais écrit
+(**DEC-025 §a** : aucun ordonnanceur n'existe), et une contrainte de base le
+rend infalsifiable.
+
+### b. Aucun montant n'est stocké — le brut est la somme des lignes
+
+`Règles finance` §8 exige « une ou plusieurs lignes » ; `Module 07` §29 les cite
+parmi ce que la facture contient. Une colonne `gross_amount` **et** des lignes
+seraient deux sources du même chiffre, capables de diverger.
+
+Le montant brut est donc **Σ des lignes actives**, le total imputé **Σ des
+imputations « Imputée »**, le net à payer leur différence — trois soustractions
+refaites à la lecture, comme le reste imputable du LOT 3.
+
+`Règles fournisseurs` §11 — « le montant brut doit être conservé » — est
+satisfait autrement qu'en le recopiant : **après validation, les lignes sont
+figées**, sans chemin de déverrouillage.
+
+Une ligne saisie par erreur **s'archive** et sort de la somme ; rien ne se
+supprime (`CLAUDE.md` §22).
+
+### c. Le véhicule est porté par la ligne, pas par l'en-tête
+
+`Module 07` §28 relie une facture à un véhicule ; `Workflow 06` §21 montre un
+même fournisseur facturant **plusieurs** véhicules. Le lien vit donc sur la
+ligne : le poser sur l'en-tête imposerait un choix que le document ne fait pas.
+
+La **maintenance** n'est pas rattachée à la ligne : `Workflow 06` §24 établit
+déjà la chaîne *Fournisseur → Facture → Imputation → Maintenance → Véhicule*. La
+doubler créerait deux chemins vers la même réponse, capables de se contredire.
+
+### d. Quelle capacité porte le rattachement
+
+Rattacher **n'écrit rien dans la facture** : son net à payer est une
+soustraction, pas une colonne. L'acte modifie l'imputation seule, et porte donc
+`billing.imputations.update` — la capacité qui porte déjà la soumission à
+validation (**DEC-026 §e**). `billing.supplier_invoices.update` **n'est pas
+exigée** : réclamer une capacité d'écriture pour une écriture qui n'a pas lieu
+inventerait une règle.
+
+En revanche, deux **lectures** sont exigées nommément —
+`billing.supplier_invoices.view` et `billing.imputations.view` — parce que le
+plafond de `Workflow 06` §20 se calcule sur elles. C'est la doctrine du LOT 4 :
+**un plafond invisible n'est pas un plafond infini**.
+
+Trois conditions de fond, toutes documentées :
+
+| Règle | Source | Traitement |
+|---|---|---|
+| Facture **validée** seulement | §32 — « lorsque la facture existe déjà » | Refus sinon |
+| **Même fournisseur** | §24 — la chaîne relie un fournisseur | Refus sinon |
+| Σ imputé ≤ montant de la facture | §20 | Refus, **sans crédit ni report inventé** |
+
+### e. Le détachement, à défaut de contrepassation
+
+`Workflow 06` §41 renvoie la **contrepassation** à « l'implémentation
+financière » : elle suppose des écritures que le système ne tient pas. §39 exige
+pourtant qu'une correction suive une **procédure contrôlée**.
+
+Le **détachement** est cette procédure : il rend l'imputation à « validée, en
+attente de facture » — son état antérieur exact — et restitue le net à payer.
+Il exige sa capacité, il est daté, il est audité, il n'efface rien.
+
+Sans lui, une facture enregistrée par erreur deviendrait **définitivement
+inannulable** et son imputation définitivement figée sur un document faux. Une
+impasse n'est pas une garantie.
+
+Conséquence symétrique : **une facture portant encore une imputation ne
+s'annule pas.** L'annuler laisserait une déduction pesant sur un document
+annulé — un montant déduit de rien. Le refus nomme le détachement comme issue.
+Ce contrôle exige `billing.imputations.view` : on n'annule pas une facture dont
+on ne peut pas voir les déductions.
+
+### f. Une facture naît en brouillon — et une imputation aussi
+
+Un déclencheur de transition ne s'exécute qu'à l'`UPDATE`. Un `INSERT` direct
+portant `status = 'VALIDATED'` ne le rencontrerait **jamais** : la facture
+naîtrait validée sans que `validate` ait été exigée, la policy d'insertion ne
+demandant que `create`.
+
+Ce chemin est fermé pour les deux tables. **Il était ouvert sur `imputations`
+depuis le LOT 4** — angle mort de l'audit 041–042, qui n'avait éprouvé que les
+transitions. Il est corrigé ici.
+
+### g. Aucune permission créée — catalogue à 153
+
+`billing.supplier_invoices.view · create · update · validate · cancel · export`
+existent depuis la migration 007. **Soumettre au contrôle** relève d'`update`,
+dernier geste de la saisie — même arbitrage qu'au LOT 4.
+
+Aucune capacité documentaire (`download`, `print`) n'est créée : le LOT 5 ne
+produit aucun document. L'export, lui, existait déjà et est implémenté.
+
+### h. Numérotation — le format provisoire est conservé, délibérément
+
+`DEC-023` §4 réserve la convention définitive des références de documents à
+valeur comptable — `FACL`, **`FAFR`** et les autres — à la **validation du
+responsable comptable et fiscal d'ADIKOM**, « avant toute première émission ».
+Cette validation n'a pas eu lieu : elle reste le point 6 des décisions en
+attente.
+
+Le LOT 5 **n'implémente donc pas** le moteur de séries de DEC-023, et conserve
+la règle `supplier_invoice` → `FAC-F`, année, six chiffres, remise à zéro
+annuelle, enregistrée depuis la migration 005 et jamais consommée jusqu'ici.
+
+Figer aujourd'hui le format d'un document comptable serait exactement ce que la
+réserve interdit. Le format reste **paramétrable sans redéploiement** : la
+convention définitive s'appliquera sans migration de code.
+
+Un **numéro interne ADIKOM** et le **numéro porté par le document du
+fournisseur** restent deux colonnes distinctes (`Module 07` §30).
+
+### i. Ce qui n'a pas été décidé, et pourquoi
+
+- **Unicité de la référence externe par fournisseur.** Enregistrer deux fois la
+  même facture est un risque financier réel, mais aucune règle documentée ne
+  l'interdit et une réémission légitime existe. Aucune contrainte n'est posée :
+  **la signaler serait inventer une règle** (`CLAUDE.md` §55). Point à
+  soumettre à ADIKOM.
+- **Fournisseur inactif.** Une facture reçue d'un fournisseur devenu inactif
+  reste une dette réelle : la refuser empêcherait de la payer. Le statut du
+  fournisseur n'est donc pas contrôlé à l'enregistrement.
+- **Génération du montant dû (DEC-007).** Toujours ouverte. Le LOT 5 applique le
+  traitement déjà retenu par DEC-007 : **saisie manuelle**, sans périodicité ni
+  calcul automatique. Aucun automatisme n'est développé.
+
+### Conséquences
+
+- Migration **047** : un type, deux tables, deux fonctions de calcul, contraintes,
+  index, cinq déclencheurs de contrôle, neuf fonctions atomiques
+  `SECURITY INVOKER`, RLS, audit, interdiction de suppression, révocation
+  d'`EXECUTE` à PUBLIC (**DEC-022**).
+- Les déclencheurs `fn_imputation_coherence` et `fn_imputation_transition` du
+  LOT 4 sont **réécrits** : le refus de rattachement devient un contrôle.
+- La clé étrangère `imputations.supplier_invoice_id → supplier_invoices` est
+  posée : le point d'accroche devient une relation.
+- Recettes : `db:verify:supplier-invoices` (20 contrôles),
+  `verify:supplier-invoices`, et `verify:capabilities` porté de 67 à
+  **94 contrôles**.
+- Les recettes des LOTs 3 et 4 cessent d'exiger l'absence de
+  `supplier_invoices` — le LOT 5 l'a livrée — et vérifient désormais ce qui
+  reste en jeu : qu'aucun règlement n'existe, et que « Imputée » ne se déclare
+  pas.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -1425,7 +1597,8 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 3. **DEC-009** — Confirmation de la règle de résolution des permissions multi-groupes.
 4. **DEC-014** — Régime de taxes applicable. *Le fuseau horaire est tranché : `Indian/Comoro`, confirmé par **DEC-025 §e**.*
 5. **DEC-005** — Confirmation des formats restants et de la règle de remise à zéro annuelle. *Partiellement tranché : les formats client, fournisseur et véhicule sont confirmés par **DEC-021**. Les documents commerciaux relèvent désormais de **DEC-023**, dont l'implémentation est reportée à l'Étape 2.5. Restent à confirmer les objets datés non commerciaux — réservation, location, maintenance, imputation.*
-6. **DEC-023 §4** — Validation par le responsable comptable et fiscal d'ADIKOM de la convention de référence des factures, avant toute première émission.
+6. **DEC-023 §4** — Validation par le responsable comptable et fiscal d'ADIKOM de la convention de référence des factures, avant toute première émission. *Le LOT 5 conserve pour cette raison le format provisoire `FAC-F-2026-000001`, paramétrable (**DEC-027 §h**).*
+7. **DEC-027 §i** — Une même référence de facture peut-elle être enregistrée deux fois pour un même fournisseur ? Aucune contrainte d'unicité n'a été posée, faute de règle documentée ; le risque de double enregistrement est signalé, non arbitré.
 
 ---
 

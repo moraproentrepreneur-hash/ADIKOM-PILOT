@@ -33,6 +33,11 @@ import {
   listRentals,
   STATUS_LABELS as RENTAL_STATUS,
 } from '@/features/rentals/data'
+import { listSupplierInvoices } from '@/features/supplier-invoices/data'
+import {
+  displayStatus as displaySupplierInvoiceStatus,
+  SUPPLIER_INVOICE_STATUS_LABELS,
+} from '@/features/supplier-invoices/constants'
 
 /**
  * Registre des exports.
@@ -322,6 +327,88 @@ export const EXPORTS: Record<string, ExportDefinition> = {
             : []),
         ],
         mayReadAmounts ? 'Exécution et tarifs verrouillés' : 'Exécution'
+      )
+    },
+  },
+
+  'factures-fournisseurs': {
+    title: 'Factures fournisseurs',
+    viewPermission: PERMISSIONS.SUPPLIER_INVOICES_VIEW,
+    permission: PERMISSIONS.SUPPLIER_INVOICES_EXPORT,
+    entityType: 'supplier_invoices',
+    moduleCode: 'billing',
+    async build(filters) {
+      /*
+       * Le TOTAL IMPUTÉ et le NET À PAYER ne sortent qu'avec
+       * `billing.imputations.view`, comme à l'écran. Sans ce droit, les
+       * colonnes n'existent pas — plutôt que d'exister à zéro, ce qui ferait
+       * d'un classeur exporté l'affirmation qu'aucune déduction n'a eu lieu
+       * (DEC-017, DEC-024).
+       */
+      const mayReadImputations = await can(PERMISSIONS.IMPUTATIONS_VIEW)
+
+      const rows = await listSupplierInvoices(
+        {
+          search: filters.q,
+          status: filters.statut,
+          supplierId: filters.fournisseur,
+          from: filters.du,
+          to: filters.au,
+        },
+        { canSeeImputations: mayReadImputations }
+      )
+
+      /*
+       * Aucun montant payé, aucun solde : les règlements fournisseurs ne sont
+       * pas gérés. Une colonne à zéro serait lue comme une information.
+       */
+      return dataset(
+        rows,
+        [
+          { header: 'Facture', width: 20, value: (r) => r.invoiceNo },
+          { header: 'Référence fournisseur', width: 22, value: (r) => r.externalRef },
+          { header: 'Fournisseur', width: 34, value: (r) => r.supplierLabel },
+          {
+            header: 'Date',
+            width: 14,
+            format: 'date',
+            value: (r) => toExcelDate(r.invoiceDate),
+          },
+          {
+            header: 'Échéance',
+            width: 14,
+            format: 'date',
+            value: (r) => toExcelDate(r.dueDate),
+          },
+          { header: 'Montant brut', width: 18, format: 'amount', value: (r) => r.grossAmount },
+          ...(mayReadImputations
+            ? ([
+                {
+                  header: 'Total imputé',
+                  width: 18,
+                  format: 'amount' as const,
+                  value: (r: (typeof rows)[number]) => r.imputedAmount,
+                },
+                {
+                  header: 'Net à payer',
+                  width: 18,
+                  format: 'amount' as const,
+                  value: (r: (typeof rows)[number]) => r.netPayable,
+                },
+              ])
+            : []),
+          {
+            header: 'État',
+            width: 22,
+            value: (r) =>
+              SUPPLIER_INVOICE_STATUS_LABELS[
+                displaySupplierInvoiceStatus(r.status, r.dueDate, r.netPayable)
+              ],
+          },
+        ],
+        mayReadImputations
+          ? 'Montant brut, imputations et net à payer'
+          : 'Montant brut — imputations non lisibles'
       )
     },
   },

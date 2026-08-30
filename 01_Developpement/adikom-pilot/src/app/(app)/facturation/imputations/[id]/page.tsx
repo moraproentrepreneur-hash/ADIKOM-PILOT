@@ -32,6 +32,11 @@ import {
   SubmitImputationPanel,
   ValidateImputationPanel,
 } from '@/features/imputations/panels'
+import { listAttachableInvoices } from '@/features/supplier-invoices/data'
+import {
+  AttachImputationPanel,
+  DetachImputationPanel,
+} from '@/features/supplier-invoices/panels'
 
 export const metadata: Metadata = { title: 'Imputation' }
 
@@ -59,25 +64,31 @@ export default async function ImputationDetailPage(
   const imputation = await getImputationDetail(id)
   if (!imputation) notFound()
 
-  const [canUpdate, canValidate, canCancel, canSeeCosts] = await Promise.all([
+  const [canUpdate, canValidate, canCancel, canSeeCosts, canSeeInvoices] = await Promise.all([
     can(PERMISSIONS.IMPUTATIONS_UPDATE),
     can(PERMISSIONS.IMPUTATIONS_VALIDATE),
     can(PERMISSIONS.IMPUTATIONS_CANCEL),
     // Le plafond vit dans `maintenance_costs` : sans cette capacité, il n'est
     // pas lisible — et l'écran le dit plutôt que d'afficher « 0 KMF ».
     can(PERMISSIONS.MAINTENANCE_COST_VIEW),
-  ])
-
-  const [budget, documents, suppliers] = await Promise.all([
-    getImputableBudget(imputation.maintenanceId, { canSeeCosts }),
-    listImputationDocuments(id),
-    isEditable(imputation.status)
-      ? listImputationSupplierOptions(imputation.maintenanceId)
-      : Promise.resolve(null),
+    // Rattacher exige de LIRE la facture : le plafond de Workflow 06 §20 en
+    // dépend. Sans cette capacité, le panneau disparaît (DEC-024).
+    can(PERMISSIONS.SUPPLIER_INVOICES_VIEW),
   ])
 
   const editable = isEditable(imputation.status)
   const awaiting = isAwaitingInvoice(imputation.status, imputation.supplierInvoiceId)
+
+  const [budget, documents, suppliers, invoices] = await Promise.all([
+    getImputableBudget(imputation.maintenanceId, { canSeeCosts }),
+    listImputationDocuments(id),
+    editable
+      ? listImputationSupplierOptions(imputation.maintenanceId)
+      : Promise.resolve(null),
+    awaiting && canUpdate && canSeeInvoices
+      ? listAttachableInvoices(imputation.supplierId, { canSeeImputations: true })
+      : Promise.resolve(null),
+  ])
 
   return (
     <>
@@ -98,8 +109,16 @@ export default async function ImputationDetailPage(
       {awaiting && (
         <Notice tone="warning" className="mb-5">
           Cette imputation est <strong>validée et en attente de facture fournisseur</strong>. Elle
-          ne réduit <strong>aucun montant dû</strong> et ne constitue pas un paiement. Le
-          rattachement à une facture relève d’une étape ultérieure.
+          ne réduit <strong>aucun montant dû</strong> et ne constitue pas un paiement tant qu’elle
+          n’est pas rattachée à une facture validée.
+        </Notice>
+      )}
+
+      {imputation.status === 'IMPUTED' && (
+        <Notice tone="info" className="mb-5">
+          Cette imputation est <strong>rattachée à une facture fournisseur</strong> : elle réduit
+          le net à payer de cette facture. Elle <strong>n’est pas un paiement</strong> — aucun
+          compte n’a été mouvementé.
         </Notice>
       )}
 
@@ -196,10 +215,23 @@ export default async function ImputationDetailPage(
                 )}
               </InfoRow>
 
-              <InfoRow label="Facture fournisseur">
-                <span className="text-muted">
-                  Aucune — la facturation fournisseur relève d’une étape ultérieure.
-                </span>
+              <InfoRow label="Facture fournisseur" hint="DEC-013 : sans elle, aucun montant dû n’est réduit.">
+                {imputation.supplierInvoiceId === null ? (
+                  <span className="text-muted">
+                    Aucune — l’imputation est en attente de facture (Workflow 06 §31).
+                  </span>
+                ) : imputation.supplierInvoiceNo === null ? (
+                  <span className="text-muted">
+                    Votre compte ne peut pas consulter les factures fournisseurs.
+                  </span>
+                ) : (
+                  <Link
+                    href={`/facturation/fournisseurs/${imputation.supplierInvoiceId}`}
+                    className="text-adikom-500 hover:underline tabular"
+                  >
+                    {imputation.supplierInvoiceNo}
+                  </Link>
+                )}
               </InfoRow>
             </dl>
           </Card>
@@ -294,6 +326,44 @@ export default async function ImputationDetailPage(
             </Card>
           )}
 
+          {canUpdate && awaiting && canSeeInvoices && (
+            <Card
+              title="Rattacher à une facture"
+              description="Le seul acte qui réduise un montant dû (DEC-013)."
+            >
+              <AttachImputationPanel
+                imputationId={id}
+                amount={imputation.amount}
+                invoices={(invoices ?? []).map((invoice) => ({
+                  id: invoice.id,
+                  label: `${invoice.invoiceNo} — ${invoice.invoiceDate}`,
+                  netPayable: invoice.netPayable,
+                }))}
+              />
+            </Card>
+          )}
+
+          {canUpdate && awaiting && !canSeeInvoices && (
+            <Card title="Rattacher à une facture">
+              <p className="text-sm text-muted">
+                Votre compte ne peut pas consulter les factures fournisseurs : le rattachement
+                suppose de lire le montant de la facture, dont dépend le plafond d’imputation.
+              </p>
+            </Card>
+          )}
+
+          {canUpdate && imputation.status === 'IMPUTED' && imputation.supplierInvoiceId && (
+            <Card
+              title="Détacher de la facture"
+              description="Procédure contrôlée de correction (Workflow 06 §39)."
+            >
+              <DetachImputationPanel
+                imputationId={id}
+                invoiceId={imputation.supplierInvoiceId}
+              />
+            </Card>
+          )}
+
           {canCancel && isCancellable(imputation.status) && (
             <Card title="Annuler" description="L’historique est conservé (§40).">
               <CancelImputationPanel imputationId={id} />
@@ -304,9 +374,11 @@ export default async function ImputationDetailPage(
             <p className="text-sm text-muted">
               {imputation.status === 'CANCELLED'
                 ? 'Cette imputation est annulée : le montant imputable qu’elle consommait est redevenu disponible.'
-                : awaiting
-                  ? 'Cette imputation attend une facture fournisseur. Son rattachement, et l’effet sur le montant dû, relèvent de la facturation fournisseur.'
-                  : 'Une fois validée, l’imputation restera en attente de facture fournisseur. Aucun montant dû n’est réduit avant ce rattachement.'}
+                : imputation.status === 'IMPUTED'
+                  ? 'Le net à payer de la facture est réduit. Son règlement relève d’une étape ultérieure : aucun paiement n’est enregistré.'
+                  : awaiting
+                    ? 'Cette imputation attend d’être rattachée à une facture validée de ce fournisseur. Avant ce rattachement, aucun montant dû n’est réduit.'
+                    : 'Une fois validée, l’imputation pourra être rattachée à une facture fournisseur. Aucun montant dû n’est réduit avant ce rattachement.'}
             </p>
           </Card>
         </div>

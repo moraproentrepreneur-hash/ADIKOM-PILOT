@@ -55,17 +55,18 @@ export const IMPUTATION_STATUS_ORDER: ImputationStatus[] = [
 ]
 
 /**
- * Les statuts que le LOT 4 sait produire.
+ * Les cinq statuts sont désormais tous atteignables.
  *
- * `IMPUTED` suppose une facture fournisseur, qui relève de l'Étape 2.5 : la
- * transition qui y mène est refusée par la base. La valeur figure au
- * catalogue par fidélité à Workflow 06 §13 — même traitement que les statuts
- * dérivés de DEC-025 §a.
+ * `IMPUTED` supposait une facture fournisseur : le LOT 5 l'a livrée, et la
+ * transition qui y mène est rattachée à sa capacité. Elle ne s'atteint que par
+ * RATTACHEMENT à une facture validée du même fournisseur — jamais par
+ * déclaration.
  */
 export const IMPUTATION_STATUS_REACHABLE: ImputationStatus[] = [
   'DRAFT',
   'TO_VALIDATE',
   'VALIDATED',
+  'IMPUTED',
   'CANCELLED',
 ]
 

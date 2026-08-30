@@ -98,7 +98,11 @@ begin
 end $$;
 
 
--- --- 3. L'ÉTAPE 2.5 N'EXISTE PAS -------------------------------------------------------
+-- --- 3. LE POINT D'ACCROCHE EST DEVENU UNE RELATION -----------------------------------
+--
+-- Le LOT 5 a livré la facture fournisseur : `supplier_invoice_id` porte
+-- désormais une clé étrangère. Ce que le LOT 4 vérifiait — l'absence de tout
+-- objet financier — devient donc : la facture existe, et RIEN D'AUTRE.
 do $$
 declare v_bad text[];
 begin
@@ -106,24 +110,31 @@ begin
   from pg_tables
   where schemaname = 'public'
     and tablename in (
-      'supplier_invoices', 'supplier_payments', 'customer_invoices',
-      'payments', 'invoice_lines', 'supplier_balances'
+      'supplier_payments', 'customer_invoices', 'payments',
+      'financial_accounts', 'supplier_balances'
     );
 
   if v_bad is not null then
-    raise exception 'Le LOT 4 a créé des objets de l''Étape 2.5 : %', v_bad;
+    raise exception 'Des objets de règlement ou de facturation client existent déjà : %', v_bad;
   end if;
 
-  -- Le point d'accroche existe, sans clé étrangère : la cible n'existe pas.
   if not exists (
     select 1 from information_schema.columns
     where table_schema = 'public' and table_name = 'imputations'
       and column_name = 'supplier_invoice_id'
   ) then
-    raise exception 'Le point d''accroche supplier_invoice_id est absent.';
+    raise exception 'Le rattachement supplier_invoice_id est absent.';
   end if;
 
-  raise notice '[OK] 3. Aucune facture, aucun paiement, aucun solde. Le point d''accroche seul.';
+  -- La cible existe : la contrainte référentielle doit exister aussi.
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'imputations_supplier_invoice_fkey' and contype = 'f'
+  ) then
+    raise exception 'La clé étrangère vers `supplier_invoices` est absente (LOT 5).';
+  end if;
+
+  raise notice '[OK] 3. Facture fournisseur rattachée par clé étrangère ; aucun règlement.';
 end $$;
 
 
@@ -498,26 +509,29 @@ begin
 end $$;
 
 
--- --- 13. LA FRONTIÈRE DE L'ÉTAPE 2.5 — DEC-013 ------------------------------------------------
+-- --- 13. « IMPUTÉE » NE SE DÉCLARE PAS — DEC-013 -----------------------------------------------
 --
 -- LE CONTRÔLE LE PLUS IMPORTANT DU LOT.
+--
+-- Le LOT 5 ouvre la transition, mais uniquement PAR RATTACHEMENT à une facture
+-- réelle et validée. Aucune déclaration directe, aucune facture forgée.
 do $$
 declare
   v_id uuid := (select imp_main from recette_imp);
   i    public.imputations%rowtype;
 begin
-  -- Passer à « Imputée » suppose une facture : refusé, avec son motif.
+  -- « Imputée » sans facture : refusé, avec son motif.
   begin
     update public.imputations set status = 'IMPUTED' where id = v_id;
     raise exception 'ÉCHEC : une imputation est passée à « Imputée » sans facture.';
   exception when check_violation then null;
   end;
 
-  -- Rattacher une facture forgée : refusé.
+  -- Rattacher une facture forgée : refusé (la facture est introuvable).
   begin
     update public.imputations set supplier_invoice_id = gen_random_uuid() where id = v_id;
     raise exception 'ÉCHEC : une facture forgée a été rattachée.';
-  exception when check_violation then null;
+  exception when no_data_found or check_violation or foreign_key_violation then null;
   end;
 
   -- Et les deux ensemble, ce que la contrainte seule ne suffirait pas à voir.
@@ -526,7 +540,7 @@ begin
        set status = 'IMPUTED', supplier_invoice_id = gen_random_uuid(), imputed_at = now()
      where id = v_id;
     raise exception 'ÉCHEC : « Imputée » atteinte avec une facture forgée.';
-  exception when check_violation then null;
+  exception when no_data_found or check_violation or foreign_key_violation then null;
   end;
 
   select * into i from public.imputations where id = v_id;
@@ -534,7 +548,7 @@ begin
     raise exception 'L''imputation a bougé : % / %', i.status, i.supplier_invoice_id;
   end if;
 
-  raise notice '[OK] 13. « Imputée » hors d''atteinte, facture forgée refusée (DEC-013).';
+  raise notice '[OK] 13. « Imputée » ne se déclare pas ; facture forgée refusée (DEC-013).';
 end $$;
 
 

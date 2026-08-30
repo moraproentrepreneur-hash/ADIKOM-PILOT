@@ -14,6 +14,7 @@ import {
 } from '@/features/imputations/data'
 import {
   formatAmount,
+  IMPUTATION_STATUS_EFFECT,
   IMPUTATION_STATUS_LABELS,
   IMPUTATION_STATUS_ORDER,
   IMPUTATION_STATUS_TONES,
@@ -73,8 +74,8 @@ export default async function ImputationsPage(props: PageProps<'/facturation/imp
 
       <Notice tone="warning" className="mb-5">
         Une imputation ne réduit un montant dû qu’une fois <strong>rattachée à une facture
-        fournisseur</strong>. La facturation fournisseur relève d’une étape ultérieure : les
-        imputations validées restent ici <strong>en attente de facture</strong>.
+        fournisseur validée</strong> (DEC-013). Même alors, elle n’est <strong>pas un
+        paiement</strong> : aucun compte n’est mouvementé.
       </Notice>
 
       <form method="get" className="mb-5">
@@ -234,9 +235,7 @@ export default async function ImputationsPage(props: PageProps<'/facturation/imp
                       <td className="px-5 py-3 text-xs text-muted">
                         {isAwaitingInvoice(imputation.status, imputation.supplierInvoiceId)
                           ? 'En attente de facture — aucun montant dû réduit'
-                          : imputation.status === 'CANCELLED'
-                            ? 'Aucun — annulée'
-                            : 'Aucun — en préparation'}
+                          : IMPUTATION_STATUS_EFFECT[imputation.status]}
                       </td>
                     </tr>
                   ))}
@@ -270,7 +269,7 @@ export default async function ImputationsPage(props: PageProps<'/facturation/imp
                       <dd>
                         {isAwaitingInvoice(imputation.status, imputation.supplierInvoiceId)
                           ? 'En attente de facture — aucun montant dû réduit'
-                          : 'Aucun effet financier'}
+                          : IMPUTATION_STATUS_EFFECT[imputation.status]}
                       </dd>
                     </dl>
                   </Link>
