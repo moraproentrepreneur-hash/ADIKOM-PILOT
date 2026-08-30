@@ -1,10 +1,11 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, FileText, Paperclip } from 'lucide-react'
 
-import { Badge, Card, Empty, InfoRow, PageHeader } from '@/components/ui/primitives'
+import { Badge, Card, Empty, EmptyState, InfoRow, PageHeader } from '@/components/ui/primitives'
 import { Notice } from '@/components/ui/feedback'
+import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDateTime } from '@/lib/dates'
@@ -25,6 +26,28 @@ import {
   ImmobilizePanel,
   MaintenanceStatusPanel,
 } from '@/features/maintenance/maintenance-panels'
+import {
+  costVariance,
+  getMaintenanceFinancials,
+  linesTotal,
+  nonImputableAmount,
+} from '@/features/maintenance/costs-data'
+import {
+  COST_LINE_KIND_LABELS,
+  DOCUMENT_TYPE_LABELS,
+  formatAmount,
+  formatVariance,
+  QUOTE_STATUS_LABELS,
+  QUOTE_STATUS_TONES,
+} from '@/features/maintenance/costs-constants'
+import {
+  CostLinePanel,
+  CostsPanel,
+  DocumentPanel,
+  QuoteDecisionPanel,
+  QuotePanel,
+} from '@/features/maintenance/costs-panels'
+import { listProviderOptions } from '@/features/maintenance/data'
 
 export const metadata: Metadata = { title: 'Maintenance' }
 
@@ -40,16 +63,41 @@ export default async function MaintenanceDetailPage(
   if (!maintenance) notFound()
 
   const justCreated = searchParams.cree === '1'
+  const requestedTab = typeof searchParams.onglet === 'string' ? searchParams.onglet : 'intervention'
 
-  const [canUpdate, canValidate, canClose, canReadIncidents, canReadRentals, canReadSuppliers] =
-    await Promise.all([
-      can(PERMISSIONS.MAINTENANCE_UPDATE),
-      can(PERMISSIONS.MAINTENANCE_VALIDATE),
-      can(PERMISSIONS.MAINTENANCE_CLOSE),
-      can(PERMISSIONS.INCIDENTS_VIEW),
-      can(PERMISSIONS.RENTALS_VIEW),
-      can(PERMISSIONS.SUPPLIERS_VIEW),
-    ])
+  const [
+    canUpdate,
+    canValidate,
+    canClose,
+    canReadIncidents,
+    canReadRentals,
+    canReadSuppliers,
+    canSeeCosts,
+    canEditCosts,
+  ] = await Promise.all([
+    can(PERMISSIONS.MAINTENANCE_UPDATE),
+    can(PERMISSIONS.MAINTENANCE_VALIDATE),
+    can(PERMISSIONS.MAINTENANCE_CLOSE),
+    can(PERMISSIONS.INCIDENTS_VIEW),
+    can(PERMISSIONS.RENTALS_VIEW),
+    can(PERMISSIONS.SUPPLIERS_VIEW),
+    // DEC-024, arbitrage L1 : consulter un coût et le saisir sont deux
+    // capacités. DEC-017 : sans la première, l'onglet DISPARAÎT — l'afficher
+    // vide affirmerait que l'intervention n'a rien coûté.
+    can(PERMISSIONS.MAINTENANCE_COST_VIEW),
+    can(PERMISSIONS.MAINTENANCE_COST_UPDATE),
+  ])
+
+  const tabs: TabItem[] = [
+    { key: 'intervention', label: 'Intervention', href: `/location/maintenance/${id}` },
+    ...(canSeeCosts
+      ? [{ key: 'couts', label: 'Coûts', href: `/location/maintenance/${id}?onglet=couts` }]
+      : []),
+  ]
+
+  const tab = tabs.some((item) => item.key === requestedTab && item.href)
+    ? requestedTab
+    : 'intervention'
 
   const immobilizing = maintenance.immobilizationFrom !== null
   const open = isCancellable(maintenance.status)
@@ -85,6 +133,17 @@ export default async function MaintenanceDetailPage(
         </Notice>
       )}
 
+      {tabs.length > 1 && <Tabs items={tabs} current={tab} />}
+
+      {tab === 'couts' ? (
+        <CostsTab
+          maintenanceId={id}
+          locked={maintenance.status === 'COMPLETED' || maintenance.status === 'CANCELLED'}
+          canEditCosts={canEditCosts}
+          canValidate={canValidate}
+          canReadSuppliers={canReadSuppliers}
+        />
+      ) : (
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
           <Card title="Intervention">
@@ -285,12 +344,303 @@ export default async function MaintenanceDetailPage(
           <Card title="Étape suivante">
             <p className="text-sm text-muted">
               {maintenance.status === 'COMPLETED'
-                ? 'Cette intervention est terminée. Son coût et son éventuelle imputation à un fournisseur relèvent d’un lot ultérieur.'
-                : 'Aucun coût n’est saisi à ce stade : les montants, devis et justificatifs relèvent d’un lot ultérieur.'}
+                ? 'Cette intervention est terminée : ses données financières sont verrouillées. Une éventuelle imputation à un fournisseur relève d’un lot ultérieur.'
+                : canSeeCosts
+                  ? 'Les montants, devis et justificatifs se saisissent dans l’onglet Coûts. Aucune imputation n’en découle.'
+                  : 'L’imputation d’un coût à un fournisseur relève d’un lot ultérieur.'}
             </p>
           </Card>
         </div>
       </div>
+      )}
     </>
+  )
+}
+
+/**
+ * Le dossier financier d'une intervention.
+ *
+ * N'EST RENDU QU'AVEC `rental.maintenance.cost.view`.
+ *
+ * L'onglet lui-même n'existe pas sans ce droit : afficher un dossier vide, ou
+ * pire « 0 KMF », affirmerait que l'intervention n'a rien coûté alors qu'on
+ * refuse seulement d'en montrer le prix (DEC-017).
+ *
+ * TOUT CE QUI EST DÉRIVÉ EST CALCULÉ ICI, JAMAIS STOCKÉ.
+ *
+ * L'écart (§35), le montant non imputable (§7) et la somme des lignes sont des
+ * soustractions et une addition refaites à chaque lecture. Les figer en base
+ * créerait des valeurs capables de contredire celles dont elles découlent.
+ */
+async function CostsTab({
+  maintenanceId,
+  locked,
+  canEditCosts,
+  canValidate,
+  canReadSuppliers,
+}: {
+  maintenanceId: string
+  locked: boolean
+  canEditCosts: boolean
+  canValidate: boolean
+  canReadSuppliers: boolean
+}) {
+  const [financials, providers] = await Promise.all([
+    getMaintenanceFinancials(maintenanceId),
+    canReadSuppliers ? listProviderOptions() : Promise.resolve(null),
+  ])
+
+  const { costs, lines, quotes, documents } = financials
+  const variance = costVariance(costs)
+  const nonImputable = nonImputableAmount(costs)
+  const total = linesTotal(lines)
+  const editable = canEditCosts && !locked
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-3">
+      <div className="space-y-5 lg:col-span-2">
+        {locked && (
+          <Notice tone="warning">
+            Cette maintenance est <strong>terminée ou annulée</strong> : ses données financières
+            sont verrouillées. Aucune correction n’est possible depuis cet écran.
+          </Notice>
+        )}
+
+        <Card
+          title="Montants"
+          description="Aucun de ces montants n’est déduit d’un autre : aucune règle ne les relie."
+        >
+          <dl>
+            <InfoRow label="Coût estimé" hint="Avant intervention (§33).">
+              {/*
+                « Pas encore chiffré » n'est pas « gratuit » : un tiret dit
+                l'absence de saisie là où un 0 KMF affirmerait une gratuité.
+              */}
+              {formatAmount(costs?.estimatedCost ?? null) ?? (
+                <span className="text-muted">Pas encore chiffré</span>
+              )}
+            </InfoRow>
+
+            <InfoRow label="Coût réel" hint="Après intervention (§34). L’estimation est conservée.">
+              {formatAmount(costs?.actualCost ?? null) ?? (
+                <span className="text-muted">Pas encore chiffré</span>
+              )}
+            </InfoRow>
+
+            <InfoRow
+              label="Écart"
+              hint="Réel − estimé (§35). Indicateur de pilotage, calculé à la lecture."
+            >
+              {formatVariance(variance) ?? (
+                <span className="text-muted">Indéterminable — un des deux montants manque</span>
+              )}
+            </InfoRow>
+
+            <InfoRow
+              label="Montant imputable"
+              hint="Plafond imputable à un fournisseur. N’impute rien et ne réduit aucun solde."
+            >
+              {formatAmount(costs?.imputableAmount ?? null) ?? (
+                <span className="text-muted">Non arrêté</span>
+              )}
+            </InfoRow>
+
+            <InfoRow label="Montant non imputable" hint="Coût réel − imputable (Workflow 06 §7).">
+              {formatAmount(nonImputable) ?? (
+                <span className="text-muted">Indéterminable</span>
+              )}
+            </InfoRow>
+
+            <InfoRow label="Observations">{costs?.notes ?? <Empty />}</InfoRow>
+          </dl>
+
+          <p className="mt-4 border-t border-line pt-4 text-xs text-muted">
+            Ces montants ne produisent <strong>aucune imputation</strong>, aucune facture, aucun
+            paiement et aucun effet sur un solde. L’imputation à un fournisseur relève d’un lot
+            ultérieur, et n’aura d’effet qu’une fois rattachée à une facture fournisseur.
+          </p>
+        </Card>
+
+        <Card
+          title="Ventilation"
+          description="Pièces, main-d’œuvre et autres frais. Facultative."
+        >
+          {lines.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">
+              Aucune ligne de coût n’a été saisie.
+            </p>
+          ) : (
+            <>
+              <div className="-mx-5 -my-4 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-line bg-adikom-50 text-left">
+                      <th className="px-5 py-3 font-medium text-ink">Nature</th>
+                      <th className="px-5 py-3 font-medium text-ink">Libellé</th>
+                      <th className="px-5 py-3 font-medium text-ink">Quantité</th>
+                      <th className="px-5 py-3 font-medium text-ink">Montant</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.map((line) => (
+                      <tr key={line.id} className="border-b border-line last:border-b-0">
+                        <td className="px-5 py-3 text-muted">
+                          {COST_LINE_KIND_LABELS[line.kind]}
+                        </td>
+                        <td className="px-5 py-3 text-ink">{line.label}</td>
+                        <td className="px-5 py-3 text-muted tabular">
+                          {line.quantity ?? '—'}
+                          {line.unitAmount !== null && (
+                            <span className="block text-xs">
+                              × {formatAmount(line.unitAmount)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3 text-ink tabular">{formatAmount(line.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-4 border-t border-line pt-4 text-sm">
+                <p className="text-ink">
+                  Somme des lignes : <strong className="tabular">{formatAmount(total)}</strong>
+                </p>
+                {/*
+                  La ventilation étant facultative, sa somme ne remplace pas le
+                  coût réel. Quand les deux divergent, l'écran le DIT et laisse
+                  l'arbitrage à l'utilisateur — il ne corrige rien tout seul.
+                */}
+                {costs?.actualCost != null && costs.actualCost !== total && (
+                  <p className="mt-1 text-xs text-warning">
+                    Le coût réel enregistré est {formatAmount(costs.actualCost)}. La ventilation
+                    est facultative : cet écart n’est pas corrigé automatiquement.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </Card>
+
+        <Card title="Devis" description="Offres reçues pour cette intervention (§26).">
+          {quotes.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">Aucun devis enregistré.</p>
+          ) : (
+            <ul className="space-y-3">
+              {quotes.map((quote) => (
+                <li key={quote.id} className="rounded-control border border-line p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-ink tabular">{formatAmount(quote.amount)}</p>
+                      <p className="mt-0.5 text-xs text-muted">
+                        {quote.providerLabel ??
+                          (canReadSuppliers
+                            ? 'Prestataire non désigné'
+                            : 'Prestataire que votre compte ne peut pas consulter')}
+                        {quote.quotedOn ? ` · ${quote.quotedOn}` : ''}
+                      </p>
+                      {quote.description && (
+                        <p className="mt-1 text-sm text-muted">{quote.description}</p>
+                      )}
+                    </div>
+                    <Badge tone={QUOTE_STATUS_TONES[quote.status]}>
+                      {QUOTE_STATUS_LABELS[quote.status]}
+                    </Badge>
+                  </div>
+
+                  {quote.decidedAt && (
+                    <p className="mt-2 text-xs text-muted">
+                      Décidé le {formatDateTime(quote.decidedAt)}
+                      {quote.decisionReason ? ` — ${quote.decisionReason}` : ''}
+                    </p>
+                  )}
+
+                  {/*
+                    Décider engage l'intervention : `maintenance.validate`, et
+                    non la capacité de saisie (arbitrage L2).
+                  */}
+                  {canValidate && !locked && quote.status === 'PROPOSED' && (
+                    <QuoteDecisionPanel quoteId={quote.id} maintenanceId={maintenanceId} />
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card title="Justificatifs" description="Devis, factures, reçus, bons de réparation (§37).">
+          {documents.length === 0 ? (
+            <EmptyState
+              icon={Paperclip}
+              title="Aucun justificatif"
+              description="Aucune pièce n’a été jointe à ce dossier."
+            />
+          ) : (
+            <ul className="space-y-2">
+              {documents.map((document) => (
+                <li key={document.id}>
+                  {/*
+                    Le chemin de stockage n'est jamais exposé : cette route
+                    vérifie `cost.view` puis délivre une URL signée d'une
+                    minute (DEC-025 §f).
+                  */}
+                  <a
+                    href={`/api/maintenance/documents/${document.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 rounded-control border border-line px-3 py-2 text-sm text-adikom-500 transition-colors hover:border-adikom-300"
+                  >
+                    <FileText className="size-4 shrink-0" aria-hidden />
+                    <span className="min-w-0">
+                      <span className="block truncate">{document.label}</span>
+                      <span className="block truncate text-xs text-muted">
+                        {DOCUMENT_TYPE_LABELS[document.docType]} · {document.fileName}
+                      </span>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      <div className="space-y-5">
+        {editable ? (
+          <>
+            <Card title="Saisir les montants">
+              <CostsPanel maintenanceId={maintenanceId} costs={costs} />
+            </Card>
+
+            <Card title="Ajouter une ligne de coût">
+              <CostLinePanel maintenanceId={maintenanceId} />
+            </Card>
+
+            <Card title="Enregistrer un devis">
+              <QuotePanel maintenanceId={maintenanceId} providers={providers} />
+            </Card>
+
+            <Card title="Joindre un justificatif">
+              <DocumentPanel
+                maintenanceId={maintenanceId}
+                quotes={quotes.map((quote) => ({
+                  id: quote.id,
+                  label: `${formatAmount(quote.amount)} — ${QUOTE_STATUS_LABELS[quote.status]}`,
+                }))}
+              />
+            </Card>
+          </>
+        ) : (
+          <Card title="Saisie">
+            <p className="text-sm text-muted">
+              {locked
+                ? 'Les données financières sont verrouillées : cette maintenance est terminée ou annulée.'
+                : 'Votre compte peut consulter ces montants, mais pas les saisir.'}
+            </p>
+          </Card>
+        )}
+      </div>
+    </div>
   )
 }

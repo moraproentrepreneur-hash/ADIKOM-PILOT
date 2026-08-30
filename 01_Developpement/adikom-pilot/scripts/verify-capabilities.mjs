@@ -65,6 +65,8 @@ const PROFILES = {
   // Le compte de référence : il peut tout accomplir légitimement.
   operateur: [
     ...READERS,
+    'rental.maintenance.cost.view',
+    'rental.maintenance.cost.update',
     'rental.reservations.create',
     'rental.reservations.update',
     'rental.reservations.confirm',
@@ -89,10 +91,23 @@ const PROFILES = {
   loc_checkout: [...READERS, 'rental.rentals.checkout'],
   // Modifier un contrat, sans aucun acte d'exploitation.
   loc_update: [...READERS, 'rental.rentals.update'],
-  // Modifier une maintenance, sans l'engager ni la terminer.
+  // Modifier une maintenance, sans l'engager, la terminer NI toucher à l'argent.
   mnt_update: [...READERS, 'rental.maintenance.create', 'rental.maintenance.update'],
   // Terminer une maintenance, sans pouvoir l'engager.
   mnt_close: [...READERS, 'rental.maintenance.create', 'rental.maintenance.close'],
+  /*
+   * LOT 3 — les deux capacités financières, isolées.
+   *
+   * `mnt_cost_view` VOIT les montants sans pouvoir en écrire un ;
+   * `mnt_cost_edit` les écrit sans pouvoir décider d'un devis — décider
+   * relève de `validate` (arbitrage L2).
+   */
+  mnt_cost_view: [...READERS, 'rental.maintenance.cost.view'],
+  mnt_cost_edit: [
+    ...READERS,
+    'rental.maintenance.cost.view',
+    'rental.maintenance.cost.update',
+  ],
 }
 
 async function createProfile(admin, key, codes) {
@@ -515,13 +530,155 @@ async function main() {
 
     /* ------------------------------------------------------------------ */
     console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('COÛTS — VOIR, SAISIR ET DÉCIDER SONT TROIS DROITS\n')
+
+    {
+      const strong = await session('operateur')
+
+      const { data: created } = await strong.rpc('create_maintenance', {
+        p_vehicle_id: fixtures.vehicleIds[4],
+        p_origin: 'BREAKDOWN',
+        p_reason: `${MARK} — coûts`,
+      })
+      const costed = String(created)
+      fixtures.maintenances.push(costed)
+
+      await strong.rpc('record_maintenance_costs', {
+        p_maintenance_id: costed,
+        p_estimated_cost: 250000,
+        p_actual_cost: 300000,
+        p_imputable_amount: 200000,
+      })
+
+      // --- Lire un montant exige `cost.view`, que `maintenance.view` ne donne pas.
+      const noFinance = await session('mnt_update')
+      const blindRead = await noFinance
+        .from('maintenance_costs')
+        .select('actual_cost')
+        .eq('maintenance_id', costed)
+      check(
+        (blindRead.data?.length ?? 0) === 0,
+        'RLS ne livre aucun montant sans `cost.view`',
+        'la maintenance reste lisible, pas son prix'
+      )
+
+      // --- Écrire un montant exige `cost.update`, que `cost.view` ne donne pas.
+      const readOnly = await session('mnt_cost_view')
+      const seen = await readOnly
+        .from('maintenance_costs')
+        .select('actual_cost')
+        .eq('maintenance_id', costed)
+        .maybeSingle()
+      check(seen.data?.actual_cost === 300000, 'Avec `cost.view`, le montant est lisible')
+
+      const writeAttempt = await readOnly.rpc('record_maintenance_costs', {
+        p_maintenance_id: costed,
+        p_actual_cost: 999000,
+      })
+      check(refused(writeAttempt), 'record_maintenance_costs refusée sans `cost.update`')
+
+      /*
+       * Le `PATCH` direct ne lève PAS d'erreur : la clause `using` de la policy
+       * filtre la ligne, et l'écriture ne touche rien. C'est la protection
+       * attendue — mais elle est silencieuse, d'où le contrôle qui suit : la
+       * seule preuve qui vaille est que la valeur n'a pas bougé.
+       */
+      const patchAttempt = await readOnly
+        .from('maintenance_costs')
+        .update({ actual_cost: 999000 })
+        .eq('maintenance_id', costed)
+        .select('actual_cost')
+
+      check(
+        refused(patchAttempt) || (patchAttempt.data?.length ?? 0) === 0,
+        'PATCH direct sur un montant sans effet',
+        refused(patchAttempt) ? 'refus explicite' : 'aucune ligne modifiée'
+      )
+
+      const { data: intact } = await admin
+        .from('maintenance_costs')
+        .select('actual_cost')
+        .eq('maintenance_id', costed)
+        .maybeSingle()
+      check(intact?.actual_cost === 300000, 'Le montant n’a pas bougé', `${intact?.actual_cost}`)
+
+      // --- Écrire un montant ne permet PAS de décider d'un devis (arbitrage L2).
+      const editor = await session('mnt_cost_edit')
+      const { data: quoteId } = await editor.rpc('add_maintenance_quote', {
+        p_maintenance_id: costed,
+        p_amount: 280000,
+      })
+      check(Boolean(quoteId), 'Avec `cost.update`, un devis s’enregistre')
+
+      const decideAttempt = await editor.rpc('decide_maintenance_quote', {
+        p_quote_id: String(quoteId),
+        p_accept: true,
+      })
+      check(refused(decideAttempt), 'decide_maintenance_quote refusée sans `validate`')
+
+      const patchDecision = await editor
+        .from('maintenance_quotes')
+        .update({ status: 'ACCEPTED', decided_at: new Date().toISOString() })
+        .eq('id', String(quoteId))
+      check(refused(patchDecision), 'PATCH direct de la décision refusé de même')
+
+      const { data: stillOpen } = await admin
+        .from('maintenance_quotes')
+        .select('status')
+        .eq('id', String(quoteId))
+        .maybeSingle()
+      check(stillOpen?.status === 'PROPOSED', 'Le devis est resté « Proposé »', stillOpen?.status)
+
+      // --- Et le porteur légitime décide.
+      const decided = await strong.rpc('decide_maintenance_quote', {
+        p_quote_id: String(quoteId),
+        p_accept: true,
+      })
+      check(!refused(decided), 'La capacité `validate` décide du devis', decided.error?.message ?? '')
+
+      // --- Décider ne recopie aucun montant (DEC-008).
+      const { data: unchanged } = await admin
+        .from('maintenance_costs')
+        .select('estimated_cost, actual_cost')
+        .eq('maintenance_id', costed)
+        .maybeSingle()
+      check(
+        unchanged?.estimated_cost === 250000 && unchanged?.actual_cost === 300000,
+        'Accepter un devis (280 000) ne recopie rien dans les coûts'
+      )
+
+      // --- Un justificatif ne s'ouvre pas sans `cost.view`.
+      const { data: document } = await admin
+        .from('maintenance_documents')
+        .insert({
+          maintenance_id: costed,
+          doc_type: 'INVOICE',
+          label: `${MARK} — facture`,
+          storage_path: `maintenances/${costed}/audit-${STAMP}.pdf`,
+          file_name: 'audit.pdf',
+        })
+        .select('id')
+        .single()
+
+      const blindDoc = await noFinance
+        .from('maintenance_documents')
+        .select('id')
+        .eq('id', document.id)
+      check(
+        (blindDoc.data?.length ?? 0) === 0,
+        'RLS ne livre aucun justificatif financier sans `cost.view`'
+      )
+    }
+
+    /* ------------------------------------------------------------------ */
+    console.log('\n──────────────────────────────────────────────────────────────')
     console.log('CATALOGUE ET DONNÉES DEMO\n')
 
     {
       const { count: total } = await admin
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-      check(total === 152, 'Catalogue inchangé', `${total} permissions`)
+      check(total === 153, 'Catalogue conforme', `${total} permissions`)
 
       const [{ count: clients }, { count: vehicles }] = await Promise.all([
         admin

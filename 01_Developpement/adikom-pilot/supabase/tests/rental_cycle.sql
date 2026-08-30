@@ -424,7 +424,7 @@ begin
 end $$;
 
 
--- --- 13. Catalogue : 152 permissions, les quatre capacités servies présentes ---------------
+-- --- 13. Catalogue : 153 permissions, les quatre capacités servies présentes ---------------
 --
 -- Quatre, et non six. `rental.reservations.download` et `.print` ont été
 -- retirées le 26/08/2026 : aucun document de réservation n'existe, et un
@@ -473,11 +473,11 @@ begin
 
   select count(*) into total from public.permissions;
 
-  if total <> 152 then
-    raise exception 'Catalogue attendu à 152 permissions, obtenu %.', total;
+  if total <> 153 then
+    raise exception 'Catalogue attendu à 153 permissions, obtenu %.', total;
   end if;
 
-  raise notice '[OK] 13. Catalogue : 152 permissions, les 4 capacités du cycle sont sensibles.';
+  raise notice '[OK] 13. Catalogue : 153 permissions, les 4 capacités du cycle sont sensibles.';
 end $$;
 
 

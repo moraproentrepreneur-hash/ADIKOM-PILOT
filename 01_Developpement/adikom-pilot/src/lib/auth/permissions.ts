@@ -113,6 +113,12 @@ export const PERMISSIONS = {
   MAINTENANCE_VIEW: 'rental.maintenance.view',
   MAINTENANCE_CREATE: 'rental.maintenance.create',
   MAINTENANCE_UPDATE: 'rental.maintenance.update',
+  /*
+   * Consulter un coût et le saisir sont deux capacités (DEC-024, arbitrage
+   * L1 du 28/08/2026). RLS étant ROW-level, les montants vivent dans des
+   * tables séparées : c'est la seule façon de faire respecter la lecture.
+   */
+  MAINTENANCE_COST_VIEW: 'rental.maintenance.cost.view',
   MAINTENANCE_COST_UPDATE: 'rental.maintenance.cost.update',
   MAINTENANCE_VALIDATE: 'rental.maintenance.validate',
   MAINTENANCE_CLOSE: 'rental.maintenance.close',
