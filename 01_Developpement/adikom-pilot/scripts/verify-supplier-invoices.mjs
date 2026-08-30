@@ -283,8 +283,14 @@ async function main() {
       await page.fill('#externalRef', `FRN-${STAMP}`)
       await page.fill('#invoiceDate', '2026-08-01')
       await page.fill('#dueDate', '2026-09-01')
-      await page.click('button[type="submit"]')
-      await page.waitForURL('**/facturation/fournisseurs/**', { timeout: 30000 })
+
+      /*
+       * Le bouton est désigné par son NOM, jamais par `button[type=submit]` :
+       * la barre de l'application en porte un autre — « Se déconnecter » —, et
+       * un sélecteur générique le trouverait en premier.
+       */
+      await page.getByRole('button', { name: 'Enregistrer la facture' }).click()
+      await page.waitForURL(/\/facturation\/fournisseurs\/[0-9a-f-]{36}/, { timeout: 30000 })
 
       invoiceId = page.url().split('/facturation/fournisseurs/')[1]?.split('?')[0] ?? null
       if (invoiceId) fixtures.invoices.push(invoiceId)

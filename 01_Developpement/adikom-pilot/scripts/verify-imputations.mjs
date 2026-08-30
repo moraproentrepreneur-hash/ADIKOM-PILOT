@@ -470,9 +470,15 @@ async function main() {
         'Aucun net à payer n’est affiché'
       )
       check(!/Solde\s*:?\s*[\d  ]+ KMF/i.test(text), 'Aucun solde non plus')
+      /*
+       * Depuis le LOT 5, la facture existe : l'écran ne renvoie plus à « une
+       * étape ultérieure », il nomme le RATTACHEMENT comme condition de l'effet
+       * financier. Ce que ce contrôle prouve reste le même — une imputation
+       * validée sans facture ne réduit rien (DEC-013).
+       */
       check(
-        /relève d’une étape ultérieure/.test(text),
-        'La facturation fournisseur est annoncée comme ultérieure'
+        /rattach/i.test(text),
+        'Le rattachement à une facture est nommé comme condition de l’effet'
       )
 
       // Sans droit de préparer, aucun formulaire.
@@ -612,14 +618,27 @@ async function main() {
     console.log('8 — AUCUN EFFET SUR L’ÉTAPE 2.5 · AUDIT · DEMO\n')
 
     {
-      // Ni facture, ni paiement, ni solde : les tables n'existent pas.
+      /*
+       * `supplier_invoices` a quitté cette liste le 30/08/2026 : le LOT 5 l'a
+       * livrée. Ce qui reste en jeu, c'est qu'AUCUN RÈGLEMENT n'existe — et
+       * que le cycle d'imputation joué ci-dessus n'a rattaché aucune facture.
+       */
       const absent = []
-      for (const table of ['supplier_invoices', 'supplier_payments', 'payments']) {
+      for (const table of ['supplier_payments', 'payments', 'financial_accounts']) {
         const { error } = await admin.from(table).select('*').limit(1)
         if (!error) absent.push(table)
       }
-      check(absent.length === 0, 'Aucune table de facture ou de paiement n’est apparue',
-        absent.join(', '))
+      check(absent.length === 0, 'Aucune table de règlement n’est apparue', absent.join(', '))
+
+      const { data: attached } = await admin
+        .from('imputations')
+        .select('id')
+        .eq('id', imputationId)
+        .not('supplier_invoice_id', 'is', null)
+      check(
+        (attached ?? []).length === 0,
+        'Le cycle joué n’a rattaché aucune facture : l’imputation reste en attente'
+      )
 
       const { count: audited } = await admin
         .from('audit_log')
