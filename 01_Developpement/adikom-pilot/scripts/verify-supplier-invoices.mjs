@@ -134,6 +134,52 @@ async function mainText(page) {
   return (await page.locator('main').innerText()).replace(/\s+/g, ' ')
 }
 
+/**
+ * Déclenche un acte et ATTEND SON RÉSULTAT ANNONCÉ.
+ *
+ * `networkidle` ne prouve rien ici : une action serveur rend son résultat par
+ * un nouvel arbre React, sans navigation. Attendre le message que l'écran
+ * promet est le seul repère fiable — et c'est aussi ce qu'un utilisateur
+ * attendrait avant de continuer.
+ */
+async function act(page, buttonName, expected, timeout = 60000) {
+  const button = page.getByRole('button', { name: buttonName }).first()
+  await button.waitFor({ state: 'visible', timeout: 30000 })
+  await page.waitForTimeout(800)
+  await button.click()
+  await page.getByText(expected, { exact: false }).first().waitFor({ timeout })
+}
+
+/**
+ * Déclenche un acte qui FAIT DISPARAÎTRE SON PROPRE FORMULAIRE.
+ *
+ * Valider une facture retire le panneau de validation ; rattacher une
+ * imputation retire celui du rattachement. Le message de succès s'en va avec
+ * eux, et chercher un texte dans la page est trompeur — le panneau de
+ * détachement, par exemple, ANNONCE lui-même « en attente de facture » avant
+ * que rien ne soit fait.
+ *
+ * Le seul repère non ambigu est donc la disparition du bouton : elle ne
+ * survient qu'une fois l'état changé côté serveur, et l'écran re-rendu.
+ */
+async function actUntil(page, buttonName, needle, timeout = 60000) {
+  const button = page.getByRole('button', { name: buttonName }).first()
+  await button.waitFor({ state: 'visible', timeout: 30000 })
+  // L'hydratation n'est pas couverte par l'attente d'actionabilité : un clic
+  // trop tôt part dans le vide.
+  await page.waitForTimeout(800)
+  await button.click()
+
+  const started = Date.now()
+  for (;;) {
+    const text = await mainText(page).catch(() => '')
+    if (text.includes(needle)) return true
+    if (Date.now() - started > timeout) return false
+    await page.waitForTimeout(1500)
+    if (Date.now() - started > timeout / 3) await page.reload({ waitUntil: 'load' })
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 
 async function main() {
@@ -305,43 +351,81 @@ async function main() {
         'L’écran DIT qu’aucun montant payé ni solde n’est calculé'
       )
 
+      /** Le montant brut lu sur la fiche, en entier (DEC-010). */
+      async function grossOnScreen() {
+        const row = await page
+          .locator('dt', { hasText: 'Montant brut' })
+          .first()
+          .locator('xpath=following-sibling::dd[1]')
+          .innerText()
+        return Number(row.replace(/[^\d]/g, ''))
+      }
+
       // --- Les lignes font le montant brut.
       async function addLine(label, amount) {
         await page.fill('#label', label)
         await page.fill('#amount', String(amount))
-        await page.getByRole('button', { name: 'Ajouter la ligne' }).click()
-        await page.waitForLoadState('networkidle')
+        await act(page, 'Ajouter la ligne', 'La ligne a été ajoutée')
+        await page.reload({ waitUntil: 'load' })
       }
 
       await addLine(`${MARK} — mise à disposition`, 400000)
       await addLine(`${MARK} — complément`, 200000)
 
-      await page.reload({ waitUntil: 'load' })
-      text = await mainText(page)
-      check(/600\s*000 KMF/.test(text), 'Le montant brut est la somme des lignes (600 000)')
+      check(
+        (await grossOnScreen()) === 600000,
+        'Le montant brut est la somme des lignes (600 000)',
+        `${await grossOnScreen()}`
+      )
+
+      /*
+       * Le retrait d'une ligne n'annonce rien : c'est un lien discret, sans
+       * message de succès. Le repère fiable est donc le MONTANT BRUT lui-même,
+       * relu jusqu'à ce qu'il ait bougé.
+       */
+      async function waitForGross(expected, timeout = 45000) {
+        const started = Date.now()
+        for (;;) {
+          const value = await grossOnScreen().catch(() => null)
+          if (value === expected) return value
+          if (Date.now() - started > timeout) return value
+          await page.waitForTimeout(1000)
+          if (Date.now() - started > timeout / 2) await page.reload({ waitUntil: 'load' })
+        }
+      }
 
       // Une ligne retirée sort du total, sans être effacée.
+      await page.waitForTimeout(800)
       await page.getByRole('button', { name: 'Retirer' }).last().click()
-      await page.waitForLoadState('networkidle')
-      await page.reload({ waitUntil: 'load' })
-      text = await mainText(page)
-      check(/400\s*000 KMF/.test(text), 'Une ligne retirée sort du montant brut (400 000)')
+      const afterRemoval = await waitForGross(400000)
+      check(
+        afterRemoval === 400000,
+        'Une ligne retirée sort du montant brut (400 000)',
+        `${afterRemoval}`
+      )
 
       // On ramène le brut à 500 000, montant de l'exemple de référence.
       await addLine(`${MARK} — solde de mise à disposition`, 100000)
-      await page.reload({ waitUntil: 'load' })
-      text = await mainText(page)
-      check(/500\s*000 KMF/.test(text), 'Montant brut ramené à 500 000 KMF')
+      check(
+        (await grossOnScreen()) === 500000,
+        'Montant brut ramené à 500 000 KMF',
+        `${await grossOnScreen()}`
+      )
 
-      // --- Soumettre puis valider.
-      await page.getByRole('button', { name: 'Soumettre au contrôle' }).click()
-      await page.waitForLoadState('networkidle')
+      /*
+       * --- Soumettre puis valider.
+       *
+       * Le repère est le libellé d'EFFET du nouvel état — « Saisie complète »,
+       * puis « Dette reconnue ». Il n'apparaît nulle part ailleurs, là où
+       * « En attente » ou « Validée » figurent aussi dans des phrases
+       * explicatives.
+       */
+      await actUntil(page, 'Soumettre au contrôle', 'Saisie complète')
       await page.reload({ waitUntil: 'load' })
       text = await mainText(page)
       check(text.includes('En attente'), 'La facture passe « En attente »')
 
-      await page.getByRole('button', { name: 'Valider la facture' }).click()
-      await page.waitForLoadState('networkidle')
+      await actUntil(page, 'Valider la facture', 'Dette reconnue')
       await page.reload({ waitUntil: 'load' })
       text = await mainText(page)
       check(text.includes('Validée'), 'La facture passe « Validée »')
@@ -373,8 +457,7 @@ async function main() {
 
       await page.waitForFunction(() => document.querySelector('#invoiceId') !== null)
       await page.selectOption('#invoiceId', invoiceId)
-      await page.getByRole('button', { name: 'Rattacher à la facture' }).click()
-      await page.waitForLoadState('networkidle')
+      await actUntil(page, 'Rattacher à la facture', 'Prise en compte dans le montant dû')
       await page.reload({ waitUntil: 'load' })
       text = await mainText(page)
       check(text.includes('Imputée'), 'L’imputation de 400 000 passe « Imputée »')
@@ -385,15 +468,22 @@ async function main() {
 
       // Le net à payer de la facture a diminué.
       await page.goto(`${base}/facturation/fournisseurs/${invoiceId}`, { waitUntil: 'load' })
-      text = await mainText(page)
-      check(/100\s*000 KMF/.test(text), 'Net à payer = 500 000 − 400 000 = 100 000 KMF')
+      const net = Number(
+        (
+          await page
+            .locator('dt', { hasText: 'Net à payer' })
+            .first()
+            .locator('xpath=following-sibling::dd[1]')
+            .innerText()
+        ).replace(/[^\d]/g, '')
+      )
+      check(net === 100000, 'Net à payer = 500 000 − 400 000 = 100 000 KMF', `${net}`)
 
       // §20 : 400 000 + 300 000 dépasserait 500 000.
       await page.goto(`${base}/facturation/imputations/${impMain}`, { waitUntil: 'load' })
       await page.waitForFunction(() => document.querySelector('#invoiceId') !== null)
       await page.selectOption('#invoiceId', invoiceId)
-      await page.getByRole('button', { name: 'Rattacher à la facture' }).click()
-      await page.waitForLoadState('networkidle')
+      await act(page, 'Rattacher à la facture', 'dépasser le montant de la facture')
       text = await mainText(page)
       check(
         /dépasser le montant de la facture/i.test(text),
@@ -422,8 +512,7 @@ async function main() {
       const { context, page } = await signIn(browser, base, accounts.full)
 
       await page.goto(`${base}/facturation/fournisseurs/${invoiceId}`, { waitUntil: 'load' })
-      await page.getByRole('button', { name: 'Annuler la facture' }).click()
-      await page.waitForLoadState('networkidle')
+      await act(page, 'Annuler la facture', 'doit d’abord en être détachée')
       let text = await mainText(page)
       check(
         /doit d’abord en être détachée|réduisent encore cette facture/i.test(text),
@@ -439,18 +528,25 @@ async function main() {
 
       // Détachement depuis la fiche de l'imputation.
       await page.goto(`${base}/facturation/imputations/${impBig}`, { waitUntil: 'load' })
-      await page.getByRole('button', { name: 'Détacher de la facture' }).click()
-      await page.waitForLoadState('networkidle')
+      await actUntil(page, 'Détacher de la facture', 'Ne réduit encore aucun montant dû')
       await page.reload({ waitUntil: 'load' })
       text = await mainText(page)
       check(
-        /en attente de facture/i.test(text),
+        /validée et en attente de facture/i.test(text),
         'Détachée, l’imputation redevient « en attente de facture »'
       )
 
       await page.goto(`${base}/facturation/fournisseurs/${invoiceId}`, { waitUntil: 'load' })
-      text = await mainText(page)
-      check(/500\s*000 KMF/.test(text), 'Le net à payer est restitué à 500 000 KMF')
+      const restored = Number(
+        (
+          await page
+            .locator('dt', { hasText: 'Net à payer' })
+            .first()
+            .locator('xpath=following-sibling::dd[1]')
+            .innerText()
+        ).replace(/[^\d]/g, '')
+      )
+      check(restored === 500000, 'Le net à payer est restitué à 500 000 KMF', `${restored}`)
 
       await context.close()
     }
