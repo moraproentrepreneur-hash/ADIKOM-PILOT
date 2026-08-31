@@ -188,14 +188,14 @@ export const NAVIGATION: NavEntry[] = [
         href: '/tresorerie/comptes',
         icon: Wallet,
         permission: PERMISSIONS.ACCOUNTS_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Écritures',
         href: '/tresorerie/ecritures',
         icon: History,
         permission: PERMISSIONS.ENTRIES_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Virement interne',

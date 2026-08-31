@@ -62,6 +62,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-026 | Imputation fournisseur — LOT 4 de l'Étape 2.4 | Arbitrages et contradiction | Appliquée — **tranche une contradiction** | 2026-08-29 |
 | DEC-027 | Facture fournisseur — LOT 5 de l'Étape 2.5 | Arbitrages | Appliquée — **ouvre DEC-013** | 2026-08-30 |
 | DEC-028 | Unicité de la référence fournisseur | Arbitrage ADIKOM | Appliquée — **clôt DEC-027 §i** | 2026-08-31 |
+| DEC-029 | Banques & Caisses et règlements — LOT 6 | Arbitrages ADIKOM | Appliquée — **ouvre le module 6** | 2026-08-31 |
 
 ---
 
@@ -1662,17 +1663,170 @@ fournisseur.
 
 ---
 
+## DEC-029 — Banques & Caisses et règlements fournisseurs (LOT 6)
+
+**Date :** 31 août 2026
+**Portée :** métier, technique et sécurité
+**Statut :** appliquée · **ouvre le module 6, par nécessité**
+
+### Contexte — une dépendance documentée, pas un élargissement
+
+DEC-021 désigne l'Étape 2.5 : *Facturation → Paiements → Soldes → Clôture*. Le
+LOT 5 a livré la facture. Le paiement, lui, ne peut pas exister seul :
+
+> `Workflow 08` §13 — « Chaque paiement doit être associé au **compte financier**
+> utilisé. »
+> §46 — « Le module **Banques & Caisses** doit centraliser les comptes
+> financiers. Le paiement utilise l'un de ces comptes. »
+> §47 — un paiement fournisseur **diminue** le solde du compte.
+
+Le socle du module 6 est donc livré **parce que le règlement ne peut pas s'en
+passer**, et pas un objet de plus.
+
+### a. Contradiction signalée, et tranchée par ADIKOM
+
+§13 rend le compte obligatoire sans réserve. §45 range pourtant parmi les
+incohérences « un paiement sans compte financier associé **lorsque celui-ci est
+obligatoire** » — ce qui suppose des cas où il ne le serait pas.
+
+**Arbitrage ADIKOM du 31/08/2026 :** le socle des comptes est livré avec les
+règlements, dans un seul lot. §13 s'applique donc sans exception : **aucun
+règlement n'existe sans compte mouvementé.**
+
+### b. Aucun contrôle de découvert — arbitrage ADIKOM
+
+Un règlement qui rendrait un compte négatif **n'est pas bloqué**. La
+documentation ne définit ni découvert autorisé ni seuil, et `Module 06` §30 ne
+pose ce contrôle que pour le **virement interne**.
+
+Le solde est **affiché**, jamais opposé. Une règle de découvert sera ajoutée
+quand ADIKOM l'aura définie (DEC-008). Un compte peut également **ouvrir à
+découvert** : le solde initial accepte une valeur négative.
+
+### c. Deux états de règlement, et le catalogue l'explique
+
+`Workflow 08` §24 énumère Brouillon · En attente · Validé · Annulé, puis ajoute :
+« Le statut définitif dépendra des règles d'implémentation. »
+
+`billing.supplier_payments` n'expose que `view`, `create` et `cancel` : **aucune
+capacité de validation**. Ce n'est pas un oubli — `billing.misc_payments` en
+possède une. §56 pose d'ailleurs la séparation saisie/validation comme une
+**faculté** : « ADIKOM **peut décider** de séparer… ».
+
+Un règlement **constate un décaissement déjà effectué** (`Module 07` §35 : « les
+paiements **effectués** aux fournisseurs »). Il naît validé et s'annule. Créer
+une capacité de validation pour atteindre « Brouillon » et « En attente »
+inventerait une organisation qu'ADIKOM n'a pas demandée (DEC-024).
+
+*Si ADIKOM souhaite cette séparation, une capacité devra être créée : c'est une
+décision d'organisation, pas un détail technique.*
+
+### d. « Payée » et « Partiellement payée » restent DÉRIVÉES
+
+`Module 07` §55 : « La logique doit être calculée automatiquement. »
+
+Un statut stocké doublerait la somme qui le dit — les règlements validés — et
+pourrait la contredire : il suffirait d'un règlement annulé pour qu'une facture
+reste « Payée » sans l'être. Les deux états rejoignent donc « En retard »
+(DEC-025 §a) : présents à l'énumération, **jamais écrits**, calculés à
+l'affichage et au filtrage. Le refus de transition posé par le LOT 5 demeure ;
+seul son motif change.
+
+Conséquence : une facture **soldée** n'est jamais affichée « en retard », même
+échéance dépassée. Le retard qualifie une dette qui court encore.
+
+### e. Aucun montant financier n'est stocké — la règle tient
+
+| Montant | Source |
+|---|---|
+| Solde d'un compte | solde initial + entrées − sorties (`Module 06` §17) |
+| Total réglé d'une facture | Σ des règlements **validés** (`Workflow 08` §21) |
+| Reste dû | net à payer − total réglé |
+
+Un règlement **annulé** sort de la somme (§28), comme l'imputation annulée sort
+du plafond (`Workflow 06` §40) et la ligne archivée du montant brut.
+
+Le **solde initial** se fige dès la première écriture (`Module 06` §12) : le
+corriger après coup déplacerait un solde sans qu'aucun mouvement ne l'explique,
+ce que §17 proscrit.
+
+### f. L'écriture est une conséquence, pas un second acte
+
+Le règlement **produit** son écriture ; il ne l'écrit pas librement.
+`treasury.entries.create` n'est donc pas exigée du payeur — même traitement que
+l'occupation de calendrier posée par une maintenance, qui ne réclame aucune
+capacité de calendrier.
+
+La policy d'insertion des écritures le dit explicitement, et un déclencheur
+vérifie que l'écriture **correspond** à son règlement : même compte, même
+montant, sens SORTIE. Une écriture libre, elle, exige bien
+`treasury.entries.create` — et aucun écran ne la produit.
+
+### g. Cinq capacités pour régler, chacune nommée
+
+`billing.supplier_payments.create` · `.view` · `billing.supplier_invoices.view` ·
+`billing.imputations.view` · `treasury.accounts.view`.
+
+Les quatre lectures ne sont pas du décor : §21 calcule le reste dû du **net**
+après imputations, et §22 refuse ce qui le dépasse. Sans elles, le contrôle
+porterait sur des sommes muettes et laisserait passer exactement ce qu'il doit
+refuser.
+
+### h. Un défaut trouvé par l'audit, corrigé avant livraison
+
+La migration 049 n'exigeait que `treasury.balances.view` pour calculer un solde.
+Or la somme porte sur `treasury_entries`, lues **sous RLS** : un porteur de cette
+seule capacité ne voyait aucune écriture, et la fonction lui renvoyait le
+**solde d'ouverture** — un nombre faux, présenté comme un solde.
+
+`verify:capabilities` l'a révélé : un compte débité de 120 000 KMF affichait
+encore 1 000 000, **sans la moindre erreur**.
+
+La migration **050** exige `treasury.entries.view` en plus. C'est la conséquence
+assumée du refus de `SECURITY DEFINER` (DEC-022, DEC-026 §f) : une fonction qui
+s'exécute avec les droits de l'appelant doit **refuser**, jamais répondre à
+côté. `treasury.balances.view` reste une capacité distincte — elle interdit le
+solde à qui ne l'a pas — mais elle ne se donne plus seule.
+
+### i. Ce que le LOT 6 ne fait pas
+
+Aucun **virement interne** (`Module 06` §28 à §33), aucun **rapprochement**
+bancaire ou de caisse (§42 : « rapprochement **futur** »), aucun tableau de bord
+financier, aucun seuil d'alerte. Aucune **écriture libre** — dépôt et retrait
+figurent au vocabulaire de §20, mais aucun écran ne les produit. Aucun
+**règlement client**, aucun **paiement divers** : la facture client n'existe
+pas. Aucun **justificatif** de règlement (`Workflow 08` §17, facultatif).
+
+### Conséquences
+
+- Migrations **049** et **050** : sept types, trois tables, deux fonctions de
+  calcul, huit déclencheurs, sept fonctions atomiques `SECURITY INVOKER`, RLS,
+  audit, interdiction de suppression, révocation d'`EXECUTE` à PUBLIC.
+- **Aucune permission créée** — les dix codes employés existent depuis la
+  migration 007. Catalogue : 153, inchangé.
+- Menus **Comptes** et **Écritures** ouverts ; onglet **Règlements** de la fiche
+  fournisseur livré ; export des écritures sous `treasury.entries.export`.
+- Recettes : `db:verify:treasury` (19 contrôles), `verify:treasury`, et
+  `verify:capabilities` porté de 94 à **118 contrôles**.
+- Les recettes des LOTs 3, 4 et 5 cessent d'exiger l'absence de
+  `supplier_payments` et `financial_accounts` — le LOT 6 les a livrés — et
+  vérifient désormais que la **facturation client** reste hors périmètre, et
+  qu'aucun solde n'est stocké.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
 
 1. **DEC-007** — Le montant dû au fournisseur doit-il être généré par le système (contrat, loyer, part par location) ou saisi manuellement à réception de la facture ?
-2. **DEC-008** — Règles d'arrondi de la durée, traitement du retard, barèmes carburant / kilométrage / dommages, gestion de la caution et de l'acompte, période de préparation, seuils de validation des imputations.
+2. **DEC-008** — Règles d'arrondi de la durée, traitement du retard, barèmes carburant / kilométrage / dommages, gestion de la caution et de l'acompte, période de préparation, seuils de validation des imputations. *S'y ajoute le **découvert autorisé** d'un compte financier : aucun contrôle n'est posé faute de règle (**DEC-029 §b**).*
 3. **DEC-009** — Confirmation de la règle de résolution des permissions multi-groupes.
 4. **DEC-014** — Régime de taxes applicable. *Le fuseau horaire est tranché : `Indian/Comoro`, confirmé par **DEC-025 §e**.*
 5. **DEC-005** — Confirmation des formats restants et de la règle de remise à zéro annuelle. *Partiellement tranché : les formats client, fournisseur et véhicule sont confirmés par **DEC-021**. Les documents commerciaux relèvent désormais de **DEC-023**, dont l'implémentation est reportée à l'Étape 2.5. Restent à confirmer les objets datés non commerciaux — réservation, location, maintenance, imputation.*
 6. **DEC-023 §4** — Validation par le responsable comptable et fiscal d'ADIKOM de la convention de référence des factures, avant toute première émission. *Le LOT 5 conserve pour cette raison le format provisoire `FAC-F-2026-000001`, paramétrable (**DEC-027 §h**).*
 ~~7. **DEC-027 §i** — Une même référence de facture peut-elle être enregistrée deux fois pour un même fournisseur ?~~ **Tranché par DEC-028** (31 août 2026) : unique par fournisseur, refus explicite par la base.
+8. **DEC-029 §c** — ADIKOM souhaite-t-elle séparer la **saisie** et la **validation** d'un règlement fournisseur (`Workflow 08` §56) ? Aujourd'hui, un règlement constate un décaissement effectué et naît validé ; le catalogue n'offre aucune capacité de validation. La séparation suppose d'en créer une : c'est une décision d'organisation.
 
 ---
 

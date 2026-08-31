@@ -43,8 +43,10 @@ import {
   isAwaitingInvoice,
 } from '@/features/imputations/constants'
 import { listSupplierInvoicesForSupplier } from '@/features/supplier-invoices/data'
+import { listSupplierPayments } from '@/features/supplier-invoices/payments-data'
 import {
   displayStatus as displayInvoiceStatus,
+  PAYMENT_METHOD_LABELS,
   SUPPLIER_INVOICE_STATUS_LABELS,
   SUPPLIER_INVOICE_STATUS_TONES,
 } from '@/features/supplier-invoices/constants'
@@ -75,6 +77,7 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
     canPrint,
     canViewImputations,
     canViewInvoices,
+    canViewPayments,
   ] = await Promise.all([
     can(PERMISSIONS.SUPPLIERS_UPDATE),
     can(PERMISSIONS.SUPPLIERS_ARCHIVE),
@@ -91,6 +94,8 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
     can(PERMISSIONS.IMPUTATIONS_VIEW),
     // LOT 5 : même règle pour les factures — l'onglet suit sa propre capacité.
     can(PERMISSIONS.SUPPLIER_INVOICES_VIEW),
+    // LOT 6 : et pour les règlements.
+    can(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW),
   ])
 
   const tabs: TabItem[] = [
@@ -134,7 +139,15 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
           },
         ]
       : []),
-    { key: 'reglements', label: 'Règlements', planned: true },
+    ...(canViewPayments
+      ? [
+          {
+            key: 'reglements',
+            label: 'Règlements',
+            href: `/tiers/fournisseurs/${id}?onglet=reglements`,
+          },
+        ]
+      : []),
     { key: 'documents', label: 'Documents', planned: true },
   ]
 
@@ -200,7 +213,13 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
       {tab === 'vehicules' ? (
         <VehiclesTab supplierId={id} />
       ) : tab === 'factures' ? (
-        <SupplierInvoicesTab supplierId={id} canSeeImputations={canViewImputations} />
+        <SupplierInvoicesTab
+          supplierId={id}
+          canSeeImputations={canViewImputations}
+          canSeePayments={canViewPayments}
+        />
+      ) : tab === 'reglements' ? (
+        <SupplierPaymentsTab supplierId={id} />
       ) : tab === 'imputations' ? (
         <SupplierImputationsTab supplierId={id} canSeeInvoices={canViewInvoices} />
       ) : tab === 'paiement' ? (
@@ -304,11 +323,16 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
 async function SupplierInvoicesTab({
   supplierId,
   canSeeImputations,
+  canSeePayments,
 }: {
   supplierId: string
   canSeeImputations: boolean
+  canSeePayments: boolean
 }) {
-  const invoices = await listSupplierInvoicesForSupplier(supplierId, { canSeeImputations })
+  const invoices = await listSupplierInvoicesForSupplier(supplierId, {
+    canSeeImputations,
+    canSeePayments,
+  })
 
   // DEC-010 : sommes d'entiers, aucun flottant. Les factures annulées sortent
   // du total : une dette annulée n'est pas due.
@@ -317,12 +341,16 @@ async function SupplierInvoicesTab({
   const netTotal = canSeeImputations
     ? live.reduce((total, invoice) => total + (invoice.netPayable ?? 0), 0)
     : null
+  const dueTotal =
+    canSeeImputations && canSeePayments
+      ? live.reduce((total, invoice) => total + (invoice.remainingDue ?? 0), 0)
+      : null
 
   return (
     <div className="space-y-5">
       <Notice tone="info">
-        Une facture validée reconnaît une <strong>dette</strong>. Les <strong>règlements</strong>
-        {' '}relèvent d’une étape ultérieure : ni montant payé ni solde ne sont calculés.
+        Une facture validée reconnaît une <strong>dette</strong>. Une <strong>imputation</strong>
+        {' '}la réduit sans la payer ; un <strong>règlement</strong> la solde en débitant un compte.
       </Notice>
 
       <Card
@@ -340,13 +368,18 @@ async function SupplierInvoicesTab({
                 calculable.
               </span>
             ) : (
-              <span className="font-medium tabular">{formatImputationAmount(netTotal)}</span>
+              <span className="tabular">{formatImputationAmount(netTotal)}</span>
             )}
           </InfoRow>
-          <InfoRow label="Payé et solde">
-            <span className="text-muted">
-              Inconnus du système : aucun règlement fournisseur n’est encore géré.
-            </span>
+          <InfoRow label="Reste dû" hint="Net à payer moins les règlements validés.">
+            {dueTotal === null ? (
+              <span className="text-muted">
+                Non calculable : il suppose de consulter à la fois les imputations et les
+                règlements.
+              </span>
+            ) : (
+              <span className="font-medium tabular">{formatImputationAmount(dueTotal)}</span>
+            )}
           </InfoRow>
         </dl>
       </Card>
@@ -364,7 +397,8 @@ async function SupplierInvoicesTab({
               const shown = displayInvoiceStatus(
                 invoice.status,
                 invoice.dueDate,
-                invoice.netPayable
+                invoice.netPayable,
+                invoice.paidAmount
               )
 
               return (
@@ -389,9 +423,9 @@ async function SupplierInvoicesTab({
                           {formatImputationAmount(invoice.grossAmount)}
                         </span>
                         <span className="block text-xs text-muted tabular">
-                          {invoice.netPayable === null
-                            ? 'net non calculable'
-                            : `net ${formatImputationAmount(invoice.netPayable)}`}
+                          {invoice.remainingDue === null
+                            ? 'reste dû non calculable'
+                            : `reste dû ${formatImputationAmount(invoice.remainingDue)}`}
                         </span>
                       </span>
                       <Badge tone={SUPPLIER_INVOICE_STATUS_TONES[shown]}>
@@ -402,6 +436,84 @@ async function SupplierInvoicesTab({
                 </li>
               )
             })}
+          </ul>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+/**
+ * Règlements du fournisseur — Workflow 08 §52, historique fournisseur.
+ *
+ * Les règlements ne portent pas le fournisseur : ils portent la FACTURE, qui le
+ * porte (§33 — Fournisseur → Facture → Imputation → Paiement). Ce qui est
+ * affiché ici est donc l'exact reflet de ce qui est enregistré, et non une
+ * colonne recopiée qui pourrait le contredire.
+ */
+async function SupplierPaymentsTab({ supplierId }: { supplierId: string }) {
+  const payments = await listSupplierPayments(supplierId)
+
+  // DEC-010 : somme d'entiers. Les règlements annulés ne comptent plus (§28).
+  const paidTotal = payments
+    .filter((payment) => payment.status === 'VALIDATED')
+    .reduce((total, payment) => total + payment.amount, 0)
+
+  return (
+    <div className="space-y-5">
+      <Notice tone="info">
+        Un règlement est un <strong>décaissement réel</strong> : il fait sortir de l’argent d’un
+        compte. Il ne se confond pas avec une imputation, qui réduit la dette sans la payer
+        (Module 07 §37).
+      </Notice>
+
+      <Card title="Total réglé" description="Règlements validés, annulations exclues (§28).">
+        <dl>
+          <InfoRow label="Versé à ce fournisseur">
+            <span className="font-medium tabular">{formatImputationAmount(paidTotal)}</span>
+          </InfoRow>
+        </dl>
+      </Card>
+
+      <Card title="Règlements" description="Chaque décaissement reste identifiable.">
+        {payments.length === 0 ? (
+          <EmptyState
+            icon={CarFront}
+            title="Aucun règlement"
+            description="Aucune facture de ce fournisseur n’a encore été réglée."
+          />
+        ) : (
+          <ul className="divide-y divide-line">
+            {payments.map((payment) => (
+              <li key={payment.id} className="py-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-ink tabular">{payment.paymentNo}</p>
+                    <p className="text-xs text-muted">
+                      {formatDate(payment.paidOn)} · {PAYMENT_METHOD_LABELS[payment.method]}
+                      {payment.invoiceNo ? ` · facture ${payment.invoiceNo}` : ''}
+                    </p>
+                    <p className="text-xs text-muted">
+                      {payment.accountLabel ?? 'Compte non lisible avec vos droits'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={
+                        payment.status === 'CANCELLED'
+                          ? 'text-sm text-muted line-through tabular'
+                          : 'font-medium tabular'
+                      }
+                    >
+                      {formatImputationAmount(payment.amount)}
+                    </span>
+                    <Badge tone={payment.status === 'CANCELLED' ? 'danger' : 'success'}>
+                      {payment.status === 'CANCELLED' ? 'Annulé' : 'Validé'}
+                    </Badge>
+                  </div>
+                </div>
+              </li>
+            ))}
           </ul>
         )}
       </Card>

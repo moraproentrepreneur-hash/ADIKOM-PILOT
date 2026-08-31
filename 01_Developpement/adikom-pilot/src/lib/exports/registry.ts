@@ -38,6 +38,12 @@ import {
   displayStatus as displaySupplierInvoiceStatus,
   SUPPLIER_INVOICE_STATUS_LABELS,
 } from '@/features/supplier-invoices/constants'
+import { listTreasuryEntries } from '@/features/treasury/data'
+import {
+  DIRECTION_LABELS,
+  ENTRY_KIND_LABELS,
+  ENTRY_STATUS_LABELS,
+} from '@/features/treasury/constants'
 
 /**
  * Registre des exports.
@@ -345,7 +351,10 @@ export const EXPORTS: Record<string, ExportDefinition> = {
        * d'un classeur exporté l'affirmation qu'aucune déduction n'a eu lieu
        * (DEC-017, DEC-024).
        */
-      const mayReadImputations = await can(PERMISSIONS.IMPUTATIONS_VIEW)
+      const [mayReadImputations, mayReadPayments] = await Promise.all([
+        can(PERMISSIONS.IMPUTATIONS_VIEW),
+        can(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW),
+      ])
 
       const rows = await listSupplierInvoices(
         {
@@ -355,12 +364,13 @@ export const EXPORTS: Record<string, ExportDefinition> = {
           from: filters.du,
           to: filters.au,
         },
-        { canSeeImputations: mayReadImputations }
+        { canSeeImputations: mayReadImputations, canSeePayments: mayReadPayments }
       )
 
       /*
-       * Aucun montant payé, aucun solde : les règlements fournisseurs ne sont
-       * pas gérés. Une colonne à zéro serait lue comme une information.
+       * Le montant PAYÉ et le RESTE DÛ ne sortent qu'avec
+       * `billing.supplier_payments.view`, comme à l'écran : une colonne à zéro
+       * dans un classeur exporté ferait autorité alors qu'elle n'aurait rien lu.
        */
       return dataset(
         rows,
@@ -397,19 +407,75 @@ export const EXPORTS: Record<string, ExportDefinition> = {
                 },
               ])
             : []),
+          ...(mayReadPayments
+            ? ([
+                {
+                  header: 'Total réglé',
+                  width: 18,
+                  format: 'amount' as const,
+                  value: (r: (typeof rows)[number]) => r.paidAmount,
+                },
+                {
+                  header: 'Reste dû',
+                  width: 18,
+                  format: 'amount' as const,
+                  value: (r: (typeof rows)[number]) => r.remainingDue,
+                },
+              ])
+            : []),
           {
             header: 'État',
             width: 22,
             value: (r) =>
               SUPPLIER_INVOICE_STATUS_LABELS[
-                displaySupplierInvoiceStatus(r.status, r.dueDate, r.netPayable)
+                displaySupplierInvoiceStatus(r.status, r.dueDate, r.netPayable, r.paidAmount)
               ],
           },
         ],
-        mayReadImputations
-          ? 'Montant brut, imputations et net à payer'
-          : 'Montant brut — imputations non lisibles'
+        mayReadImputations && mayReadPayments
+          ? 'Montant brut, imputations, règlements et reste dû'
+          : 'Montant brut — certaines sommes ne sont pas lisibles'
       )
+    },
+  },
+
+  ecritures: {
+    title: 'Écritures',
+    viewPermission: PERMISSIONS.ENTRIES_VIEW,
+    permission: PERMISSIONS.ENTRIES_EXPORT,
+    entityType: 'treasury_entries',
+    moduleCode: 'treasury',
+    async build(filters) {
+      const rows = await listTreasuryEntries({
+        accountId: filters.compte,
+        direction: filters.sens,
+        status: filters.statut,
+        from: filters.du,
+        to: filters.au,
+      })
+
+      /*
+       * Le montant sort SIGNÉ (Module 06 §19) : stocké positif, il se lirait
+       * autrement comme une entrée dans un tableur où le sens ne se voit pas.
+       * Une écriture annulée sort à zéro — elle ne compte plus dans le solde
+       * (§36) — et sa colonne « État » le dit.
+       */
+      return dataset(rows, [
+        { header: 'Date', width: 14, format: 'date', value: (r) => toExcelDate(r.entryDate) },
+        { header: 'Compte', width: 34, value: (r) => r.accountLabel },
+        { header: 'Origine', width: 24, value: (r) => ENTRY_KIND_LABELS[r.kind] },
+        { header: 'Sens', width: 12, value: (r) => DIRECTION_LABELS[r.direction] },
+        {
+          header: 'Montant',
+          width: 18,
+          format: 'amount',
+          value: (r) =>
+            r.status === 'CANCELLED' ? 0 : r.direction === 'IN' ? r.amount : -r.amount,
+        },
+        { header: 'Libellé', width: 42, value: (r) => r.description },
+        { header: 'Référence', width: 22, value: (r) => r.reference },
+        { header: 'État', width: 14, value: (r) => ENTRY_STATUS_LABELS[r.status] },
+      ])
     },
   },
 

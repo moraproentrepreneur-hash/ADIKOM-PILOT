@@ -385,14 +385,15 @@ begin
    * écrire, et ne doit pas les avoir créées.
    *
    * `imputations` a quitté cette liste le 29/08/2026 (LOT 4),
-   * `supplier_invoices` le 30/08/2026 (LOT 5). Ce que ce contrôle doit
-   * désormais prouver, c'est que SAISIR UN COÛT n'en crée aucune — la garantie
-   * du §44, pas l'absence des tables.
+   * `supplier_invoices` le 30/08/2026 (LOT 5), `supplier_payments` le
+   * 31/08/2026 (LOT 6). Ce que ce contrôle doit désormais prouver, c'est que
+   * SAISIR UN COÛT n'en crée aucune — la garantie du §44, pas l'absence des
+   * tables.
    */
   select array_agg(tablename) into v_tbl
   from pg_tables
   where schemaname = 'public'
-    and tablename in ('customer_invoices', 'payments', 'supplier_payments');
+    and tablename in ('customer_invoices', 'customer_payments', 'supplier_balances');
   if v_tbl is not null then
     raise exception 'Le LOT 3 a créé des objets hors périmètre : %.', v_tbl;
   end if;

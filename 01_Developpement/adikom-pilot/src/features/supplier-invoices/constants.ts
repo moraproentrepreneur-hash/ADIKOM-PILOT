@@ -1,17 +1,21 @@
 import type { BadgeTone } from '@/components/ui/primitives'
 
 /**
- * Libellés et états de la facture fournisseur — Étape 2.5, LOT 5.
+ * Libellés et états de la facture fournisseur — Étape 2.5, LOTs 5 et 6.
  *
  * Module 07 §31 : les sept statuts documentés, et rien de plus.
  *
- * Trois ne sont pas produits par le système aujourd'hui :
+ * TROIS SE CALCULENT, ET NE S'ÉCRIVENT JAMAIS
  *
- *   `OVERDUE`                    DÉRIVÉ de l'échéance et de la date du jour
- *                                (DEC-025 §a). Jamais écrit en base.
- *   `PARTIALLY_PAID` · `PAID`    découlent de RÈGLEMENTS, qui relèvent du lot
- *                                suivant. Les transitions qui y mènent sont
- *                                refusées par la base, avec leur motif.
+ *   `OVERDUE`                    de l'échéance et de la date du jour
+ *                                (DEC-025 §a).
+ *   `PARTIALLY_PAID` · `PAID`    des RÈGLEMENTS enregistrés. Module 07 §55 :
+ *                                « La logique doit être calculée
+ *                                automatiquement. » Un statut stocké pourrait
+ *                                contredire la somme qui le dit — il suffirait
+ *                                d'un règlement annulé.
+ *
+ * La base refuse les trois transitions ; `displayStatus` les produit.
  */
 
 export type SupplierInvoiceStatus =
@@ -47,11 +51,11 @@ export const SUPPLIER_INVOICE_STATUS_TONES: Record<SupplierInvoiceStatus, BadgeT
 export const SUPPLIER_INVOICE_STATUS_EFFECT: Record<SupplierInvoiceStatus, string> = {
   DRAFT: 'En saisie. Aucune dette n’est encore reconnue.',
   PENDING: 'Saisie complète, en attente de contrôle. Aucune dette reconnue.',
-  VALIDATED: 'Dette reconnue. La facture peut recevoir des imputations.',
-  PARTIALLY_PAID: 'Partiellement réglée.',
-  PAID: 'Intégralement réglée.',
-  OVERDUE: 'Échéance dépassée et net à payer non soldé.',
-  CANCELLED: 'Annulée. Elle ne peut plus recevoir d’imputation.',
+  VALIDATED: 'Dette reconnue. La facture peut recevoir des imputations et des règlements.',
+  PARTIALLY_PAID: 'Partiellement réglée. Un reste dû subsiste.',
+  PAID: 'Intégralement réglée. Le net à payer est soldé.',
+  OVERDUE: 'Échéance dépassée et reste dû non soldé.',
+  CANCELLED: 'Annulée. Elle ne peut plus recevoir ni imputation ni règlement.',
 }
 
 /** Ordre d'affichage dans les filtres — celui de Module 07 §31. */
@@ -66,12 +70,11 @@ export const SUPPLIER_INVOICE_STATUS_ORDER: SupplierInvoiceStatus[] = [
 ]
 
 /**
- * Les statuts que le LOT 5 sait produire.
+ * Les statuts réellement ÉCRITS en base.
  *
- * « Partiellement payée » et « Payée » supposent des règlements ; « En retard »
- * se calcule. Aucun des trois n'est écrit en base.
+ * Les trois autres se calculent à l'affichage et au filtrage.
  */
-export const SUPPLIER_INVOICE_STATUS_REACHABLE: SupplierInvoiceStatus[] = [
+export const SUPPLIER_INVOICE_STATUS_STORED: SupplierInvoiceStatus[] = [
   'DRAFT',
   'PENDING',
   'VALIDATED',
@@ -93,25 +96,59 @@ export function acceptsImputations(status: SupplierInvoiceStatus): boolean {
   return status === 'VALIDATED'
 }
 
+/** Et seule une facture validée se règle : ni brouillon, ni annulée. */
+export function acceptsPayments(status: SupplierInvoiceStatus): boolean {
+  return status === 'VALIDATED'
+}
+
+/** Modes de paiement — Workflow 08 §12. */
+export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'BANK_DEPOSIT' | 'CHEQUE' | 'OTHER'
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  CASH: 'Espèces',
+  BANK_TRANSFER: 'Virement bancaire',
+  BANK_DEPOSIT: 'Dépôt bancaire',
+  CHEQUE: 'Chèque',
+  OTHER: 'Autre mode',
+}
+
+export const PAYMENT_METHOD_ORDER: PaymentMethod[] = [
+  'BANK_TRANSFER',
+  'CASH',
+  'BANK_DEPOSIT',
+  'CHEQUE',
+  'OTHER',
+]
+
 /**
- * « En retard » — Module 07 §31, dérivé (DEC-025 §a).
+ * Les trois états dérivés — Module 07 §31 et §55, DEC-025 §a.
  *
- * Une facture est en retard lorsque son échéance est passée et qu'il reste
- * quelque chose à payer. Tant qu'aucun règlement n'est géré, « reste à payer »
- * se lit « net à payer non nul ».
+ *   Payée                de `règlements ≥ net à payer`
+ *   Partiellement payée  d'un règlement au moins, sans solder
+ *   En retard            d'une échéance passée et d'un reste dû
  *
- * `netPayable` vaut `null` lorsqu'il n'est pas lisible : on ne conclut alors
- * rien, plutôt que de qualifier une facture de « en retard » sur une somme
+ * L'ORDRE COMPTE : une facture soldée n'est jamais « en retard », même si son
+ * échéance est passée. Le retard qualifie une dette qui court encore.
+ *
+ * `netPayable` ou `paidAmount` valent `null` lorsqu'ils ne sont pas lisibles :
+ * on ne conclut alors RIEN, plutôt que de qualifier une facture sur une somme
  * qu'on n'a pas pu lire (DEC-017).
  */
 export function displayStatus(
   status: SupplierInvoiceStatus,
   dueDate: string | null,
-  netPayable: number | null
+  netPayable: number | null,
+  paidAmount: number | null = null
 ): SupplierInvoiceStatus {
-  if (status !== 'VALIDATED' || !dueDate || netPayable === null || netPayable <= 0) {
-    return status
+  if (status !== 'VALIDATED' || netPayable === null) return status
+
+  if (paidAmount !== null && netPayable > 0) {
+    if (paidAmount >= netPayable) return 'PAID'
+    if (paidAmount > 0) return 'PARTIALLY_PAID'
   }
+
+  const remaining = netPayable - (paidAmount ?? 0)
+  if (!dueDate || remaining <= 0) return status
 
   // Comparaison de jours calendaires, sur le fuseau d'affichage : une échéance
   // au 30 n'est pas dépassée le 30.

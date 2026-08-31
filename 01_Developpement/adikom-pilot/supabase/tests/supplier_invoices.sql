@@ -131,7 +131,11 @@ begin
 end $$;
 
 
--- --- 3. LES RÈGLEMENTS N'EXISTENT PAS ---------------------------------------------------
+-- --- 3. LA FACTURATION CLIENT N'EXISTE PAS ----------------------------------------------
+--
+-- `supplier_payments` et `financial_accounts` ont quitté cette liste le
+-- 31/08/2026 : le LOT 6 les a livrés. Ce qui reste hors périmètre, c'est la
+-- facturation CLIENT — et le fait qu'aucun solde ne soit stocké nulle part.
 do $$
 declare v_bad text[];
 begin
@@ -139,15 +143,26 @@ begin
   from pg_tables
   where schemaname = 'public'
     and tablename in (
-      'supplier_payments', 'customer_invoices', 'payments',
-      'financial_accounts', 'supplier_balances', 'payment_allocations'
+      'customer_invoices', 'customer_payments', 'supplier_balances',
+      'payment_allocations'
     );
 
   if v_bad is not null then
-    raise exception 'Le LOT 5 a créé des objets du lot suivant : %', v_bad;
+    raise exception 'Des objets hors périmètre existent : %', v_bad;
   end if;
 
-  raise notice '[OK] 3. Aucun paiement, aucun compte financier, aucun solde stocké.';
+  -- Le solde ne se stocke pas : ni sur la facture, ni sur le compte.
+  select array_agg(table_name || '.' || column_name) into v_bad
+  from information_schema.columns
+  where table_schema = 'public'
+    and table_name in ('supplier_invoices', 'financial_accounts')
+    and column_name in ('balance', 'paid_amount', 'remaining_amount', 'net_payable');
+
+  if v_bad is not null then
+    raise exception 'Solde ou montant payé recopié : % — ils se calculent.', v_bad;
+  end if;
+
+  raise notice '[OK] 3. Aucune facturation client ; aucun solde stocké.';
 end $$;
 
 
@@ -567,8 +582,9 @@ end $$;
 
 -- --- 12. « PAYÉE », « PARTIELLEMENT PAYÉE » ET « EN RETARD » NE S'ÉCRIVENT PAS ------------
 --
--- L'état de règlement DÉCOULE des paiements (Module 07 §55, §57) ; « En retard »
--- se calcule de l'échéance (DEC-025 §a). Aucun des trois ne se déclare.
+-- L'état de règlement se CALCULE des paiements (Module 07 §55) ; « En retard »
+-- se calcule de l'échéance (DEC-025 §a). Aucun des trois ne se déclare — et le
+-- LOT 6, qui a livré les règlements, n'y a rien changé.
 do $$
 declare v_inv uuid := (select invoice from recette_fac);
 begin

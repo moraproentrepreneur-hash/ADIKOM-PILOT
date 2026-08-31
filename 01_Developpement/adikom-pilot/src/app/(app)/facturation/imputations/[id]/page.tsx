@@ -86,7 +86,13 @@ export default async function ImputationDetailPage(
       ? listImputationSupplierOptions(imputation.maintenanceId)
       : Promise.resolve(null),
     awaiting && canUpdate && canSeeInvoices
-      ? listAttachableInvoices(imputation.supplierId, { canSeeImputations: true })
+      ? listAttachableInvoices(imputation.supplierId, {
+          canSeeImputations: true,
+          // Le net à payer suffit ici à guider le choix : le reste dû
+          // supposerait la lecture des règlements, qui n'est pas requise pour
+          // rattacher une imputation (DEC-024).
+          canSeePayments: false,
+        })
       : Promise.resolve(null),
   ])
 

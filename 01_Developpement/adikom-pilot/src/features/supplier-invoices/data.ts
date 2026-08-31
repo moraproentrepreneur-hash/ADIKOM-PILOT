@@ -12,7 +12,7 @@ import type { SupplierInvoiceStatus } from './constants'
  * fonctions ne renvoient rien — et l'appelant doit alors DIRE qu'il ne sait
  * pas, jamais afficher zéro (DEC-017).
  *
- * LES QUATRE MONTANTS, ET CE QUE CE MODULE EN SAIT
+ * LES CINQ MONTANTS, ET CE QUE CE MODULE EN SAIT
  *
  *   Brut       Σ des lignes actives. Lisible avec `supplier_invoices.view`.
  *   Imputé     Σ des imputations « Imputée ». Exige EN PLUS
@@ -21,8 +21,9 @@ import type { SupplierInvoiceStatus } from './constants'
  *              serait faux, et se lirait comme une dette plus élevée qu'elle
  *              ne l'est.
  *   Net        Brut − Imputé, donc `null` dès que l'imputé l'est.
- *   Payé       N'EXISTE PAS. Les règlements fournisseurs relèvent du lot
- *              suivant : aucun zéro n'est produit à leur place.
+ *   Payé       Σ des règlements validés (LOT 6). Exige
+ *              `billing.supplier_payments.view`, pour la même raison.
+ *   Reste dû   Net − Payé (Workflow 08 §21), donc `null` dès que l'un manque.
  *
  * Aucun de ces montants n'est stocké : chacun est une somme refaite à chaque
  * lecture, comme le reste imputable du LOT 4.
@@ -30,12 +31,28 @@ import type { SupplierInvoiceStatus } from './constants'
 
 export type { SupplierInvoiceStatus } from './constants'
 
+/**
+ * Quelles sommes l'appelant a le droit de lire.
+ *
+ * Ce ne sont pas des options d'affichage : une somme illisible vaut `null`, et
+ * l'écran DIT qu'il ne sait pas — il n'affiche jamais zéro à sa place
+ * (DEC-017, DEC-024).
+ */
+export type AmountOptions = {
+  canSeeImputations: boolean
+  canSeePayments: boolean
+}
+
 export type SupplierInvoiceAmounts = {
   grossAmount: number
   /** `null` sans `billing.imputations.view` : jamais 0 par défaut (DEC-017). */
   imputedAmount: number | null
   /** Brut − imputé. `null` dès que l'imputé ne peut pas être lu. */
   netPayable: number | null
+  /** Σ des règlements validés. `null` sans `billing.supplier_payments.view`. */
+  paidAmount: number | null
+  /** Net − payé : ce qui reste dû (Workflow 08 §21). `null` si l'un manque. */
+  remainingDue: number | null
 }
 
 export type SupplierInvoiceListItem = SupplierInvoiceAmounts & {
@@ -117,14 +134,14 @@ function sanitizeSearch(term: string): string {
  */
 async function loadAmounts(
   invoiceIds: string[],
-  options: { canSeeImputations: boolean }
+  options: AmountOptions
 ): Promise<Map<string, SupplierInvoiceAmounts>> {
   const amounts = new Map<string, SupplierInvoiceAmounts>()
   if (invoiceIds.length === 0) return amounts
 
   const supabase = await createSupabaseServerClient()
 
-  const [lines, imputations] = await Promise.all([
+  const [lines, imputations, payments] = await Promise.all([
     supabase
       .from('supplier_invoice_lines')
       .select('supplier_invoice_id, amount, is_archived')
@@ -135,6 +152,13 @@ async function loadAmounts(
           .select('supplier_invoice_id, amount, status')
           .in('supplier_invoice_id', invoiceIds)
           .eq('status', 'IMPUTED')
+      : Promise.resolve({ data: null, error: null }),
+    options.canSeePayments
+      ? supabase
+          .from('supplier_payments')
+          .select('supplier_invoice_id, amount, status')
+          .in('supplier_invoice_id', invoiceIds)
+          .eq('status', 'VALIDATED')
       : Promise.resolve({ data: null, error: null }),
   ])
 
@@ -150,6 +174,13 @@ async function loadAmounts(
       'imputations',
       imputations.error,
       'Le total imputé n’a pas pu être calculé.'
+    )
+  }
+  if (payments.error) {
+    reportQueryFailure(
+      'règlements fournisseurs',
+      payments.error,
+      'Le total réglé n’a pas pu être calculé.'
     )
   }
 
@@ -169,22 +200,41 @@ async function loadAmounts(
     imputed.set(row.supplier_invoice_id, (imputed.get(row.supplier_invoice_id) ?? 0) + row.amount)
   }
 
+  const paid = new Map<string, number>()
+  for (const row of payments.data ?? []) {
+    paid.set(row.supplier_invoice_id, (paid.get(row.supplier_invoice_id) ?? 0) + row.amount)
+  }
+
   for (const id of invoiceIds) {
     const grossAmount = gross.get(id) ?? 0
     const imputedAmount = options.canSeeImputations ? (imputed.get(id) ?? 0) : null
+    const paidAmount = options.canSeePayments ? (paid.get(id) ?? 0) : null
+    const netPayable = imputedAmount === null ? null : grossAmount - imputedAmount
+
     amounts.set(id, {
       grossAmount,
       imputedAmount,
-      netPayable: imputedAmount === null ? null : grossAmount - imputedAmount,
+      netPayable,
+      paidAmount,
+      remainingDue:
+        netPayable === null || paidAmount === null ? null : netPayable - paidAmount,
     })
   }
 
   return amounts
 }
 
+const NO_AMOUNTS: SupplierInvoiceAmounts = {
+  grossAmount: 0,
+  imputedAmount: null,
+  netPayable: null,
+  paidAmount: null,
+  remainingDue: null,
+}
+
 export async function listSupplierInvoices(
   filters: SupplierInvoiceFilters,
-  options: { canSeeImputations: boolean }
+  options: AmountOptions
 ): Promise<SupplierInvoiceListItem[]> {
   const supabase = await createSupabaseServerClient()
 
@@ -220,12 +270,20 @@ export async function listSupplierInvoices(
     query = query.or(`invoice_no.ilike.%${search}%,external_ref.ilike.%${search}%`)
   }
 
-  // « En retard » ne se filtre pas en base : la valeur n'y est jamais écrite
-  // (DEC-025 §a). Elle est retirée ici et appliquée après calcul du net.
-  if (filters.status && filters.status !== 'OVERDUE') {
+  /*
+   * Trois statuts ne se filtrent PAS en base : « En retard », « Payée » et
+   * « Partiellement payée » n'y sont jamais écrits (Module 07 §55,
+   * DEC-025 §a). Ils portent tous sur une facture VALIDÉE, et sont appliqués
+   * plus bas, une fois les sommes connues.
+   */
+  const DERIVED = ['OVERDUE', 'PAID', 'PARTIALLY_PAID']
+
+  if (filters.status && !DERIVED.includes(filters.status)) {
     query = query.eq('status', filters.status)
   }
-  if (filters.status === 'OVERDUE') query = query.eq('status', 'VALIDATED')
+  if (filters.status && DERIVED.includes(filters.status)) {
+    query = query.eq('status', 'VALIDATED')
+  }
 
   if (filters.supplierId) query = query.eq('supplier_id', filters.supplierId)
   if (filters.from) query = query.gte('invoice_date', filters.from)
@@ -260,15 +318,36 @@ export async function listSupplierInvoices(
     dueDate: row.due_date,
     supplierId: row.supplier_id,
     supplierLabel: supplierLabel(row.suppliers),
-    ...(amounts.get(row.id) ?? { grossAmount: 0, imputedAmount: null, netPayable: null }),
+    ...(amounts.get(row.id) ?? NO_AMOUNTS),
   }))
 
   if (filters.withImputation) {
     items = items.filter((item) => (item.imputedAmount ?? 0) > 0)
   }
 
+  /*
+   * « Impayées » et « En retard » se filtrent sur le RESTE DÛ, jamais en base :
+   * la valeur n'y est pas écrite (Module 07 §55, DEC-025 §a). Une facture dont
+   * le reste dû n'est pas lisible est conservée — on ne l'écarte pas sur une
+   * somme qu'on n'a pas pu lire.
+   */
   if (filters.unpaid || filters.status === 'OVERDUE') {
-    items = items.filter((item) => item.netPayable === null || item.netPayable > 0)
+    items = items.filter((item) => item.remainingDue === null || item.remainingDue > 0)
+  }
+
+  if (filters.status === 'PAID') {
+    items = items.filter(
+      (item) => item.remainingDue !== null && item.remainingDue <= 0 && item.grossAmount > 0
+    )
+  }
+
+  if (filters.status === 'PARTIALLY_PAID') {
+    items = items.filter(
+      (item) =>
+        item.remainingDue !== null &&
+        item.remainingDue > 0 &&
+        (item.paidAmount ?? 0) > 0
+    )
   }
 
   return items
@@ -276,7 +355,7 @@ export async function listSupplierInvoices(
 
 export async function getSupplierInvoiceDetail(
   id: string,
-  options: { canSeeImputations: boolean }
+  options: AmountOptions
 ): Promise<SupplierInvoiceDetail | null> {
   const supabase = await createSupabaseServerClient()
 
@@ -319,7 +398,7 @@ export async function getSupplierInvoiceDetail(
     cancelledAt: row.cancelled_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    ...(amounts.get(row.id) ?? { grossAmount: 0, imputedAmount: null, netPayable: null }),
+    ...(amounts.get(row.id) ?? NO_AMOUNTS),
   }
 }
 
@@ -376,7 +455,7 @@ export async function listSupplierInvoiceLines(
  */
 export async function listSupplierInvoicesForSupplier(
   supplierId: string,
-  options: { canSeeImputations: boolean }
+  options: AmountOptions
 ): Promise<SupplierInvoiceListItem[]> {
   return listSupplierInvoices({ supplierId }, options)
 }
@@ -389,7 +468,7 @@ export async function listSupplierInvoicesForSupplier(
  */
 export async function listAttachableInvoices(
   supplierId: string,
-  options: { canSeeImputations: boolean }
+  options: AmountOptions
 ): Promise<SupplierInvoiceListItem[]> {
   const invoices = await listSupplierInvoices({ supplierId, status: 'VALIDATED' }, options)
   return invoices

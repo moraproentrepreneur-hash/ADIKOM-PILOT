@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, BarChart3, Receipt } from 'lucide-react'
+import { ArrowLeft, Banknote, BarChart3, Receipt } from 'lucide-react'
 
 import { Badge, Card, Empty, EmptyState, InfoRow, PageHeader } from '@/components/ui/primitives'
 import { Notice } from '@/components/ui/feedback'
@@ -20,14 +20,23 @@ import {
 } from '@/features/supplier-invoices/data'
 import {
   acceptsImputations,
+  acceptsPayments,
   displayStatus,
   formatAmount,
   isCancellable,
   isEditable,
+  PAYMENT_METHOD_LABELS,
   SUPPLIER_INVOICE_STATUS_EFFECT,
   SUPPLIER_INVOICE_STATUS_LABELS,
   SUPPLIER_INVOICE_STATUS_TONES,
 } from '@/features/supplier-invoices/constants'
+import { listInvoicePayments } from '@/features/supplier-invoices/payments-data'
+import {
+  CancelPaymentPanel,
+  RecordPaymentPanel,
+} from '@/features/supplier-invoices/payments-panels'
+import { listOperableAccounts } from '@/features/treasury/data'
+import { todayISO } from '@/lib/dates'
 import {
   AddInvoiceLinePanel,
   ArchiveInvoiceLineButton,
@@ -64,31 +73,54 @@ export default async function SupplierInvoiceDetailPage(
   const searchParams = await props.searchParams
   const justCreated = searchParams.cree === '1'
 
-  const [canUpdate, canValidate, canCancel, canSeeImputations, canDetach, canSeeFleet] =
-    await Promise.all([
-      can(PERMISSIONS.SUPPLIER_INVOICES_UPDATE),
-      can(PERMISSIONS.SUPPLIER_INVOICES_VALIDATE),
-      can(PERMISSIONS.SUPPLIER_INVOICES_CANCEL),
-      can(PERMISSIONS.IMPUTATIONS_VIEW),
-      can(PERMISSIONS.IMPUTATIONS_UPDATE),
-      can(PERMISSIONS.FLEET_VIEW),
-    ])
+  const [
+    canUpdate,
+    canValidate,
+    canCancel,
+    canSeeImputations,
+    canDetach,
+    canSeeFleet,
+    canSeePayments,
+    canPay,
+    canCancelPayment,
+    canSeeAccounts,
+  ] = await Promise.all([
+    can(PERMISSIONS.SUPPLIER_INVOICES_UPDATE),
+    can(PERMISSIONS.SUPPLIER_INVOICES_VALIDATE),
+    can(PERMISSIONS.SUPPLIER_INVOICES_CANCEL),
+    can(PERMISSIONS.IMPUTATIONS_VIEW),
+    can(PERMISSIONS.IMPUTATIONS_UPDATE),
+    can(PERMISSIONS.FLEET_VIEW),
+    can(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW),
+    can(PERMISSIONS.SUPPLIER_PAYMENTS_CREATE),
+    can(PERMISSIONS.SUPPLIER_PAYMENTS_CANCEL),
+    can(PERMISSIONS.ACCOUNTS_VIEW),
+  ])
 
-  const invoice = await getSupplierInvoiceDetail(id, { canSeeImputations })
+  const invoice = await getSupplierInvoiceDetail(id, { canSeeImputations, canSeePayments })
   if (!invoice) notFound()
 
   const editable = isEditable(invoice.status)
+  const payable = acceptsPayments(invoice.status)
 
-  const [lines, imputations, vehicles] = await Promise.all([
+  const [lines, imputations, vehicles, payments, accounts] = await Promise.all([
     listSupplierInvoiceLines(id),
     // Sans la capacité, la section DISPARAÎT : une liste vide se lirait
     // « aucune déduction », affirmation qu'un refus de lecture ne permet pas
     // (DEC-017).
     canSeeImputations ? listInvoiceImputations(id) : Promise.resolve(null),
     editable && canSeeFleet ? listVehicles() : Promise.resolve(null),
+    canSeePayments ? listInvoicePayments(id) : Promise.resolve(null),
+    // Module 06 §10 : seuls les comptes actifs sont proposés.
+    payable && canPay && canSeeAccounts ? listOperableAccounts() : Promise.resolve(null),
   ])
 
-  const shown = displayStatus(invoice.status, invoice.dueDate, invoice.netPayable)
+  const shown = displayStatus(
+    invoice.status,
+    invoice.dueDate,
+    invoice.netPayable,
+    invoice.paidAmount
+  )
 
   return (
     <>
@@ -158,11 +190,24 @@ export default async function SupplierInvoiceDetailPage(
                 )}
               </InfoRow>
 
-              <InfoRow label="Montant payé et solde">
-                <span className="text-muted">
-                  Aucun règlement n’est géré : ces montants relèvent d’une étape ultérieure. Ils ne
-                  sont pas nuls, ils sont inconnus du système.
-                </span>
+              <InfoRow label="Total réglé" hint="Règlements validés (Workflow 08 §21).">
+                {invoice.paidAmount === null ? (
+                  <span className="text-muted">
+                    Votre compte ne peut pas consulter les règlements.
+                  </span>
+                ) : (
+                  <span className="tabular">{formatAmount(invoice.paidAmount)}</span>
+                )}
+              </InfoRow>
+
+              <InfoRow label="Reste dû" hint="Net à payer moins les règlements validés.">
+                {invoice.remainingDue === null ? (
+                  <span className="text-muted">
+                    Non calculable sans le droit de consulter imputations et règlements.
+                  </span>
+                ) : (
+                  <span className="font-medium tabular">{formatAmount(invoice.remainingDue)}</span>
+                )}
               </InfoRow>
 
               <InfoRow label="Effet">{SUPPLIER_INVOICE_STATUS_EFFECT[shown]}</InfoRow>
@@ -271,6 +316,88 @@ export default async function SupplierInvoiceDetailPage(
               sans que cet écran puisse les montrer.
             </Notice>
           )}
+
+          {canSeePayments ? (
+            <Card
+              title="Règlements"
+              description="Décaissements réels, distincts des imputations (Module 07 §37)."
+            >
+              {payments === null || payments.length === 0 ? (
+                <EmptyState
+                  icon={Banknote}
+                  title="Aucun règlement"
+                  description={
+                    payable
+                      ? 'Le net à payer de cette facture n’a encore fait sortir aucun argent d’un compte.'
+                      : 'Seule une facture validée peut être réglée.'
+                  }
+                />
+              ) : (
+                <ul className="divide-y divide-line">
+                  {payments.map((payment) => (
+                    <li key={payment.id} className="py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium text-ink tabular">{payment.paymentNo}</p>
+                          <p className="text-xs text-muted">
+                            {formatDate(payment.paidOn)} ·{' '}
+                            {PAYMENT_METHOD_LABELS[payment.method]}
+                            {payment.externalRef ? ` · ${payment.externalRef}` : ''}
+                          </p>
+                          <p className="text-xs text-muted">
+                            {payment.accountLabel ? (
+                              <Link
+                                href={`/tresorerie/comptes/${payment.accountId}`}
+                                className="text-adikom-500 hover:underline"
+                              >
+                                {payment.accountLabel}
+                              </Link>
+                            ) : (
+                              'Compte non lisible avec vos droits'
+                            )}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <span
+                            className={
+                              payment.status === 'CANCELLED'
+                                ? 'text-sm text-muted line-through tabular'
+                                : 'font-medium tabular'
+                            }
+                          >
+                            − {formatAmount(payment.amount)}
+                          </span>
+                          <Badge tone={payment.status === 'CANCELLED' ? 'danger' : 'success'}>
+                            {payment.status === 'CANCELLED' ? 'Annulé' : 'Validé'}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      {canCancelPayment && payment.status === 'VALIDATED' && (
+                        <details className="mt-3">
+                          <summary className="cursor-pointer text-xs text-muted hover:text-ink">
+                            Annuler ce règlement
+                          </summary>
+                          <div className="mt-3 rounded-control border border-line p-4">
+                            <CancelPaymentPanel
+                              paymentId={payment.id}
+                              invoiceId={id}
+                              amount={payment.amount}
+                            />
+                          </div>
+                        </details>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          ) : (
+            <Notice tone="warning">
+              Votre compte ne peut pas consulter les règlements : cette facture peut être réglée
+              sans que cet écran puisse le montrer.
+            </Notice>
+          )}
         </div>
 
         <div className="space-y-5">
@@ -361,6 +488,27 @@ export default async function SupplierInvoiceDetailPage(
             </Card>
           )}
 
+          {canPay && payable && (
+            <Card
+              title="Enregistrer un règlement"
+              description="Le décaissement qui solde le net à payer (Workflow 08)."
+            >
+              <RecordPaymentPanel
+                invoiceId={id}
+                accounts={
+                  !canSeeAccounts
+                    ? null
+                    : (accounts ?? []).map((account) => ({
+                        id: account.id,
+                        label: `${account.label} (${account.accountNo})`,
+                      }))
+                }
+                remainingDue={invoice.remainingDue}
+                today={todayISO()}
+              />
+            </Card>
+          )}
+
           {canCancel && isCancellable(invoice.status) && (
             <Card title="Annuler" description="L’historique est conservé.">
               <CancelSupplierInvoicePanel invoiceId={id} />
@@ -370,10 +518,14 @@ export default async function SupplierInvoiceDetailPage(
           <Card title="Étape suivante">
             <p className="text-sm text-muted">
               {invoice.status === 'CANCELLED'
-                ? 'Cette facture est annulée : elle ne peut plus recevoir d’imputation.'
-                : acceptsImputations(invoice.status)
-                  ? 'Cette facture peut recevoir des imputations validées du même fournisseur. Son règlement relève d’une étape ultérieure.'
-                  : 'Une fois validée, la facture pourra recevoir les imputations validées de ce fournisseur.'}
+                ? 'Cette facture est annulée : elle ne peut plus recevoir ni imputation ni règlement.'
+                : !acceptsImputations(invoice.status)
+                  ? 'Une fois validée, la facture pourra recevoir les imputations de ce fournisseur, puis être réglée.'
+                  : invoice.remainingDue === null
+                    ? 'Cette facture peut recevoir des imputations et des règlements. Le reste dû n’est pas calculable avec vos droits.'
+                    : invoice.remainingDue <= 0
+                      ? 'Cette facture est soldée : son net à payer est intégralement réglé.'
+                      : `Reste ${formatAmount(invoice.remainingDue)} à régler. Une imputation réduit ce montant sans le payer ; un règlement le solde en débitant un compte.`}
             </p>
           </Card>
         </div>

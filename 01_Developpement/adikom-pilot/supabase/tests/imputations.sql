@@ -109,13 +109,10 @@ begin
   select array_agg(tablename) into v_bad
   from pg_tables
   where schemaname = 'public'
-    and tablename in (
-      'supplier_payments', 'customer_invoices', 'payments',
-      'financial_accounts', 'supplier_balances'
-    );
+    and tablename in ('customer_invoices', 'customer_payments', 'supplier_balances');
 
   if v_bad is not null then
-    raise exception 'Des objets de règlement ou de facturation client existent déjà : %', v_bad;
+    raise exception 'Des objets de facturation client existent déjà : %', v_bad;
   end if;
 
   if not exists (
@@ -134,7 +131,7 @@ begin
     raise exception 'La clé étrangère vers `supplier_invoices` est absente (LOT 5).';
   end if;
 
-  raise notice '[OK] 3. Facture fournisseur rattachée par clé étrangère ; aucun règlement.';
+  raise notice '[OK] 3. Facture fournisseur rattachée par clé étrangère ; aucune facturation client.';
 end $$;
 
 

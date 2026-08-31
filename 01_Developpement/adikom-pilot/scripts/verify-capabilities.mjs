@@ -169,12 +169,18 @@ const PROFILES = {
     'billing.supplier_invoices.view',
     'billing.supplier_invoices.validate',
   ],
+  /*
+   * Annuler une facture exige de VOIR ce qui la réduit et ce qui la solde :
+   * une annulation à l'aveugle orphelinerait une imputation ou un règlement
+   * (LOT 5 pour l'une, LOT 6 pour l'autre).
+   */
   inv_cancel: [
     ...READERS,
     'parties.suppliers.view',
     'billing.supplier_invoices.view',
     'billing.supplier_invoices.cancel',
     'billing.imputations.view',
+    'billing.supplier_payments.view',
   ],
   // Rattacher exige `imputations.update` ET les deux lectures : ce profil les
   // porte, celui qui suit n'en porte qu'une.
@@ -196,6 +202,70 @@ const PROFILES = {
     'rental.maintenance.cost.view',
     'billing.imputations.view',
     'billing.imputations.update',
+  ],
+
+  /*
+   * LOT 6 — Banques & Caisses, et les règlements.
+   *
+   * `treasury.balances.view` est isolée à dessein : voir un compte n'est pas
+   * voir ce qu'il contient (DEC-024).
+   */
+  acc_view: [...READERS, 'treasury.accounts.view'],
+  acc_create: [...READERS, 'treasury.accounts.view', 'treasury.accounts.create'],
+  acc_update: [...READERS, 'treasury.accounts.view', 'treasury.accounts.update'],
+  acc_archive: [...READERS, 'treasury.accounts.view', 'treasury.accounts.archive'],
+  // Le solde est la somme des ÉCRITURES : sans le droit de les lire, la
+  // fonction refuse plutôt que de renvoyer le seul solde d'ouverture (050).
+  acc_balance: [
+    ...READERS,
+    'treasury.accounts.view',
+    'treasury.balances.view',
+    'treasury.entries.view',
+  ],
+
+  // Le compte complet du domaine, pour les contrôles positifs.
+  pay_full: [
+    ...READERS,
+    'parties.suppliers.view',
+    'treasury.accounts.view',
+    'treasury.accounts.create',
+    'treasury.balances.view',
+    'treasury.entries.view',
+    'billing.supplier_invoices.view',
+    'billing.supplier_invoices.create',
+    'billing.supplier_invoices.update',
+    'billing.supplier_invoices.validate',
+    'billing.supplier_invoices.cancel',
+    'billing.imputations.view',
+    'billing.supplier_payments.view',
+    'billing.supplier_payments.create',
+    'billing.supplier_payments.cancel',
+  ],
+  // Consulte les règlements, n'en enregistre aucun.
+  pay_view: [
+    ...READERS,
+    'treasury.accounts.view',
+    'billing.supplier_invoices.view',
+    'billing.imputations.view',
+    'billing.supplier_payments.view',
+  ],
+  // Peut payer, mais ne voit AUCUN compte : le compte à mouvementer serait
+  // désigné à l'aveugle (Workflow 08 §13).
+  pay_blind_account: [
+    ...READERS,
+    'billing.supplier_invoices.view',
+    'billing.imputations.view',
+    'billing.supplier_payments.view',
+    'billing.supplier_payments.create',
+  ],
+  // Peut payer et voir les comptes, mais ne voit AUCUNE imputation : le net à
+  // payer, dont dépend §22, porterait sur une somme muette.
+  pay_blind_imputation: [
+    ...READERS,
+    'treasury.accounts.view',
+    'billing.supplier_invoices.view',
+    'billing.supplier_payments.view',
+    'billing.supplier_payments.create',
   ],
 }
 
@@ -260,6 +330,8 @@ async function main() {
     maintenances: [],
     imputations: [],
     invoices: [],
+    accounts: [],
+    payments: [],
   }
 
   /** Session PostgREST d'un profil : exactement ce dont dispose un appelant. */
@@ -1308,6 +1380,283 @@ async function main() {
 
     /* ------------------------------------------------------------------ */
     console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('BANQUES & CAISSES — ET LES RÈGLEMENTS (LOT 6)\n')
+
+    {
+      const accViewer = await session('acc_view')
+      const accCreator = await session('acc_create')
+      const accUpdater = await session('acc_update')
+      const accArchiver = await session('acc_archive')
+      const balViewer = await session('acc_balance')
+      const owner = await session('pay_full')
+
+      /* --- OUVRIR UN COMPTE exige `accounts.create`. */
+      const openByViewer = await accViewer.rpc('create_financial_account', {
+        p_kind: 'BANK',
+        p_label: `${MARK} — tentative`,
+      })
+      check(refused(openByViewer), 'create_financial_account refusée sans `accounts.create`')
+
+      const openByUpdater = await accUpdater.rpc('create_financial_account', {
+        p_kind: 'BANK',
+        p_label: `${MARK} — tentative`,
+      })
+      check(
+        refused(openByUpdater),
+        '`accounts.update` n’ouvre pas un compte',
+        'modifier n’est pas ouvrir'
+      )
+
+      const forgeAccount = await accViewer.from('financial_accounts').insert({
+        account_no: `COMP-FORGE-${STAMP}`,
+        kind: 'BANK',
+        label: 'Compte forgé',
+      })
+      check(refused(forgeAccount), 'INSERT direct dans `financial_accounts` refusé de même')
+
+      const { data: accId, error: accError } = await accCreator.rpc('create_financial_account', {
+        p_kind: 'BANK',
+        p_label: `${MARK} — Banque`,
+        p_opening_balance: 1000000,
+      })
+      check(!refused({ error: accError }), 'La capacité `create` ouvre le compte',
+        accError?.message ?? '')
+
+      const accountId = String(accId)
+      if (accId) fixtures.accounts.push(accountId)
+
+      /* --- VOIR UN COMPTE N'EST PAS VOIR SON SOLDE (DEC-024). */
+      const blindBalance = await accViewer.rpc('financial_account_balance', {
+        p_account_id: accountId,
+      })
+      check(
+        refused(blindBalance),
+        'financial_account_balance refusée sans `treasury.balances.view`',
+        'voir un compte n’est pas voir ce qu’il contient'
+      )
+
+      const seenBalance = await balViewer.rpc('financial_account_balance', {
+        p_account_id: accountId,
+      })
+      check(
+        !refused(seenBalance) && seenBalance.data === 1000000,
+        'Avec `balances.view`, le solde est calculé',
+        `${seenBalance.data}`
+      )
+
+      /* --- STATUT : `archive`, et rien d'autre. */
+      const archiveByUpdater = await accUpdater.rpc('set_financial_account_status', {
+        p_account_id: accountId,
+        p_status: 'ARCHIVED',
+      })
+      check(refused(archiveByUpdater), 'set_financial_account_status refusée sans `archive`')
+
+      const archived = await accArchiver.rpc('set_financial_account_status', {
+        p_account_id: accountId,
+        p_status: 'ARCHIVED',
+        p_reason: 'Audit',
+      })
+      check(!refused(archived), 'La capacité `archive` change le statut',
+        archived.error?.message ?? '')
+
+      // Réactivé pour la suite : un compte archivé ne reçoit plus rien.
+      await accArchiver.rpc('set_financial_account_status', {
+        p_account_id: accountId,
+        p_status: 'ACTIVE',
+        p_reason: 'Audit',
+      })
+
+      /* --- UNE FACTURE VALIDÉE, À RÉGLER. */
+      const { data: payInvId } = await owner.rpc('create_supplier_invoice', {
+        p_supplier_id: fixtures.supplierId,
+        p_invoice_date: '2026-08-01',
+        p_external_ref: `FRN-CAP-${STAMP}`,
+        p_notes: `${MARK} — à régler`,
+      })
+      const payInvoiceId = String(payInvId)
+      if (payInvId) fixtures.invoices.push(payInvoiceId)
+
+      await owner.rpc('add_supplier_invoice_line', {
+        p_invoice_id: payInvoiceId,
+        p_label: `${MARK} — prestation`,
+        p_amount: 200000,
+      })
+      await owner.rpc('submit_supplier_invoice', { p_invoice_id: payInvoiceId })
+      await owner.rpc('validate_supplier_invoice', { p_invoice_id: payInvoiceId })
+
+      /* --- RÉGLER exige `supplier_payments.create` ET quatre lectures. */
+      const payByViewer = await session('pay_view')
+      const refusedCreate = await payByViewer.rpc('record_supplier_payment', {
+        p_invoice_id: payInvoiceId,
+        p_account_id: accountId,
+        p_amount: 1000,
+        p_paid_on: '2026-08-15',
+        p_method: 'CASH',
+      })
+      check(refusedCreate.error !== null, 'record_supplier_payment refusée sans `payments.create`')
+
+      const blindAccount = await session('pay_blind_account')
+      const refusedBlindAccount = await blindAccount.rpc('record_supplier_payment', {
+        p_invoice_id: payInvoiceId,
+        p_account_id: accountId,
+        p_amount: 1000,
+        p_paid_on: '2026-08-15',
+        p_method: 'CASH',
+      })
+      check(
+        refused(refusedBlindAccount),
+        'Régler est refusé sans `treasury.accounts.view`',
+        'on ne débite pas un compte qu’on ne voit pas'
+      )
+
+      const blindImputation = await session('pay_blind_imputation')
+      const refusedBlindImputation = await blindImputation.rpc('record_supplier_payment', {
+        p_invoice_id: payInvoiceId,
+        p_account_id: accountId,
+        p_amount: 1000,
+        p_paid_on: '2026-08-15',
+        p_method: 'CASH',
+      })
+      check(
+        refused(refusedBlindImputation),
+        'Et refusé sans `billing.imputations.view`',
+        'le net à payer en dépend (§22)'
+      )
+
+      const forgePayment = await payByViewer.from('supplier_payments').insert({
+        payment_no: `REG-FORGE-${STAMP}`,
+        supplier_invoice_id: payInvoiceId,
+        account_id: accountId,
+        amount: 1000,
+        paid_on: '2026-08-15',
+        method: 'CASH',
+      })
+      check(refused(forgePayment), 'INSERT direct dans `supplier_payments` refusé de même')
+
+      const paid = await owner.rpc('record_supplier_payment', {
+        p_invoice_id: payInvoiceId,
+        p_account_id: accountId,
+        p_amount: 120000,
+        p_paid_on: '2026-08-15',
+        p_method: 'BANK_TRANSFER',
+        p_external_ref: `VIR-${STAMP}`,
+      })
+      check(!refused(paid), 'Avec les cinq capacités, le règlement aboutit',
+        paid.error?.message ?? '')
+
+      const paymentId = String(paid.data)
+      if (paid.data) fixtures.payments.push(paymentId)
+
+      /* --- L'ÉCRITURE EST LA CONSÉQUENCE DU RÈGLEMENT. */
+      const { data: entry } = await admin
+        .from('treasury_entries')
+        .select('direction, kind, amount, account_id, status')
+        .eq('supplier_payment_id', paymentId)
+        .maybeSingle()
+      check(
+        entry?.direction === 'OUT' && entry?.amount === 120000 && entry?.account_id === accountId,
+        'Le règlement a produit une SORTIE du montant réglé (§47)',
+        `${entry?.direction} ${entry?.amount}`
+      )
+
+      const { data: afterPayment } = await balViewer.rpc('financial_account_balance', {
+        p_account_id: accountId,
+      })
+      check(afterPayment === 880000, 'Le compte est débité : 1 000 000 → 880 000', `${afterPayment}`)
+
+      /* --- UNE ÉCRITURE FORGÉE EST REFUSÉE. */
+      const forgeEntry = await owner.from('treasury_entries').insert({
+        account_id: accountId,
+        entry_date: '2026-08-15',
+        direction: 'IN',
+        kind: 'SUPPLIER_PAYMENT',
+        amount: 999999,
+        supplier_payment_id: paymentId,
+      })
+      check(
+        refused(forgeEntry),
+        'Une écriture contredisant son règlement est refusée',
+        'même au porteur de toutes les capacités du domaine'
+      )
+
+      const freeEntry = await owner.from('treasury_entries').insert({
+        account_id: accountId,
+        entry_date: '2026-08-15',
+        direction: 'IN',
+        kind: 'DEPOSIT',
+        amount: 50000,
+      })
+      check(
+        refused(freeEntry),
+        'Et une écriture LIBRE exige `treasury.entries.create`',
+        'aucun écran ne la produit'
+      )
+
+      /* --- ANNULER exige `supplier_payments.cancel`. */
+      const cancelByCreator = await blindAccount.rpc('cancel_supplier_payment', {
+        p_payment_id: paymentId,
+      })
+      check(refused(cancelByCreator), 'cancel_supplier_payment refusée sans `payments.cancel`')
+
+      /*
+       * Le `PATCH` direct ne rencontre AUCUNE ligne : la policy d'UPDATE exige
+       * `payments.cancel`, que ce profil n'a pas. PostgREST ne renvoie alors
+       * pas d'erreur — il ne modifie simplement rien. La preuve est donc l'état
+       * de la ligne, pas le code de retour.
+       */
+      await payByViewer
+        .from('supplier_payments')
+        .update({ status: 'CANCELLED', cancelled_at: new Date().toISOString() })
+        .eq('id', paymentId)
+
+      const { data: untouched } = await admin
+        .from('supplier_payments')
+        .select('status')
+        .eq('id', paymentId)
+        .maybeSingle()
+      check(
+        untouched?.status === 'VALIDATED',
+        'PATCH direct vers « Annulé » sans effet de même',
+        `${untouched?.status}`
+      )
+
+      const cancelled = await owner.rpc('cancel_supplier_payment', {
+        p_payment_id: paymentId,
+        p_reason: 'Audit',
+      })
+      check(!refused(cancelled), 'La capacité `cancel` annule le règlement',
+        cancelled.error?.message ?? '')
+
+      const { data: afterCancel } = await balViewer.rpc('financial_account_balance', {
+        p_account_id: accountId,
+      })
+      check(afterCancel === 1000000, 'Le solde du compte remonte', `${afterCancel}`)
+
+      /* --- LECTURE ET SUPPRESSION. */
+      const noTreasury = await session('imp_full')
+      const blindRead = await noTreasury.from('financial_accounts').select('id').eq('id', accountId)
+      check(
+        (blindRead.data?.length ?? 0) === 0,
+        'RLS ne livre aucun compte sans `treasury.accounts.view`'
+      )
+
+      const blindEntries = await accViewer.from('treasury_entries').select('id').limit(1)
+      check(
+        (blindEntries.data?.length ?? 0) === 0,
+        '`accounts.view` ne donne pas accès aux écritures'
+      )
+
+      const removal = await owner.from('supplier_payments').delete().eq('id', paymentId)
+      const { data: stillHere } = await admin
+        .from('supplier_payments')
+        .select('id')
+        .eq('id', paymentId)
+        .maybeSingle()
+      check(refused(removal) || Boolean(stillHere), 'Aucune suppression possible')
+    }
+
+    /* ------------------------------------------------------------------ */
+    console.log('\n──────────────────────────────────────────────────────────────')
     console.log('CATALOGUE ET DONNÉES DEMO\n')
 
     {
@@ -1340,9 +1689,19 @@ async function main() {
       await admin.from('imputation_documents').delete().eq('imputation_id', id)
       await admin.from('imputations').delete().eq('id', id)
     }
+    for (const id of fixtures.payments) {
+      await admin.rpc('cancel_supplier_payment', { p_payment_id: id })
+      await admin.from('treasury_entries').delete().eq('supplier_payment_id', id)
+      await admin.from('supplier_payments').delete().eq('id', id)
+    }
     for (const id of fixtures.invoices) {
+      await admin.from('supplier_payments').delete().eq('supplier_invoice_id', id)
       await admin.from('supplier_invoice_lines').delete().eq('supplier_invoice_id', id)
       await admin.from('supplier_invoices').delete().eq('id', id)
+    }
+    for (const id of fixtures.accounts) {
+      await admin.from('treasury_entries').delete().eq('account_id', id)
+      await admin.from('financial_accounts').delete().eq('id', id)
     }
     for (const id of fixtures.maintenances) {
       await admin.from('imputations').delete().eq('maintenance_id', id)

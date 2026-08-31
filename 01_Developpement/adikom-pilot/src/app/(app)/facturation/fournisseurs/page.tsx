@@ -21,17 +21,18 @@ import {
 export const metadata: Metadata = { title: 'Factures fournisseurs' }
 
 /**
- * Répertoire des factures fournisseurs — Étape 2.5, LOT 5.
+ * Répertoire des factures fournisseurs — Étape 2.5, LOTs 5 et 6.
  *
- * LES QUATRE MONTANTS, SÉPARÉS (Module 07 §32, §57).
+ * LES CINQ MONTANTS, SÉPARÉS (Module 07 §32, §57).
  *
- * Brut, imputé et net à payer sont affichés distinctement. Le montant PAYÉ ne
- * l'est pas : aucun règlement n'est géré, et une colonne « 0 KMF » se lirait
- * « rien n'a été payé » alors que le système n'en sait rien.
+ * Brut, imputé, net à payer, réglé et reste dû sont affichés distinctement :
+ * « Ne mélange jamais facture, règlement, imputation, paiement et solde »
+ * (CLAUDE.md §57).
  *
- * Le total imputé exige `billing.imputations.view`. Sans cette capacité, la
- * colonne dit qu'elle n'est pas lisible — elle n'affiche pas un net à payer
- * calculé sur une somme muette, qui serait faux (DEC-017, DEC-024).
+ * Chaque somme suit SA capacité. Sans `billing.imputations.view`, le net n'est
+ * pas calculable ; sans `billing.supplier_payments.view`, le reste dû ne l'est
+ * pas non plus. Les colonnes le DISENT — elles n'affichent jamais un zéro qui
+ * se lirait « rien à payer » (DEC-017, DEC-024).
  */
 export default async function SupplierInvoicesPage(
   props: PageProps<'/facturation/fournisseurs'>
@@ -52,14 +53,15 @@ export default async function SupplierInvoicesPage(
     withImputation: read('imputees') === '1',
   }
 
-  const [canCreate, canExport, canSeeImputations] = await Promise.all([
+  const [canCreate, canExport, canSeeImputations, canSeePayments] = await Promise.all([
     can(PERMISSIONS.SUPPLIER_INVOICES_CREATE),
     can(PERMISSIONS.SUPPLIER_INVOICES_EXPORT),
     can(PERMISSIONS.IMPUTATIONS_VIEW),
+    can(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW),
   ])
 
   const [invoices, suppliers] = await Promise.all([
-    listSupplierInvoices(filters, { canSeeImputations }),
+    listSupplierInvoices(filters, { canSeeImputations, canSeePayments }),
     listSupplierFilters(),
   ])
 
@@ -97,9 +99,9 @@ export default async function SupplierInvoicesPage(
       />
 
       <Notice tone="info" className="mb-5">
-        Une facture validée reconnaît une <strong>dette</strong>. Les <strong>règlements
-        fournisseurs</strong> relèvent d’une étape ultérieure : aucun montant payé ni solde n’est
-        affiché tant qu’aucun paiement n’est géré.
+        Une facture validée reconnaît une <strong>dette</strong>. Une <strong>imputation</strong>
+        {' '}la réduit sans la payer ; un <strong>règlement</strong> la solde en débitant un compte.
+        Les deux restent des opérations distinctes.
       </Notice>
 
       <form method="get" className="mb-5">
@@ -155,7 +157,7 @@ export default async function SupplierInvoicesPage(
                 defaultChecked={filters.unpaid}
                 className="size-4 rounded border-line text-adikom-500"
               />
-              Net à payer non soldé
+              Reste dû non soldé
             </label>
 
             <label className="flex items-center gap-2 text-sm text-ink">
@@ -197,6 +199,13 @@ export default async function SupplierInvoicesPage(
         </Notice>
       )}
 
+      {!canSeePayments && (
+        <Notice tone="warning" className="mb-5">
+          Votre compte ne peut pas consulter les règlements : le <strong>reste dû</strong> n’est
+          pas calculable, et une facture soldée ne se distingue pas ici d’une facture impayée.
+        </Notice>
+      )}
+
       <Card className="overflow-hidden">
         {invoices.length === 0 ? (
           <EmptyState
@@ -231,12 +240,13 @@ export default async function SupplierInvoicesPage(
                     <th className="px-5 py-3 font-medium text-ink">Montant brut</th>
                     <th className="px-5 py-3 font-medium text-ink">Imputé</th>
                     <th className="px-5 py-3 font-medium text-ink">Net à payer</th>
+                    <th className="px-5 py-3 font-medium text-ink">Reste dû</th>
                     <th className="px-5 py-3 font-medium text-ink">État</th>
                   </tr>
                 </thead>
                 <tbody>
                   {invoices.map((invoice) => {
-                    const shown = displayStatus(invoice.status, invoice.dueDate, invoice.netPayable)
+                    const shown = displayStatus(invoice.status, invoice.dueDate, invoice.netPayable, invoice.paidAmount)
 
                     return (
                       <tr
@@ -273,13 +283,20 @@ export default async function SupplierInvoicesPage(
                             formatAmount(invoice.imputedAmount)
                           )}
                         </td>
-                        <td className="px-5 py-3 font-medium text-ink tabular">
+                        <td className="px-5 py-3 text-muted tabular">
                           {invoice.netPayable === null ? (
+                            <span className="text-xs italic">Non calculable</span>
+                          ) : (
+                            formatAmount(invoice.netPayable)
+                          )}
+                        </td>
+                        <td className="px-5 py-3 font-medium text-ink tabular">
+                          {invoice.remainingDue === null ? (
                             <span className="text-xs font-normal italic text-muted">
                               Non calculable
                             </span>
                           ) : (
-                            formatAmount(invoice.netPayable)
+                            formatAmount(invoice.remainingDue)
                           )}
                         </td>
                         <td className="px-5 py-3">
@@ -296,7 +313,7 @@ export default async function SupplierInvoicesPage(
 
             <ul className="space-y-3 lg:hidden">
               {invoices.map((invoice) => {
-                const shown = displayStatus(invoice.status, invoice.dueDate, invoice.netPayable)
+                const shown = displayStatus(invoice.status, invoice.dueDate, invoice.netPayable, invoice.paidAmount)
 
                 return (
                   <li key={invoice.id}>
@@ -320,9 +337,9 @@ export default async function SupplierInvoicesPage(
                       <dl className="mt-3 space-y-1 text-xs text-muted">
                         <dd>{invoice.supplierLabel ?? 'Fournisseur non communiqué'}</dd>
                         <dd>
-                          {invoice.netPayable === null
-                            ? 'Net à payer non calculable avec vos droits'
-                            : `Net à payer ${formatAmount(invoice.netPayable)}`}
+                          {invoice.remainingDue === null
+                            ? 'Reste dû non calculable avec vos droits'
+                            : `Reste dû ${formatAmount(invoice.remainingDue)}`}
                         </dd>
                       </dl>
                     </Link>
