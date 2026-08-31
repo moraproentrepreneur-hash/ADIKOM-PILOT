@@ -447,8 +447,14 @@ async function main() {
         page.url().replace(base, '')
       )
 
-      // Le MÊME numéro chez un AUTRE fournisseur reste légitime.
+      // Le MÊME numéro chez un AUTRE fournisseur reste légitime. On repart d'un
+      // formulaire neuf, comme le ferait l'utilisateur après un refus.
+      await page.goto(`${base}/facturation/fournisseurs/nouvelle`, { waitUntil: 'load' })
+      await page.waitForFunction(() => document.querySelector('#supplierId') !== null)
       await page.selectOption('#supplierId', fixtures.supplierBId)
+      await page.fill('#externalRef', `FRN-${STAMP}`)
+      await page.fill('#invoiceDate', '2026-08-02')
+      await page.waitForTimeout(800)
       await page.getByRole('button', { name: 'Enregistrer la facture' }).click()
       await page.waitForURL(/\/facturation\/fournisseurs\/[0-9a-f-]{36}/, { timeout: 45000 })
 
