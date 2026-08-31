@@ -241,6 +241,23 @@ const PROFILES = {
     'billing.supplier_payments.create',
     'billing.supplier_payments.cancel',
   ],
+  /*
+   * EXACTEMENT les cinq capacités qu'exige un règlement, et RIEN d'autre —
+   * surtout aucun droit d'écriture sur la facture.
+   *
+   * C'est ce profil qui a révélé le défaut corrigé par la migration 051 : le
+   * `select … for update` sur la facture appliquait, sous RLS, sa policy
+   * d'ÉCRITURE, et déclarait la facture « introuvable » à qui n'avait pas le
+   * droit de la modifier. Un profil complet ne l'aurait jamais vu.
+   */
+  pay_minimal: [
+    ...READERS,
+    'treasury.accounts.view',
+    'billing.supplier_invoices.view',
+    'billing.imputations.view',
+    'billing.supplier_payments.view',
+    'billing.supplier_payments.create',
+  ],
   // Consulte les règlements, n'en enregistre aucun.
   pay_view: [
     ...READERS,
@@ -1533,7 +1550,15 @@ async function main() {
       })
       check(refused(forgePayment), 'INSERT direct dans `supplier_payments` refusé de même')
 
-      const paid = await owner.rpc('record_supplier_payment', {
+      /*
+       * LE CONTRÔLE POSITIF SE FAIT AU PROFIL MINIMAL.
+       *
+       * Un compte complet réussirait pour de mauvaises raisons : il détient
+       * aussi les capacités d'écriture de la facture. Régler n'en suppose
+       * aucune (migration 051), et c'est ce que ce contrôle prouve.
+       */
+      const payer = await session('pay_minimal')
+      const paid = await payer.rpc('record_supplier_payment', {
         p_invoice_id: payInvoiceId,
         p_account_id: accountId,
         p_amount: 120000,
@@ -1541,8 +1566,11 @@ async function main() {
         p_method: 'BANK_TRANSFER',
         p_external_ref: `VIR-${STAMP}`,
       })
-      check(!refused(paid), 'Avec les cinq capacités, le règlement aboutit',
-        paid.error?.message ?? '')
+      check(
+        !refused(paid),
+        'Les cinq capacités suffisent : régler n’exige aucun droit sur la facture',
+        paid.error?.message ?? ''
+      )
 
       const paymentId = String(paid.data)
       if (paid.data) fixtures.payments.push(paymentId)
