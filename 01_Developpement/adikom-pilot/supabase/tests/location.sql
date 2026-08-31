@@ -514,9 +514,23 @@ declare
 begin
   select client_id, vehicle_id, category_id into v_cli, v_veh, v_cat from recette_ids;
 
-  -- Aucun tarif configuré : aucune ligne, jamais un montant nul inventé.
-  if exists (select 1 from public.resolve_pricing_rule(v_cli, v_veh)) then
-    raise exception 'Un tarif a été proposé alors qu''aucun n''est configuré.';
+  /*
+   * RIEN NE S'INVENTE POUR CE CLIENT NI POUR CE VÉHICULE.
+   *
+   * La formulation d'origine — « aucune ligne du tout » — supposait une grille
+   * VIDE. Elle ne l'est plus : les données DEMO portent un tarif standard
+   * global depuis le 26/08/2026, et un tarif standard EST une réponse légitime
+   * (DEC-002, niveau 0). L'exiger absent ferait échouer la recette sur une
+   * donnée de référence parfaitement valide.
+   *
+   * Ce que le contrôle doit prouver reste entier : aucune règle SPÉCIFIQUE
+   * n'est fabriquée pour un client ou un véhicule qui n'en a pas.
+   */
+  if exists (
+    select 1 from public.resolve_pricing_rule(v_cli, v_veh) p
+    where p.source <> 'STANDARD'
+  ) then
+    raise exception 'Un tarif spécifique a été proposé alors qu''aucun n''est configuré.';
   end if;
 
   -- Niveau 0 — standard global

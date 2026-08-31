@@ -63,6 +63,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-027 | Facture fournisseur — LOT 5 de l'Étape 2.5 | Arbitrages | Appliquée — **ouvre DEC-013** | 2026-08-30 |
 | DEC-028 | Unicité de la référence fournisseur | Arbitrage ADIKOM | Appliquée — **clôt DEC-027 §i** | 2026-08-31 |
 | DEC-029 | Banques & Caisses et règlements — LOT 6 | Arbitrages ADIKOM | Appliquée — **ouvre le module 6** | 2026-08-31 |
+| DEC-030 | Facture client et clôture — LOT 7 | Arbitrages | Appliquée — **clôt le cycle de location** | 2026-09-01 |
 
 ---
 
@@ -1815,6 +1816,188 @@ pas. Aucun **justificatif** de règlement (`Workflow 08` §17, facultatif).
 
 ---
 
+## DEC-030 — Facture client et clôture de la location (LOT 7)
+
+**Date :** 1er septembre 2026
+**Portée :** métier, technique et sécurité
+**Statut :** appliquée · **clôt le cycle d'exploitation de DEC-006**
+
+### Contexte — un point ouvert depuis la migration 042
+
+DEC-021 désigne l'Étape 2.5 : *Facturation → Paiements → Soldes → Clôture*. Les
+LOTs 5 et 6 ont livré la facture fournisseur et son règlement. Restait le côté
+client — et deux transitions que la migration 042 avait laissées **sans capacité
+rattachée**, en le signalant :
+
+> « `INVOICED` et `CLOSED` appartiennent à l'Étape 2.5 : aucune capacité ne leur
+> correspond, et en désigner une serait inventer une règle. Elles restent
+> protégées par la seule policy — **point ouvert, signalé**. »
+
+Le LOT 7 referme ce point : la facture client existe, et c'est son **émission**
+qui rend une location « Facturée ».
+
+### a. La clôture n'attend pas le paiement — la documentation le dit
+
+`Workflow 01` §42 est explicite :
+
+> « Une location peut être clôturée **opérationnellement** même si la facture
+> n'est pas encore entièrement payée. Le système doit conserver les deux
+> informations séparément. »
+
+La clôture entre donc dans ce lot, **avant** les encaissements clients, sans
+inverser l'ordre de DEC-021 : elle ne dépend pas d'eux. Exiger un règlement
+inventerait une règle que la documentation écarte nommément.
+
+### b. La valorisation ne s'invente pas — le tarif est repris, la durée est saisie
+
+`Workflow 07` §9 : « Les règles de calcul doivent être définies explicitement et
+**ne doivent pas être inventées par le système**. » §12 le répète pour le retard.
+
+Le **tarif** est repris de la location, où il est verrouillé depuis sa création
+(§7, §8) : le reprendre n'invente rien, c'est le contraire — le recalculer
+exposerait la facture à une modification de grille intervenue depuis.
+
+La **quantité**, elle, reste saisie. La durée facturable dépend d'une règle
+d'arrondi qui n'est pas arrêtée (DEC-008 : jour entamé, heure de retour,
+franchise — tous « non définis »). L'écran affiche le prix unitaire pré-rempli et
+la quantité **vide**, et dit pourquoi. C'est la doctrine de DEC-025 §i : le
+constat est distingué de la valorisation, celle-ci étant annoncée comme non
+configurée plutôt qu'inventée.
+
+### c. Une réduction est une LIGNE, jamais un prix modifié
+
+`Workflow 07` §24 : « Une réduction accordée au client doit être identifiable.
+Elle ne doit pas simplement apparaître comme une **modification inexplicable du
+prix**. » §23 la range parmi les composantes que la facture distingue.
+
+Quatre natures de ligne sont donc posées — **location, service, frais,
+réduction** — correspondant exactement à §18, §14, §15 et §24. Une réduction
+porte un montant **positif** et se soustrait : le sens est porté par la nature,
+jamais par le signe, comme une écriture de trésorerie porte son sens et non un
+montant négatif (`Module 06` §19).
+
+Une réduction supérieure au sous-total est **refusée** : elle produirait un
+avoir, que §44 renvoie à des règles qu'ADIKOM n'a pas arrêtées. Le système ne le
+fabriquera pas par accident.
+
+### d. Aucun montant n'est stocké — la règle tient
+
+| Montant | Source |
+|---|---|
+| Sous-total | Σ (quantité × prix) des lignes actives qui ajoutent |
+| Réductions | Σ des lignes actives de type « réduction » (§24) |
+| Total | Sous-total − réductions (§23) |
+| Encaissé | **N'existe pas** — les règlements clients relèvent du LOT 8 |
+
+Le **total de ligne** lui-même n'est pas une colonne : quantité × prix se refait
+à la lecture. §8 et §72 — « une facture émise ne doit pas être recalculée
+automatiquement » — sont satisfaits autrement qu'en recopiant : **après émission,
+les lignes sont figées**, sans chemin de déverrouillage.
+
+### e. « Payée », « Partiellement payée » et « En retard » restent DÉRIVÉES
+
+`Workflow 07` §61 : « Le statut doit être calculé à partir des règlements
+réellement enregistrés. » Les encaissements clients n'existant pas, les deux
+premiers ne sont **jamais atteignables**, et les transitions qui y mènent sont
+refusées avec leur motif — même traitement qu'« Imputée » au LOT 4 et que
+« Payée » au LOT 5. `OVERDUE` rejoint DEC-025 §a : dérivé de l'échéance, jamais
+écrit, et une contrainte le rend infalsifiable.
+
+Conséquence assumée : **aucune facture client n'est aujourd'hui affichée
+« payée »**, et le solde n'est pas calculé. L'écran le DIT, plutôt que d'afficher
+un zéro qui se lirait « rien à encaisser » (DEC-017).
+
+### f. « Facturée » est une CONSÉQUENCE, pas un second acte
+
+Émettre la facture rend la location « Facturée ». `rental.rentals.update` n'est
+donc **pas** exigée du facturier : le contrat ne change pas d'état parce qu'on
+l'a décidé, mais parce que sa facture existe — même doctrine que l'écriture
+produite par un règlement (DEC-029 §f) ou que l'occupation de calendrier posée
+par une maintenance.
+
+La policy d'UPDATE de `rentals` s'ouvre en conséquence aux deux capacités de
+facturation ; c'est le **déclencheur de transition** qui exige, lui, la capacité
+correspondant à l'acte réellement demandé (migration 041 : « une policy large
+n'est pas une permission d'acte »).
+
+`rental.rentals.view` est en revanche exigée **nommément** : la fonction lit le
+contrat pour vérifier son état, et sous RLS un appelant qui ne peut pas le lire
+obtiendrait un « introuvable » qui n'expliquerait rien.
+
+**Trois capacités mènent désormais à ces états, et chacune est nommée :**
+
+| Transition | Capacité | Pourquoi |
+|---|---|---|
+| `À facturer → Facturée` | `billing.customer_invoices.issue` | l'émission de la facture |
+| `Facturée → Clôturée` | `rental.rentals.close` | acte d'exploitation, au catalogue depuis la migration 007 |
+| `Facturée → À facturer` | `billing.customer_invoices.cancel` | l'annulation rend le contrat à son état antérieur |
+
+### g. L'annulation est réversible pour la location, sauf après clôture
+
+Sans retour en arrière, une facture émise par erreur enfermerait le contrat dans
+« Facturée » **sans facture** : il ne pourrait plus ni être refacturé ni être
+clôturé. « Une impasse n'est pas une garantie » (DEC-027 §e). L'annulation rend
+donc la location à « À facturer », et une nouvelle facture peut être émise.
+
+Une location **clôturée** ne se rouvre pas pour autant : la clôture a constaté
+que le dossier était traité (`Workflow 01` §41). Permettre de la défaire ferait
+décider d'un acte d'exploitation à qui ne détient qu'une capacité de
+facturation. Le refus le dit, et nomme l'ordre à suivre.
+
+Corollaire : **une location ne se facture pas deux fois**. Un index unique
+partiel l'interdit sans dépendre d'un droit de lecture, et ferme la course entre
+deux saisies simultanées. Les factures **annulées** en sont exclues — sans quoi
+la règle interdirait exactement la correction qu'elle rend nécessaire (DEC-028).
+
+### h. Ce que le LOT 7 ne fait pas
+
+Aucun **règlement client**, aucun encaissement, aucun solde client — ils
+relèvent du LOT 8. Aucun **avoir** ni **contrepassation** (§43, §44 : la méthode
+exacte « dépendra des règles de gestion retenues par ADIKOM »). Aucune **taxe**
+(DEC-014 : régime non défini). Aucune **statistique** ni **rapport** (§55, §56).
+Aucun **document** : voir §i.
+
+### i. Point signalé, non tranché — le document de la facture client
+
+Le catalogue porte `billing.customer_invoices.print` mais **pas**
+`.download`. DEC-024 interdit de déduire l'une de l'autre : télécharger et
+imprimer sont deux capacités distinctes, et créer une permission d'office est
+proscrit (`CLAUDE.md` §19 bis, étape 2).
+
+Le LOT 7 **ne produit donc aucun document PDF**. Le jour où ADIKOM voudra
+remettre sa facture au client, `billing.customer_invoices.download` devra être
+créée — c'est une décision de capacité, pas un détail technique. Le point est
+ajouté aux arbitrages en attente.
+
+### Conséquences
+
+- Migration **052** : deux types, deux tables, trois fonctions de calcul,
+  contraintes, index dont un **unique partiel**, quatre déclencheurs de
+  contrôle, sept fonctions atomiques `SECURITY INVOKER`, RLS, audit,
+  interdiction de suppression, révocation d'`EXECUTE` à PUBLIC (DEC-022).
+- `fn_rental_status_transition` est **réécrite** : les deux transitions
+  orphelines de la migration 042 reçoivent leur capacité, et
+  `INVOICED → TO_INVOICE` est ouverte pour l'annulation.
+- La policy `rentals_update` s'ouvre à `customer_invoices.issue` et `.cancel`.
+- **Aucune permission créée** — les sept codes `billing.customer_invoices.*` et
+  `rental.rentals.close` existent depuis la migration 007. Catalogue : 153,
+  inchangé.
+- Menu **Factures clients** ouvert ; onglet **Factures** de la fiche client
+  livré ; carte **Facturation** et acte de **clôture** sur la fiche de location ;
+  export sous `billing.customer_invoices.export`.
+- Recettes : `db:verify:customer-invoices` (20 contrôles),
+  `verify:customer-invoices`, et `verify:capabilities` porté de 118 à
+  **143 contrôles**.
+- Les recettes des LOTs 3, 4 et 5 cessent d'exiger l'absence de
+  `customer_invoices` — le LOT 7 l'a livrée — et vérifient désormais que
+  l'**encaissement client** reste hors périmètre.
+- La recette de l'Étape 2.2 (`db:verify:location`, §14) cessait de passer depuis
+  que les données DEMO portent un tarif standard global : elle exigeait une
+  grille **vide** là où elle doit exiger qu'**aucun tarif spécifique ne
+  s'invente**. Défaut de recette antérieur au LOT 7, corrigé ici.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -1827,6 +2010,7 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 6. **DEC-023 §4** — Validation par le responsable comptable et fiscal d'ADIKOM de la convention de référence des factures, avant toute première émission. *Le LOT 5 conserve pour cette raison le format provisoire `FAC-F-2026-000001`, paramétrable (**DEC-027 §h**).*
 ~~7. **DEC-027 §i** — Une même référence de facture peut-elle être enregistrée deux fois pour un même fournisseur ?~~ **Tranché par DEC-028** (31 août 2026) : unique par fournisseur, refus explicite par la base.
 8. **DEC-029 §c** — ADIKOM souhaite-t-elle séparer la **saisie** et la **validation** d'un règlement fournisseur (`Workflow 08` §56) ? Aujourd'hui, un règlement constate un décaissement effectué et naît validé ; le catalogue n'offre aucune capacité de validation. La séparation suppose d'en créer une : c'est une décision d'organisation.
+9. **DEC-030 §i** — La **facture client doit-elle être remise au client** sous forme de document ? Le catalogue porte `billing.customer_invoices.print` mais pas `.download`, et DEC-024 interdit de déduire l'une de l'autre. Produire le PDF suppose donc de créer `billing.customer_invoices.download` : c'est une décision de capacité, prise ici pour signalement et non appliquée. *Se rattache à **DEC-023 §4**, la convention de référence restant à valider avant toute première émission d'un document comptable.*
 
 ---
 

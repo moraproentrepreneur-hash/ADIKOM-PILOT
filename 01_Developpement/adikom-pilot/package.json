@@ -51,7 +51,9 @@
     "db:verify:supplier-invoices": "node scripts/run-sql.mjs supabase/tests/supplier_invoices.sql",
     "verify:supplier-invoices": "node scripts/verify-supplier-invoices.mjs",
     "db:verify:treasury": "node scripts/run-sql.mjs supabase/tests/treasury.sql",
-    "verify:treasury": "node scripts/verify-treasury.mjs"
+    "verify:treasury": "node scripts/verify-treasury.mjs",
+    "db:verify:customer-invoices": "node scripts/run-sql.mjs supabase/tests/customer_invoices.sql",
+    "verify:customer-invoices": "node scripts/verify-customer-invoices.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",

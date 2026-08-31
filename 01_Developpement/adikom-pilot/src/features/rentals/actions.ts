@@ -71,6 +71,10 @@ const ERROR_PATTERNS: readonly [RegExp, string][] = [
     /kilométrage de retour/i,
     'Le kilométrage de retour ne peut pas être inférieur à celui relevé au départ.',
   ],
+  [
+    /seule une location facturée se clôture/i,
+    'Seule une location facturée se clôture. Émettez d’abord sa facture client.',
+  ],
   [/Transition de location refusée/i, 'Ce changement d’état n’est pas permis à ce stade.'],
   [
     /exclusion|no_overlap|chevauche/i,
@@ -606,6 +610,57 @@ export async function closeControlAction(
       return {
         success:
           'Contrôle validé. La location passe « À facturer » : la valorisation relèvera de la facturation.',
+      }
+    },
+    ERROR_PATTERNS
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Clôture : « Facturée » → « Clôturée » — Workflow 01 §41                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Clôture le dossier de location.
+ *
+ * LA CLÔTURE N'EXIGE AUCUN PAIEMENT.
+ *
+ * Workflow 01 §42 : « Une location peut être clôturée opérationnellement même si
+ * la facture n'est pas encore entièrement payée. Le système doit conserver les
+ * deux informations séparément. » Le solde de la facture et l'état du dossier
+ * sont deux choses distinctes, et le resteront.
+ *
+ * L'acte porte `rental.rentals.close` — « Clôturer une location » au catalogue
+ * depuis la migration 007. Aucune permission n'est créée : la migration 042
+ * avait laissé cette transition sans capacité faute de facture, pas faute de
+ * code.
+ */
+export async function closeRentalAction(
+  prevState: RentalFormState,
+  formData: FormData
+): Promise<RentalFormState> {
+  return guarded(
+    'locations:clôture',
+    async () => {
+      await requirePermission(PERMISSIONS.RENTALS_CLOSE)
+
+      const rentalId = readText(formData, 'rentalId')
+      if (!rentalId) return { error: 'Location introuvable.' }
+
+      const supabase = await createSupabaseServerClient()
+
+      const { error } = await supabase.rpc('close_rental', {
+        p_rental_id: rentalId,
+        p_reason: orNull(readText(formData, 'reason')),
+      })
+
+      if (error) throw new Error(error.message)
+
+      revalidatePath('/location/locations')
+      revalidatePath(`/location/locations/${rentalId}`)
+      return {
+        success:
+          'Location clôturée. Son historique reste consultable ; l’état de sa facture n’a pas changé.',
       }
     },
     ERROR_PATTERNS

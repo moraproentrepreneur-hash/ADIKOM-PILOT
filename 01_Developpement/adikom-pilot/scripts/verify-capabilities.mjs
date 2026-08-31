@@ -284,6 +284,70 @@ const PROFILES = {
     'billing.supplier_payments.view',
     'billing.supplier_payments.create',
   ],
+
+  /*
+   * LOT 7 — la facture client, et la clôture de la location.
+   *
+   * Deux frontières se croisent ici, et chacune doit tenir seule :
+   *
+   *   ÉMETTRE une facture rend la location « Facturée ». Cet acte porte
+   *   `customer_invoices.issue` et RIEN d'autre : réclamer une capacité
+   *   d'exploitation pour un acte de facturation inventerait une règle
+   *   (DEC-024, même doctrine que la migration 051).
+   *
+   *   CLÔTURER une location est un acte d'exploitation, et porte
+   *   `rental.rentals.close`. Détenir toutes les capacités de facturation ne
+   *   doit pas y donner accès.
+   */
+  cli_view: [...READERS, 'billing.customer_invoices.view'],
+  cli_create: [
+    ...READERS,
+    'billing.customer_invoices.view',
+    'billing.customer_invoices.create',
+  ],
+  cli_update: [
+    ...READERS,
+    'billing.customer_invoices.view',
+    'billing.customer_invoices.update',
+  ],
+  /*
+   * EXACTEMENT les trois capacités qu'exige l'émission, et RIEN d'autre —
+   * surtout aucun droit d'écriture sur la location.
+   *
+   * C'est le profil qui prouve que « Facturée » est bien la CONSÉQUENCE de
+   * l'émission, et non un second acte : un compte complet réussirait pour de
+   * mauvaises raisons.
+   */
+  cli_issue: [
+    'rental.rentals.view',
+    'billing.customer_invoices.view',
+    'billing.customer_invoices.issue',
+  ],
+  cli_cancel: [
+    ...READERS,
+    'billing.customer_invoices.view',
+    'billing.customer_invoices.cancel',
+  ],
+  // Peut émettre, mais ne voit AUCUNE location : la facture porte pourtant un
+  // contrat dont l'état conditionne l'acte. On n'agit pas à l'aveugle.
+  cli_blind_rental: [
+    'parties.clients.view',
+    'billing.customer_invoices.view',
+    'billing.customer_invoices.create',
+    'billing.customer_invoices.issue',
+  ],
+  // Tout le domaine `customer_invoices`, SANS `rental.rentals.close` : facturer
+  // n'est pas clôturer.
+  cli_full: [
+    ...READERS,
+    'billing.customer_invoices.view',
+    'billing.customer_invoices.create',
+    'billing.customer_invoices.update',
+    'billing.customer_invoices.issue',
+    'billing.customer_invoices.cancel',
+  ],
+  // Peut clôturer, et RIEN de la facturation : l'acte d'exploitation tient seul.
+  loc_close: [...READERS, 'rental.rentals.close'],
 }
 
 async function createProfile(admin, key, codes) {
@@ -349,6 +413,7 @@ async function main() {
     invoices: [],
     accounts: [],
     payments: [],
+    customerInvoices: [],
   }
 
   /** Session PostgREST d'un profil : exactement ce dont dispose un appelant. */
@@ -393,7 +458,8 @@ async function main() {
       .single()
     fixtures.ruleId = rule.id
 
-    for (const suffix of ['A', 'B', 'C', 'D', 'E']) {
+    // F et G servent au LOT 7 : deux locations menées jusqu'à « À facturer ».
+    for (const suffix of ['A', 'B', 'C', 'D', 'E', 'F', 'G']) {
       const { data: vehicleNo } = await admin.rpc('next_number', { p_entity_key: 'vehicle' })
       const { data: vehicle } = await admin
         .from('vehicles')
@@ -490,6 +556,57 @@ async function main() {
 
       fixtures.reservations.push(data.id)
       return data.id
+    }
+
+    /**
+     * Une location menée jusqu'à « À facturer » — le seul état facturable (§5).
+     *
+     * Le parcours emprunte les fonctions atomiques du cycle, sous le rôle de
+     * service : `current_actor()` y est NULL, donc aucune capacité n'est
+     * exigée. Ce n'est PAS ce qu'on éprouve ici — on construit un sujet, et les
+     * capacités sont éprouvées ensuite, avec de vraies sessions.
+     */
+    async function makeInvoiceableRental(vehicleIndex, offsetDays) {
+      const reservationId = await makeReservation(vehicleIndex, offsetDays)
+
+      await admin.rpc('confirm_reservation', {
+        p_reservation_id: reservationId,
+        p_vehicle_id: fixtures.vehicleIds[vehicleIndex],
+      })
+
+      const { data: rentalId, error } = await admin.rpc('convert_reservation_to_rental', {
+        p_reservation_id: reservationId,
+      })
+      if (error) throw new Error(`location : ${error.message}`)
+
+      fixtures.rentals.push(rentalId)
+
+      await admin
+        .from('rentals')
+        .update({ status: 'CONFIRMED', status_changed_at: new Date().toISOString() })
+        .eq('id', rentalId)
+
+      await admin.rpc('start_rental', {
+        p_rental_id: rentalId,
+        p_started_at: new Date().toISOString(),
+        p_mileage: 10000,
+        p_fuel_level: 'FULL',
+      })
+
+      await admin.rpc('return_rental', {
+        p_rental_id: rentalId,
+        p_returned_at: new Date(Date.now() + 3600_000).toISOString(),
+        p_mileage: 10400,
+        p_fuel_level: 'HALF',
+      })
+
+      const { error: controlError } = await admin
+        .from('rentals')
+        .update({ status: 'TO_INVOICE', status_changed_at: new Date().toISOString() })
+        .eq('id', rentalId)
+      if (controlError) throw new Error(`contrôle : ${controlError.message}`)
+
+      return rentalId
     }
 
     console.log(`${DIM}Cinq véhicules, un client, six profils — chacun réduit à sa capacité.${RESET}`)
@@ -1685,6 +1802,303 @@ async function main() {
 
     /* ------------------------------------------------------------------ */
     console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('FACTURE CLIENT ET CLÔTURE (LOT 7)\n')
+
+    {
+      const viewer = await session('cli_view')
+      const creator = await session('cli_create')
+      const updater = await session('cli_update')
+      const issuer = await session('cli_issue')
+      const canceller = await session('cli_cancel')
+      const owner = await session('cli_full')
+      const closer = await session('loc_close')
+      const blind = await session('cli_blind_rental')
+
+      const rentalId = await makeInvoiceableRental(5, 400)
+
+      /* --- PRÉPARER exige `customer_invoices.create`. */
+      const createByViewer = await viewer.rpc('create_customer_invoice', {
+        p_client_id: fixtures.clientId,
+        p_invoice_date: '2026-09-01',
+      })
+      check(refused(createByViewer), 'create_customer_invoice refusée sans `customer_invoices.create`')
+
+      const createByUpdater = await updater.rpc('create_customer_invoice', {
+        p_client_id: fixtures.clientId,
+        p_invoice_date: '2026-09-01',
+      })
+      check(
+        refused(createByUpdater),
+        '`customer_invoices.update` ne prépare pas une facture',
+        'modifier n’est pas créer'
+      )
+
+      const forgeInvoice = await viewer.from('customer_invoices').insert({
+        invoice_no: `FAC-C-FORGE-${STAMP}`,
+        client_id: fixtures.clientId,
+        invoice_date: '2026-09-01',
+      })
+      check(refused(forgeInvoice), 'INSERT direct dans `customer_invoices` refusé de même')
+
+      /* --- FACTURER UNE LOCATION QU'ON NE VOIT PAS EST REFUSÉ. */
+      const blindCreate = await blind.rpc('create_customer_invoice', {
+        p_client_id: fixtures.clientId,
+        p_invoice_date: '2026-09-01',
+        p_rental_id: rentalId,
+      })
+      check(
+        refused(blindCreate),
+        'Facturer une location est refusé sans `rental.rentals.view`',
+        'on ne facture pas un contrat qu’on ne peut pas lire'
+      )
+
+      /* --- LE CONTRÔLE POSITIF. */
+      const prepared = await creator.rpc('create_customer_invoice', {
+        p_client_id: fixtures.clientId,
+        p_invoice_date: '2026-09-01',
+        p_due_date: '2026-09-30',
+        p_rental_id: rentalId,
+        p_notes: `${MARK} — facture`,
+      })
+      check(
+        !refused(prepared),
+        'La capacité `create` prépare la facture',
+        prepared.error?.message ?? ''
+      )
+
+      const invoiceId = String(prepared.data)
+      if (prepared.data) fixtures.customerInvoices.push(invoiceId)
+
+      /* --- PRÉPARER NE FACTURE RIEN : la location n'a pas bougé. */
+      const { data: stillToInvoice } = await admin
+        .from('rentals')
+        .select('status')
+        .eq('id', rentalId)
+        .maybeSingle()
+      check(
+        stillToInvoice?.status === 'TO_INVOICE',
+        'Préparer une facture ne change pas l’état de la location',
+        `${stillToInvoice?.status}`
+      )
+
+      /* --- LES LIGNES relèvent de la saisie : `create` OU `update`. */
+      const lineByViewer = await viewer.rpc('add_customer_invoice_line', {
+        p_invoice_id: invoiceId,
+        p_kind: 'SERVICE',
+        p_label: 'Tentative',
+        p_quantity: 1,
+        p_unit_price: 1000,
+      })
+      check(refused(lineByViewer), 'add_customer_invoice_line refusée au simple lecteur')
+
+      const forgeLine = await viewer.from('customer_invoice_lines').insert({
+        customer_invoice_id: invoiceId,
+        kind: 'SERVICE',
+        label: 'Ligne forgée',
+        quantity: 1,
+        unit_price: 1000,
+      })
+      check(refused(forgeLine), 'INSERT direct dans `customer_invoice_lines` refusé de même')
+
+      const lineAdded = await creator.rpc('add_customer_invoice_line', {
+        p_invoice_id: invoiceId,
+        p_kind: 'RENTAL',
+        p_label: `${MARK} — location`,
+        p_quantity: 3,
+        p_unit_price: 150000,
+      })
+      check(!refused(lineAdded), 'La capacité `create` ajoute une ligne',
+        lineAdded.error?.message ?? '')
+
+      /* --- ÉMETTRE exige `customer_invoices.issue`. */
+      const issueByUpdater = await updater.rpc('issue_customer_invoice', {
+        p_invoice_id: invoiceId,
+      })
+      check(refused(issueByUpdater), 'issue_customer_invoice refusée sans `customer_invoices.issue`')
+
+      const issueByCreator = await creator.rpc('issue_customer_invoice', {
+        p_invoice_id: invoiceId,
+      })
+      check(
+        refused(issueByCreator),
+        '`customer_invoices.create` n’émet pas la facture',
+        'préparer n’est pas reconnaître une créance'
+      )
+
+      const patchIssue = await updater
+        .from('customer_invoices')
+        .update({ status: 'ISSUED', issued_at: new Date().toISOString() })
+        .eq('id', invoiceId)
+      const { data: afterPatch } = await admin
+        .from('customer_invoices')
+        .select('status')
+        .eq('id', invoiceId)
+        .maybeSingle()
+      check(
+        refused(patchIssue) || afterPatch?.status === 'DRAFT',
+        'PATCH direct vers « Émise » sans effet de même',
+        `${afterPatch?.status}`
+      )
+
+      /*
+       * LE CONTRÔLE POSITIF SE FAIT AU PROFIL MINIMAL.
+       *
+       * `cli_issue` ne porte QUE `rentals.view`, `customer_invoices.view` et
+       * `.issue` — aucun droit d'écriture sur la location. C'est ce contrôle qui
+       * prouve que « Facturée » est la conséquence de l'émission, et non un
+       * acte d'exploitation déguisé (même leçon que la migration 051).
+       */
+      const issued = await issuer.rpc('issue_customer_invoice', {
+        p_invoice_id: invoiceId,
+        p_reason: 'Audit',
+      })
+      check(
+        !refused(issued),
+        'Les trois capacités suffisent : émettre n’exige aucun droit sur la location',
+        issued.error?.message ?? ''
+      )
+
+      const { data: invoicedRental } = await admin
+        .from('rentals')
+        .select('status')
+        .eq('id', rentalId)
+        .maybeSingle()
+      check(
+        invoicedRental?.status === 'INVOICED',
+        'L’émission a rendu la location « Facturée »',
+        `${invoicedRental?.status}`
+      )
+
+      /* --- ÉMISE, ELLE EST FIGÉE. */
+      const lateLine = await owner.rpc('add_customer_invoice_line', {
+        p_invoice_id: invoiceId,
+        p_kind: 'FEE',
+        p_label: 'Après coup',
+        p_quantity: 1,
+        p_unit_price: 1000,
+      })
+      check(
+        refused(lateLine),
+        'Une ligne ne s’ajoute plus à une facture émise',
+        'même au porteur de toutes les capacités du domaine'
+      )
+
+      /* --- CLÔTURER exige `rental.rentals.close`, pas la facturation. */
+      const closeByOwner = await owner.rpc('close_rental', { p_rental_id: rentalId })
+      check(
+        refused(closeByOwner),
+        'close_rental refusée sans `rental.rentals.close`',
+        'facturer n’est pas clôturer'
+      )
+
+      const patchClose = await owner
+        .from('rentals')
+        .update({ status: 'CLOSED' })
+        .eq('id', rentalId)
+      const { data: afterCloseAttempt } = await admin
+        .from('rentals')
+        .select('status')
+        .eq('id', rentalId)
+        .maybeSingle()
+      check(
+        refused(patchClose) || afterCloseAttempt?.status === 'INVOICED',
+        'PATCH direct vers « Clôturée » sans effet de même',
+        `${afterCloseAttempt?.status}`
+      )
+
+      const closed = await closer.rpc('close_rental', {
+        p_rental_id: rentalId,
+        p_reason: 'Audit',
+      })
+      check(!refused(closed), 'La capacité `rentals.close` clôture la location',
+        closed.error?.message ?? '')
+
+      /* --- UNE CLÔTURE NE SE DÉFAIT PAS PAR L'ANNULATION D'UNE FACTURE. */
+      const cancelClosed = await canceller.rpc('cancel_customer_invoice', {
+        p_invoice_id: invoiceId,
+        p_reason: 'Audit',
+      })
+      check(
+        refused(cancelClosed),
+        'La facture d’une location clôturée ne s’annule pas',
+        'une clôture d’exploitation ne se défait pas côté facturation'
+      )
+
+      /* --- ANNULER exige `customer_invoices.cancel`, et rend la location. */
+      const secondRental = await makeInvoiceableRental(6, 500)
+
+      const { data: secondId } = await owner.rpc('create_customer_invoice', {
+        p_client_id: fixtures.clientId,
+        p_invoice_date: '2026-09-02',
+        p_rental_id: secondRental,
+      })
+      const secondInvoice = String(secondId)
+      if (secondId) fixtures.customerInvoices.push(secondInvoice)
+
+      await owner.rpc('add_customer_invoice_line', {
+        p_invoice_id: secondInvoice,
+        p_kind: 'RENTAL',
+        p_label: `${MARK} — location 2`,
+        p_quantity: 2,
+        p_unit_price: 100000,
+      })
+      await owner.rpc('issue_customer_invoice', { p_invoice_id: secondInvoice })
+
+      const cancelByUpdater = await updater.rpc('cancel_customer_invoice', {
+        p_invoice_id: secondInvoice,
+      })
+      check(refused(cancelByUpdater), 'cancel_customer_invoice refusée sans `customer_invoices.cancel`')
+
+      const cancelled = await canceller.rpc('cancel_customer_invoice', {
+        p_invoice_id: secondInvoice,
+        p_reason: 'Audit',
+      })
+      check(!refused(cancelled), 'La capacité `cancel` annule la facture',
+        cancelled.error?.message ?? '')
+
+      const { data: backToInvoice } = await admin
+        .from('rentals')
+        .select('status')
+        .eq('id', secondRental)
+        .maybeSingle()
+      check(
+        backToInvoice?.status === 'TO_INVOICE',
+        'L’annulation rend la location à « À facturer »',
+        `${backToInvoice?.status}`
+      )
+
+      /* --- LECTURE ET SUPPRESSION. */
+      const noBilling = await session('acc_view')
+      const blindRead = await noBilling
+        .from('customer_invoices')
+        .select('id')
+        .eq('id', invoiceId)
+      check(
+        (blindRead.data?.length ?? 0) === 0,
+        'RLS ne livre aucune facture sans `customer_invoices.view`'
+      )
+
+      const seen = await viewer
+        .from('customer_invoices')
+        .select('invoice_no')
+        .eq('id', invoiceId)
+        .maybeSingle()
+      check(
+        Boolean(seen.data?.invoice_no),
+        'Avec `customer_invoices.view`, la facture est lisible'
+      )
+
+      const removal = await owner.from('customer_invoices').delete().eq('id', invoiceId)
+      const { data: stillHere } = await admin
+        .from('customer_invoices')
+        .select('id')
+        .eq('id', invoiceId)
+        .maybeSingle()
+      check(refused(removal) || Boolean(stillHere), 'Aucune suppression possible')
+    }
+
+    /* ------------------------------------------------------------------ */
+    console.log('\n──────────────────────────────────────────────────────────────')
     console.log('CATALOGUE ET DONNÉES DEMO\n')
 
     {
@@ -1739,6 +2153,14 @@ async function main() {
       await admin.from('maintenance_costs').delete().eq('maintenance_id', id)
       await admin.from('vehicle_occupations').delete().eq('source_id', id)
       await admin.from('vehicle_maintenances').delete().eq('id', id)
+    }
+    /*
+     * Une facture retient sa location (`on delete restrict`) : elle part avant
+     * elle, avec ses lignes.
+     */
+    for (const id of fixtures.customerInvoices) {
+      await admin.from('customer_invoice_lines').delete().eq('customer_invoice_id', id)
+      await admin.from('customer_invoices').delete().eq('id', id)
     }
     for (const id of fixtures.rentals) {
       await admin.from('rental_inspection_photos').delete().eq('inspection_id', id)

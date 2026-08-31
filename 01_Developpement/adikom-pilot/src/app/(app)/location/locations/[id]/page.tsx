@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   Image as ImageIcon,
   KeyRound,
+  Receipt,
   TriangleAlert,
   Undo2,
 } from 'lucide-react'
@@ -42,6 +43,13 @@ import {
 } from '@/features/rentals/rental-actions-panel'
 import { ExtendPanel } from '@/features/rentals/extend-panel'
 import { ControlPanel } from '@/features/rentals/control-panel'
+import { CloseRentalPanel } from '@/features/rentals/close-panel'
+import { getInvoiceForRental } from '@/features/customer-invoices/data'
+import {
+  CUSTOMER_INVOICE_STATUS_LABELS,
+  CUSTOMER_INVOICE_STATUS_TONES,
+  formatAmount,
+} from '@/features/customer-invoices/constants'
 
 export const metadata: Metadata = { title: 'Location' }
 
@@ -99,6 +107,21 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
   // Déclarer un incident relève du module Incidents, pas des locations : un
   // exploitant peut suivre un contrat sans avoir le droit d'ouvrir un constat.
   const canDeclareIncident = await can(PERMISSIONS.INCIDENTS_CREATE)
+
+  /*
+   * LA FACTURATION EST UN AUTRE MÉTIER (DEC-024).
+   *
+   * Voir une location n'est pas voir sa facture, et la préparer encore moins.
+   * Sans `billing.customer_invoices.view`, la carte DISPARAÎT : une carte vide
+   * se lirait « cette location n'a pas été facturée », affirmation qu'un refus
+   * de lecture ne permet pas (DEC-017).
+   */
+  const [canSeeInvoices, canCreateInvoice] = await Promise.all([
+    can(PERMISSIONS.CUSTOMER_INVOICES_VIEW),
+    can(PERMISSIONS.CUSTOMER_INVOICES_CREATE),
+  ])
+
+  const invoice = canSeeInvoices ? await getInvoiceForRental(id) : null
 
   const shown = displayStatus(rental.status, rental.expectedReturnAt)
   const beforeDeparture = rental.status === 'PREPARING' || rental.status === 'CONFIRMED'
@@ -177,6 +200,10 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
           ) : canReturn && running ? (
             <ButtonLink href={`/location/locations/${id}/retour`} icon={Undo2}>
               Enregistrer le retour
+            </ButtonLink>
+          ) : canCreateInvoice && rental.status === 'TO_INVOICE' && !invoice ? (
+            <ButtonLink href={`/facturation/clients/nouvelle?location=${id}`} icon={Receipt}>
+              Facturer la location
             </ButtonLink>
           ) : undefined
         }
@@ -277,6 +304,62 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
           */}
           {running && <DepartureReadings rentalId={id} />}
 
+          {/*
+            LA FACTURATION, VUE DEPUIS LE CONTRAT (Workflow 07 §49).
+            « L'utilisateur doit pouvoir accéder à la location depuis la
+            facture » — et réciproquement : le dossier dit où en est sa créance.
+          */}
+          {canSeeInvoices && rental.status !== 'CANCELLED' && (
+            <Card
+              title="Facturation"
+              description="La créance issue de ce contrat (Workflow 07 §49)."
+            >
+              {invoice ? (
+                <dl>
+                  <InfoRow label="Facture">
+                    <Link
+                      href={`/facturation/clients/${invoice.id}`}
+                      className="text-adikom-500 hover:underline tabular"
+                    >
+                      {invoice.invoiceNo}
+                    </Link>
+                  </InfoRow>
+                  <InfoRow label="Total">
+                    <span className="font-medium tabular">{formatAmount(invoice.total)}</span>
+                  </InfoRow>
+                  <InfoRow label="État">
+                    <Badge tone={CUSTOMER_INVOICE_STATUS_TONES[invoice.status]}>
+                      {CUSTOMER_INVOICE_STATUS_LABELS[invoice.status]}
+                    </Badge>
+                  </InfoRow>
+                  <InfoRow label="Échéance">
+                    {formatDate(invoice.dueDate) ?? <Empty />}
+                  </InfoRow>
+                </dl>
+              ) : (
+                <EmptyState
+                  icon={Receipt}
+                  title="Aucune facture"
+                  description={
+                    rental.status === 'TO_INVOICE'
+                      ? 'Cette location attend sa facture. Son émission la fera passer « Facturée ».'
+                      : 'Une location se facture une fois son contrôle de retour validé.'
+                  }
+                  action={
+                    canCreateInvoice && rental.status === 'TO_INVOICE' ? (
+                      <ButtonLink
+                        href={`/facturation/clients/nouvelle?location=${id}`}
+                        icon={Receipt}
+                      >
+                        Facturer la location
+                      </ButtonLink>
+                    ) : undefined
+                  }
+                />
+              )}
+            </Card>
+          )}
+
           {(rental.conditions || rental.notes) && (
             <Card title="Conditions et observations">
               <dl>
@@ -345,6 +428,19 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
           )}
 
           {/*
+            La clôture ferme le dossier d'exploitation, pas la créance
+            (Workflow 01 §42). Elle n'apparaît qu'une fois la facture émise.
+          */}
+          {canClose && rental.status === 'INVOICED' && (
+            <Card
+              title="Clôturer"
+              description="Le dossier est traité. La facture, elle, garde son état."
+            >
+              <CloseRentalPanel rentalId={id} invoiceNo={invoice?.invoiceNo ?? null} />
+            </Card>
+          )}
+
+          {/*
             Trois documents, une seule location : le contrat, le bon remis au
             départ et le procès-verbal signé au retour. Chacun n'est proposé
             qu'une fois la pièce a un sens — un bon de départ avant le départ
@@ -402,11 +498,21 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
 
           <Card title="Étape suivante">
             <p className="text-sm text-muted">
-              {rental.status === 'CONFIRMED'
-                ? 'Le contrat est prêt : enregistrez le départ et l’état des lieux du véhicule.'
-                : rental.startedAt
-                  ? 'Le retour et le contrôle relèvent d’un lot ultérieur.'
-                  : 'Confirmez le contrat pour pouvoir enregistrer le départ.'}
+              {rental.status === 'PREPARING'
+                ? 'Confirmez le contrat pour pouvoir enregistrer le départ.'
+                : rental.status === 'CONFIRMED'
+                  ? 'Le contrat est prêt : enregistrez le départ et l’état des lieux du véhicule.'
+                  : running
+                    ? 'Le véhicule est sorti : enregistrez son retour à la restitution.'
+                    : rental.status === 'RETURNED' || rental.status === 'TO_CONTROL'
+                      ? 'Le véhicule est rentré : validez le contrôle de retour pour passer à la facturation.'
+                      : rental.status === 'TO_INVOICE'
+                        ? 'Le contrôle est validé : préparez la facture client. Son émission rendra la location « Facturée ».'
+                        : rental.status === 'INVOICED'
+                          ? 'La facture est émise. Le dossier peut être clôturé, même avant encaissement (Workflow 01 §42).'
+                          : rental.status === 'CLOSED'
+                            ? 'Dossier clôturé. Son historique reste consultable ; l’encaissement se suit sur la facture.'
+                            : 'Cette location est annulée : son historique est conservé.'}
             </p>
           </Card>
         </div>

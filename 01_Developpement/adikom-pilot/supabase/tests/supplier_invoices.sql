@@ -131,21 +131,19 @@ begin
 end $$;
 
 
--- --- 3. LA FACTURATION CLIENT N'EXISTE PAS ----------------------------------------------
+-- --- 3. L'ENCAISSEMENT CLIENT N'EXISTE PAS ----------------------------------------------
 --
 -- `supplier_payments` et `financial_accounts` ont quitté cette liste le
--- 31/08/2026 : le LOT 6 les a livrés. Ce qui reste hors périmètre, c'est la
--- facturation CLIENT — et le fait qu'aucun solde ne soit stocké nulle part.
+-- 31/08/2026 (LOT 6), `customer_invoices` le 01/09/2026 (LOT 7). Ce qui reste
+-- hors périmètre, c'est l'ENCAISSEMENT client — et le fait qu'aucun solde ne
+-- soit stocké nulle part.
 do $$
 declare v_bad text[];
 begin
   select array_agg(tablename) into v_bad
   from pg_tables
   where schemaname = 'public'
-    and tablename in (
-      'customer_invoices', 'customer_payments', 'supplier_balances',
-      'payment_allocations'
-    );
+    and tablename in ('customer_payments', 'supplier_balances', 'payment_allocations');
 
   if v_bad is not null then
     raise exception 'Des objets hors périmètre existent : %', v_bad;
@@ -155,14 +153,14 @@ begin
   select array_agg(table_name || '.' || column_name) into v_bad
   from information_schema.columns
   where table_schema = 'public'
-    and table_name in ('supplier_invoices', 'financial_accounts')
+    and table_name in ('supplier_invoices', 'financial_accounts', 'customer_invoices')
     and column_name in ('balance', 'paid_amount', 'remaining_amount', 'net_payable');
 
   if v_bad is not null then
     raise exception 'Solde ou montant payé recopié : % — ils se calculent.', v_bad;
   end if;
 
-  raise notice '[OK] 3. Aucune facturation client ; aucun solde stocké.';
+  raise notice '[OK] 3. Aucun encaissement client ; aucun solde stocké.';
 end $$;
 
 

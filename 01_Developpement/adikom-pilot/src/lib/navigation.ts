@@ -215,7 +215,7 @@ export const NAVIGATION: NavEntry[] = [
         href: '/facturation/clients',
         icon: FileText,
         permission: PERMISSIONS.CUSTOMER_INVOICES_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Factures fournisseurs',

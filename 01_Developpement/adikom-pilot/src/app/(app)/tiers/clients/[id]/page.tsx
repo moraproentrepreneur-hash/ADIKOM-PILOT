@@ -1,9 +1,17 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Pencil } from 'lucide-react'
+import { ArrowLeft, Pencil, Receipt } from 'lucide-react'
 
-import { Badge, Card, Empty, InfoRow, PageHeader } from '@/components/ui/primitives'
+import {
+  Badge,
+  ButtonLink,
+  Card,
+  Empty,
+  EmptyState,
+  InfoRow,
+  PageHeader,
+} from '@/components/ui/primitives'
 import { Notice } from '@/components/ui/feedback'
 import { StatusChangeForm } from '@/components/ui/status-change-form'
 import { Tabs, type TabItem } from '@/components/ui/tabs'
@@ -22,6 +30,13 @@ import { ClientForm } from '@/features/clients/client-form'
 import { listPricingRules } from '@/features/pricing/data'
 import { PricingRulesPanel } from '@/features/pricing/rules-panel'
 import { listCategoryOptions, listVehicleOptions } from '@/features/fleet/data'
+import { listCustomerInvoicesForClient } from '@/features/customer-invoices/data'
+import {
+  CUSTOMER_INVOICE_STATUS_LABELS,
+  CUSTOMER_INVOICE_STATUS_TONES,
+  displayStatus as displayInvoiceStatus,
+  formatAmount,
+} from '@/features/customer-invoices/constants'
 
 export const metadata: Metadata = { title: 'Fiche client' }
 
@@ -34,20 +49,31 @@ export default async function ClientDetailPage(props: PageProps<'/tiers/clients/
   const client = await getClientDetail(id)
   if (!client) notFound()
 
-  const tab = searchParams.onglet === 'tarification' ? 'tarification' : 'informations'
   const editing = searchParams.mode === 'edition'
   const justCreated = searchParams.cree === '1'
   const justSaved = searchParams.enregistre === '1'
 
-  const [canUpdate, canArchive, canViewPricing, canDownload, canPrint] = await Promise.all([
-    can(PERMISSIONS.CLIENTS_UPDATE),
-    can(PERMISSIONS.CLIENTS_ARCHIVE),
-    can(PERMISSIONS.CLIENTS_PRICING_VIEW),
-    // DEC-024 : produire un document et l'imprimer sont deux capacités
-    // distinctes de la consultation, attribuables séparément.
-    can(PERMISSIONS.CLIENTS_DOWNLOAD),
-    can(PERMISSIONS.CLIENTS_PRINT),
-  ])
+  const [canUpdate, canArchive, canViewPricing, canDownload, canPrint, canViewInvoices] =
+    await Promise.all([
+      can(PERMISSIONS.CLIENTS_UPDATE),
+      can(PERMISSIONS.CLIENTS_ARCHIVE),
+      can(PERMISSIONS.CLIENTS_PRICING_VIEW),
+      // DEC-024 : produire un document et l'imprimer sont deux capacités
+      // distinctes de la consultation, attribuables séparément.
+      can(PERMISSIONS.CLIENTS_DOWNLOAD),
+      can(PERMISSIONS.CLIENTS_PRINT),
+      // Consulter un client n'est pas consulter ses créances : l'onglet ne
+      // s'ouvre qu'à qui a le droit de voir les factures (DEC-024).
+      can(PERMISSIONS.CUSTOMER_INVOICES_VIEW),
+    ])
+
+  const requestedTab = searchParams.onglet
+  const tab =
+    requestedTab === 'tarification' && canViewPricing
+      ? 'tarification'
+      : requestedTab === 'factures' && canViewInvoices
+        ? 'factures'
+        : 'informations'
 
   /*
    * Organisation documentée de la fiche (03_Modules/04_Tiers.md §8.2). Les
@@ -67,7 +93,15 @@ export default async function ClientDetailPage(props: PageProps<'/tiers/clients/
       : []),
     { key: 'reservations', label: 'Réservations', planned: true },
     { key: 'locations', label: 'Locations', planned: true },
-    { key: 'factures', label: 'Factures', planned: true },
+    ...(canViewInvoices
+      ? [
+          {
+            key: 'factures',
+            label: 'Factures',
+            href: `/tiers/clients/${id}?onglet=factures`,
+          },
+        ]
+      : [{ key: 'factures', label: 'Factures', planned: true }]),
     { key: 'paiements', label: 'Paiements', planned: true },
     { key: 'documents', label: 'Documents', planned: true },
     { key: 'historique', label: 'Historique', planned: true },
@@ -216,10 +250,111 @@ export default async function ClientDetailPage(props: PageProps<'/tiers/clients/
             </div>
           </div>
         )
-      ) : (
+      ) : tab === 'tarification' ? (
         <PricingTab clientId={id} />
+      ) : (
+        <InvoicesTab clientId={id} />
       )}
     </>
+  )
+}
+
+/**
+ * Factures du client — Workflow 07 §50, §51.
+ *
+ * §51 énumère ce que la fiche PEUT afficher : total facturé, total payé, total
+ * restant. Seul le premier est calculable : les règlements clients n'existent
+ * pas. Les deux autres ne sont donc pas affichés à zéro — l'écran DIT ce qu'il
+ * ne sait pas (DEC-017).
+ */
+async function InvoicesTab({ clientId }: { clientId: string }) {
+  const [invoices, canCreate] = await Promise.all([
+    listCustomerInvoicesForClient(clientId),
+    can(PERMISSIONS.CUSTOMER_INVOICES_CREATE),
+  ])
+
+  // Une facture annulée n'est plus une créance : elle reste listée, mais elle
+  // ne compte pas dans le total facturé.
+  const billed = invoices
+    .filter((invoice) => invoice.status !== 'CANCELLED' && invoice.status !== 'DRAFT')
+    .reduce((sum, invoice) => sum + invoice.total, 0)
+
+  return (
+    <div className="space-y-5">
+      <Card
+        title="Historique financier"
+        description="Calculé à partir des factures enregistrées (Workflow 07 §51)."
+      >
+        <dl>
+          <InfoRow label="Total facturé" hint="Factures émises, hors brouillons et annulations.">
+            <span className="font-medium tabular">{formatAmount(billed)}</span>
+          </InfoRow>
+          <InfoRow label="Total encaissé" hint="Règlements clients (§32).">
+            <span className="text-muted">Les encaissements clients ne sont pas encore gérés.</span>
+          </InfoRow>
+          <InfoRow label="Reste dû" hint="Total facturé moins les encaissements.">
+            <span className="text-muted">
+              Non calculable tant qu’aucun encaissement n’est enregistré.
+            </span>
+          </InfoRow>
+          <InfoRow label="Nombre de factures">
+            <span className="tabular">{invoices.length}</span>
+          </InfoRow>
+        </dl>
+      </Card>
+
+      <Card title="Factures" description="Créances d’ADIKOM sur ce client (§50).">
+        {invoices.length === 0 ? (
+          <EmptyState
+            icon={Receipt}
+            title="Aucune facture"
+            description="Ce client n’a encore reçu aucune facture."
+            action={
+              canCreate ? (
+                <ButtonLink href={`/facturation/clients/nouvelle?client=${clientId}`} icon={Receipt}>
+                  Préparer une facture
+                </ButtonLink>
+              ) : undefined
+            }
+          />
+        ) : (
+          <ul className="divide-y divide-line">
+            {invoices.map((invoice) => {
+              const shown = displayInvoiceStatus(
+                invoice.status,
+                invoice.dueDate,
+                invoice.total,
+                invoice.paidAmount
+              )
+
+              return (
+                <li key={invoice.id} className="flex flex-wrap items-center gap-3 py-3">
+                  <div className="min-w-0 flex-1">
+                    <Link
+                      href={`/facturation/clients/${invoice.id}`}
+                      className="font-medium text-adikom-500 hover:underline tabular"
+                    >
+                      {invoice.invoiceNo}
+                    </Link>
+                    <p className="text-xs text-muted">
+                      {formatDate(invoice.invoiceDate)}
+                      {invoice.rentalNo ? ` · ${invoice.rentalNo}` : ''}
+                      {invoice.dueDate ? ` · échéance ${formatDate(invoice.dueDate)}` : ''}
+                    </p>
+                  </div>
+                  <span className="font-medium text-ink tabular">
+                    {formatAmount(invoice.total)}
+                  </span>
+                  <Badge tone={CUSTOMER_INVOICE_STATUS_TONES[shown]}>
+                    {CUSTOMER_INVOICE_STATUS_LABELS[shown]}
+                  </Badge>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </Card>
+    </div>
   )
 }
 

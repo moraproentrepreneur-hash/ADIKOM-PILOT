@@ -101,18 +101,19 @@ end $$;
 -- --- 3. LE POINT D'ACCROCHE EST DEVENU UNE RELATION -----------------------------------
 --
 -- Le LOT 5 a livré la facture fournisseur : `supplier_invoice_id` porte
--- désormais une clé étrangère. Ce que le LOT 4 vérifiait — l'absence de tout
--- objet financier — devient donc : la facture existe, et RIEN D'AUTRE.
+-- désormais une clé étrangère. `customer_invoices` a quitté cette liste le
+-- 01/09/2026 (LOT 7). Ce qui reste hors périmètre est l'ENCAISSEMENT client, et
+-- tout solde qui serait stocké au lieu d'être calculé.
 do $$
 declare v_bad text[];
 begin
   select array_agg(tablename) into v_bad
   from pg_tables
   where schemaname = 'public'
-    and tablename in ('customer_invoices', 'customer_payments', 'supplier_balances');
+    and tablename in ('customer_payments', 'supplier_balances', 'payment_allocations');
 
   if v_bad is not null then
-    raise exception 'Des objets de facturation client existent déjà : %', v_bad;
+    raise exception 'Des objets d''encaissement client existent déjà : %', v_bad;
   end if;
 
   if not exists (
@@ -131,7 +132,7 @@ begin
     raise exception 'La clé étrangère vers `supplier_invoices` est absente (LOT 5).';
   end if;
 
-  raise notice '[OK] 3. Facture fournisseur rattachée par clé étrangère ; aucune facturation client.';
+  raise notice '[OK] 3. Facture fournisseur rattachée par clé étrangère ; aucun encaissement client.';
 end $$;
 
 

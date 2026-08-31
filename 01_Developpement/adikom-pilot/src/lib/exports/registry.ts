@@ -33,6 +33,11 @@ import {
   listRentals,
   STATUS_LABELS as RENTAL_STATUS,
 } from '@/features/rentals/data'
+import { listCustomerInvoices } from '@/features/customer-invoices/data'
+import {
+  CUSTOMER_INVOICE_STATUS_LABELS,
+  displayStatus as displayCustomerInvoiceStatus,
+} from '@/features/customer-invoices/constants'
 import { listSupplierInvoices } from '@/features/supplier-invoices/data'
 import {
   displayStatus as displaySupplierInvoiceStatus,
@@ -333,6 +338,63 @@ export const EXPORTS: Record<string, ExportDefinition> = {
             : []),
         ],
         mayReadAmounts ? 'Exécution et tarifs verrouillés' : 'Exécution'
+      )
+    },
+  },
+
+  'factures-clients': {
+    title: 'Factures clients',
+    viewPermission: PERMISSIONS.CUSTOMER_INVOICES_VIEW,
+    permission: PERMISSIONS.CUSTOMER_INVOICES_EXPORT,
+    entityType: 'customer_invoices',
+    moduleCode: 'billing',
+    async build(filters) {
+      const rows = await listCustomerInvoices({
+        search: filters.q,
+        status: filters.statut,
+        clientId: filters.client,
+        from: filters.du,
+        to: filters.au,
+      })
+
+      /*
+       * NI MONTANT ENCAISSÉ, NI SOLDE.
+       *
+       * Ils supposent des règlements clients, qui n'existent pas. Une colonne à
+       * zéro dans un classeur exporté ferait autorité alors qu'elle n'aurait
+       * rien lu (DEC-017) — la colonne n'existe donc pas du tout.
+       */
+      return dataset(
+        rows,
+        [
+          { header: 'Facture', width: 20, value: (r) => r.invoiceNo },
+          { header: 'Client', width: 34, value: (r) => r.clientLabel },
+          { header: 'Location', width: 20, value: (r) => r.rentalNo },
+          {
+            header: 'Date',
+            width: 14,
+            format: 'date',
+            value: (r) => toExcelDate(r.invoiceDate),
+          },
+          {
+            header: 'Échéance',
+            width: 14,
+            format: 'date',
+            value: (r) => toExcelDate(r.dueDate),
+          },
+          { header: 'Sous-total', width: 18, format: 'amount', value: (r) => r.subtotal },
+          { header: 'Réductions', width: 18, format: 'amount', value: (r) => r.discount },
+          { header: 'Total', width: 18, format: 'amount', value: (r) => r.total },
+          {
+            header: 'État',
+            width: 22,
+            value: (r) =>
+              CUSTOMER_INVOICE_STATUS_LABELS[
+                displayCustomerInvoiceStatus(r.status, r.dueDate, r.total, r.paidAmount)
+              ],
+          },
+        ],
+        'Sous-total, réductions et total — les encaissements ne sont pas gérés'
       )
     },
   },
