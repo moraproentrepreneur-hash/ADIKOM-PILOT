@@ -74,6 +74,14 @@ const ERROR_PATTERNS: readonly [RegExp, string][] = [
     'Des imputations réduisent encore cette facture : chacune doit d’abord en être détachée.',
   ],
   [
+    /ont été réglés sur cette facture/i,
+    'Des règlements soldent encore cette facture : chacun doit d’abord être annulé.',
+  ],
+  [
+    /consulter les règlements qui la soldent/i,
+    'Annuler une facture exige de pouvoir consulter les règlements qui la soldent.',
+  ],
+  [
     /cette facture est déjà annulée/i,
     'Cette facture est déjà annulée.',
   ],

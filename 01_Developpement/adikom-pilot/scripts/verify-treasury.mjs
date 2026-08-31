@@ -69,6 +69,10 @@ const PROFILES = {
     'billing.supplier_payments.view',
     'billing.supplier_payments.create',
     'billing.supplier_payments.cancel',
+    // Pour éprouver qu'une facture réglée ne s'annule PAS : sans cette
+    // capacité, l'écran ne proposerait pas l'acte, et le refus ne se verrait
+    // jamais.
+    'billing.supplier_invoices.cancel',
   ],
   // Voit les comptes, PAS leurs soldes ni les écritures.
   noBalance: [...BASE_READERS, 'treasury.accounts.view'],
@@ -157,6 +161,29 @@ async function act(page, buttonName, expected, timeout = 60000) {
   await page.waitForTimeout(800)
   await button.click()
   await page.getByText(expected, { exact: false }).first().waitFor({ timeout })
+}
+
+/**
+ * Déclenche un acte qui FAIT DISPARAÎTRE SON PROPRE FORMULAIRE.
+ *
+ * Le règlement qui solde une facture retire le formulaire de règlement : le
+ * message de succès s'en va avec lui. Le repère devient alors l'état que
+ * l'écran affiche ensuite, relu jusqu'à ce qu'il change.
+ */
+async function actUntil(page, buttonName, needle, timeout = 60000) {
+  const button = page.getByRole('button', { name: buttonName }).first()
+  await button.waitFor({ state: 'visible', timeout: 30000 })
+  await page.waitForTimeout(800)
+  await button.click()
+
+  const started = Date.now()
+  for (;;) {
+    const text = await mainText(page).catch(() => '')
+    if (text.includes(needle)) return true
+    if (Date.now() - started > timeout) return false
+    await page.waitForTimeout(1500)
+    if (Date.now() - started > timeout / 3) await page.reload({ waitUntil: 'load' })
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -404,9 +431,19 @@ async function main() {
         'Un règlement au-delà du reste dû est refusé, avec son motif (§22)'
       )
 
-      // Au KMF près, il passe — et solde la facture.
+      /*
+       * Au KMF près, il passe — et solde la facture. Le formulaire disparaît
+       * alors, emportant son message de succès : le repère devient l'état.
+       *
+       * On resaisit TOUT le formulaire : après un refus, il a été re-rendu, et
+       * repartir de ses champs supposerait un état qu'aucun utilisateur ne
+       * vérifierait.
+       */
+      await page.selectOption('#accountId', accountId)
       await page.fill('#amount', '80000')
-      await act(page, 'Enregistrer le règlement', 'Le règlement est enregistré')
+      await page.fill('#paidOn', '2026-08-16')
+      await page.selectOption('#method', 'CASH')
+      await actUntil(page, 'Enregistrer le règlement', 'soldée')
 
       await page.reload({ waitUntil: 'load' })
       check((await rowAmount(page, 'Reste dû')) === 0, 'La facture est soldée : reste dû 0 KMF')
@@ -442,10 +479,10 @@ async function main() {
       await page.goto(`${base}/facturation/fournisseurs/${invoiceId}`, { waitUntil: 'load' })
 
       // Une facture réglée ne s'annule pas.
-      await act(page, 'Annuler la facture', 'doivent d’abord')
+      await act(page, 'Annuler la facture', 'doit d’abord être annulé')
       let text = await mainText(page)
       check(
-        /règlements? .{0,40}annulé|doit d’abord être annulé/i.test(text),
+        /doit d’abord être annulé/i.test(text),
         'Une facture réglée ne s’annule pas, et l’écran dit pourquoi'
       )
 
