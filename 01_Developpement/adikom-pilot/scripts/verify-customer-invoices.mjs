@@ -135,13 +135,16 @@ async function mainText(page) {
 /**
  * Valeur d'une ligne de fiche, en entier.
  *
- * Le libellé est comparé EXACTEMENT : « Total » et « Sous-total » se
- * ressembleraient trop pour un `hasText` par sous-chaîne, et la recette lirait
- * le mauvais montant sans jamais s'en apercevoir.
+ * Le libellé est ancré AU DÉBUT du `dt`, jamais cherché en sous-chaîne :
+ * « Total » et « Sous-total » se ressemblent trop, et la recette lirait le
+ * mauvais montant sans jamais s'en apercevoir.
+ *
+ * L'ancrage ne peut pas aller jusqu'à la fin : le `dt` contient aussi l'aide de
+ * la ligne, dans un `span` imbriqué.
  */
 async function rowAmount(page, label) {
   const text = await page
-    .locator('dt', { hasText: new RegExp(`^${label}$`) })
+    .locator('dt', { hasText: new RegExp(`^\\s*${label}`) })
     .first()
     .locator('xpath=following-sibling::dd[1]')
     .innerText()
@@ -160,6 +163,40 @@ async function act(page, buttonName, expected, timeout = 60000) {
   await page.waitForTimeout(800)
   await button.click()
   await page.getByText(expected, { exact: false }).first().waitFor({ timeout })
+}
+
+/**
+ * Ajoute une ligne, et attend que LA SOMME change.
+ *
+ * « La ligne a été ajoutée » reste affiché d'un ajout au suivant : l'attendre
+ * reviendrait à ne pas attendre, et la ligne suivante serait saisie dans un
+ * formulaire que le rendu en cours va réinitialiser. Le seul repère fiable est
+ * l'EFFET — le sous-total ou le total des réductions, relu jusqu'à la valeur
+ * attendue.
+ */
+async function submitLine(page, rowLabel, expected, fields = null) {
+  if (fields) {
+    await page.waitForFunction(() => document.querySelector('#quantity') !== null)
+    if (fields.kind) await page.selectOption('#kind', fields.kind)
+    await page.fill('#label', fields.label)
+    await page.fill('#quantity', fields.quantity)
+    await page.fill('#unitPrice', fields.unitPrice)
+    if (fields.justification) await page.fill('#justification', fields.justification)
+  }
+
+  const button = page.getByRole('button', { name: 'Ajouter la ligne' }).first()
+  await button.waitFor({ state: 'visible', timeout: 30000 })
+  await page.waitForTimeout(500)
+  await button.click()
+
+  const started = Date.now()
+  for (;;) {
+    const value = await rowAmount(page, rowLabel).catch(() => null)
+    if (value === expected) return true
+    if (Date.now() - started > 60000) return false
+    await page.waitForTimeout(1500)
+    if (Date.now() - started > 20000) await page.reload({ waitUntil: 'load' })
+  }
 }
 
 /**
@@ -444,33 +481,34 @@ async function main() {
       check(prefilled === '150000', 'Le prix unitaire est pré-rempli au tarif verrouillé', prefilled)
       check(emptyQty === '', 'La quantité, elle, reste vide : rien n’est supposé', `« ${emptyQty} »`)
 
+      // La ligne de location : seule la quantité reste à saisir.
       await page.fill('#quantity', '3')
-      await act(page, 'Ajouter la ligne', 'La ligne a été ajoutée')
+      const rentalLine = await submitLine(page, 'Sous-total', 450000)
+      check(rentalLine, 'Ligne de location : 3 × 150 000 = 450 000')
 
       // Un service supplémentaire (§14).
-      await page.selectOption('#kind', 'SERVICE')
-      await page.fill('#label', 'Siège enfant')
-      await page.fill('#quantity', '1')
-      await page.fill('#unitPrice', '50000')
-      await act(page, 'Ajouter la ligne', 'La ligne a été ajoutée')
+      const serviceLine = await submitLine(
+        page,
+        'Sous-total',
+        500000,
+        { kind: 'SERVICE', label: 'Siège enfant', quantity: '1', unitPrice: '50000' }
+      )
+      check(serviceLine, 'Service supplémentaire : sous-total à 500 000 (§14)')
 
       // Un frais validé, justifié (§15).
-      await page.selectOption('#kind', 'FEE')
-      await page.fill('#label', 'Carburant manquant')
-      await page.fill('#quantity', '1')
-      await page.fill('#unitPrice', '20000')
-      await page.fill('#justification', 'Retour à 1/2 contre plein au départ.')
-      await act(page, 'Ajouter la ligne', 'La ligne a été ajoutée')
+      const feeLine = await submitLine(page, 'Sous-total', 520000, {
+        kind: 'FEE',
+        label: 'Carburant manquant',
+        quantity: '1',
+        unitPrice: '20000',
+        justification: 'Retour à 1/2 contre plein au départ.',
+      })
+      check(feeLine, 'Frais justifié : sous-total à 520 000 (§15)')
 
-      await page.reload({ waitUntil: 'load' })
-      check((await rowAmount(page, 'Sous-total')) === 520000, 'Sous-total : 450 000 + 70 000 = 520 000')
-
-      // Une réduction (§24).
+      // Une réduction (§24) : la nature est choisie d'abord, pour lire l'avis
+      // que l'écran donne AVANT l'envoi.
       await page.waitForFunction(() => document.querySelector('#kind') !== null)
       await page.selectOption('#kind', 'DISCOUNT')
-      await page.fill('#label', 'Geste commercial')
-      await page.fill('#quantity', '1')
-      await page.fill('#unitPrice', '70000')
 
       const hint = await mainText(page)
       check(
@@ -478,11 +516,15 @@ async function main() {
         'L’écran annonce qu’une réduction se soustrait, sans montant négatif'
       )
 
-      await act(page, 'Ajouter la ligne', 'La ligne a été ajoutée')
-      await page.reload({ waitUntil: 'load' })
+      const discountLine = await submitLine(page, 'Réductions', 70000, {
+        label: 'Geste commercial',
+        quantity: '1',
+        unitPrice: '70000',
+      })
+      check(discountLine, 'Réductions : 70 000 KMF (§24)')
 
-      check((await rowAmount(page, 'Réductions')) === 70000, 'Réductions : 70 000 KMF')
-      check((await rowAmount(page, 'Total')) === 450000, 'Total : 520 000 − 70 000 = 450 000')
+      const total = await rowAmount(page, 'Total')
+      check(total === 450000, 'Total : 520 000 − 70 000 = 450 000', String(total))
 
       const text = await mainText(page)
       check(
@@ -506,7 +548,14 @@ async function main() {
 
       await page.goto(`${base}/facturation/clients/${invoiceId}`, { waitUntil: 'load' })
 
-      const issued = await actUntil(page, 'Émettre la facture', 'Émise')
+      /*
+       * LE REPÈRE EST L'EFFET, PAS LE MOT.
+       *
+       * « Émise » figure déjà dans l'historique — « Émise le » — avant toute
+       * émission : l'attendre reviendrait à ne pas attendre. On attend donc la
+       * phrase que SEUL l'état émis produit.
+       */
+      const issued = await actUntil(page, 'Émettre la facture', 'Créance reconnue')
       check(issued, 'La facture est émise (§26)')
 
       await page.reload({ waitUntil: 'load' })
@@ -520,7 +569,8 @@ async function main() {
         !/Retirer/.test(text),
         'Et aucune ligne ne se retire plus'
       )
-      check((await rowAmount(page, 'Total')) === 450000, 'Le total n’a pas bougé après émission')
+      const totalAfter = await rowAmount(page, 'Total')
+      check(totalAfter === 450000, 'Le total n’a pas bougé après émission', String(totalAfter))
 
       // La location a suivi.
       await page.goto(`${base}/location/locations/${rentalId}`, { waitUntil: 'load' })
@@ -565,11 +615,13 @@ async function main() {
         waitUntil: 'load',
       })
       const text = await mainText(page)
+      const billed = await rowAmount(page, 'Total facturé')
 
       check(/FAC-C-\d{4}-\d{6}/.test(text), 'L’onglet Factures liste la facture du client')
       check(
-        (await rowAmount(page, 'Total facturé')) === 450000,
-        'Le total facturé est calculé des factures émises'
+        billed === 450000,
+        'Le total facturé est calculé des factures émises',
+        String(billed)
       )
       check(
         /encaissements clients ne sont pas encore gérés/i.test(text),
@@ -648,12 +700,24 @@ async function main() {
 
       await page.waitForFunction(() => document.querySelector('#quantity') !== null)
       await page.fill('#quantity', '2')
-      await act(page, 'Ajouter la ligne', 'La ligne a été ajoutée')
+      check(
+        await submitLine(page, 'Sous-total', 300000),
+        'Ligne de location de la seconde facture : 2 × 150 000'
+      )
 
-      const issued = await actUntil(page, 'Émettre la facture', 'Émise')
+      /*
+       * LE REPÈRE EST L'EFFET, PAS LE MOT.
+       *
+       * « Émise » figure déjà dans l'historique — « Émise le » — avant toute
+       * émission : l'attendre reviendrait à ne pas attendre. On attend donc la
+       * phrase que SEUL l'état émis produit.
+       */
+      const issued = await actUntil(page, 'Émettre la facture', 'Créance reconnue')
       check(issued, 'La seconde facture est émise')
 
-      const cancelled = await actUntil(page, 'Annuler la facture', 'Annulée')
+      // Même piège : « Annulée le » est un libellé d'historique, présent avant
+      // toute annulation. Le repère est l'effet — la location rendue.
+      const cancelled = await actUntil(page, 'Annuler la facture', 'redevenue')
       check(cancelled, 'Elle s’annule : rien n’est effacé (§46)')
 
       await page.goto(`${base}/location/locations/${secondRental}`, { waitUntil: 'load' })
