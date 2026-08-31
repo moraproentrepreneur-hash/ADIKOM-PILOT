@@ -221,6 +221,22 @@ async function main() {
       .single()
     fixtures.supplierId = supplier.id
 
+    // DEC-028 : un SECOND fournisseur, pour prouver que l'unicité de la
+    // référence lui est propre et ne déborde pas sur ses confrères.
+    const { data: supplierBNo } = await admin.rpc('next_number', { p_entity_key: 'supplier' })
+    const { data: supplierB } = await admin
+      .from('suppliers')
+      .insert({
+        supplier_no: supplierBNo,
+        type: 'VEHICLE_SUPPLIER',
+        legal_name: `${MARK} — Fournisseur B`,
+        phone: '+269 101',
+        status: 'ACTIVE',
+      })
+      .select('id')
+      .single()
+    fixtures.supplierBId = supplierB.id
+
     const { data: vehicleNo } = await admin.rpc('next_number', { p_entity_key: 'vehicle' })
     const { data: vehicle } = await admin
       .from('vehicles')
@@ -411,6 +427,41 @@ async function main() {
         'Montant brut ramené à 500 000 KMF',
         `${await grossOnScreen()}`
       )
+
+      /* --- DEC-028 : la référence ne se répète pas chez le même fournisseur. */
+      await page.goto(`${base}/facturation/fournisseurs/nouvelle`, { waitUntil: 'load' })
+      await page.waitForFunction(() => document.querySelector('#supplierId') !== null)
+      await page.selectOption('#supplierId', supplier.id)
+      await page.fill('#externalRef', `FRN-${STAMP}`)
+      await page.fill('#invoiceDate', '2026-08-02')
+      await act(page, 'Enregistrer la facture', 'porte déjà la référence')
+
+      text = await mainText(page)
+      check(
+        /porte déjà la référence/i.test(text),
+        'Un doublon de référence est refusé, et l’écran nomme la facture existante'
+      )
+      check(
+        page.url().includes('/nouvelle'),
+        'Aucune seconde facture n’a été créée',
+        page.url().replace(base, '')
+      )
+
+      // Le MÊME numéro chez un AUTRE fournisseur reste légitime.
+      await page.selectOption('#supplierId', fixtures.supplierBId)
+      await page.getByRole('button', { name: 'Enregistrer la facture' }).click()
+      await page.waitForURL(/\/facturation\/fournisseurs\/[0-9a-f-]{36}/, { timeout: 45000 })
+
+      const secondId = page.url().split('/facturation/fournisseurs/')[1]?.split('?')[0] ?? null
+      if (secondId) fixtures.invoices.push(secondId)
+      check(
+        Boolean(secondId),
+        'Deux fournisseurs peuvent porter la même référence',
+        `FRN-${STAMP}`
+      )
+
+      // Retour à la facture du cycle.
+      await page.goto(`${base}/facturation/fournisseurs/${invoiceId}`, { waitUntil: 'load' })
 
       /*
        * --- Soumettre puis valider.
@@ -647,13 +698,14 @@ async function main() {
       await admin.from('supplier_invoice_lines').delete().eq('supplier_invoice_id', id)
       await admin.from('supplier_invoices').delete().eq('id', id)
     }
-    // Les factures créées hors de la liste (aucune ici) resteraient visibles :
-    // on nettoie par le fournisseur de recette, qui n'existe que pour elle.
-    if (fixtures.supplierId) {
+    // Les factures créées hors de la liste resteraient visibles : on nettoie
+    // par les fournisseurs de recette, qui n'existent que pour elle.
+    for (const supplierId of [fixtures.supplierId, fixtures.supplierBId]) {
+      if (!supplierId) continue
       const { data: leftovers } = await admin
         .from('supplier_invoices')
         .select('id')
-        .eq('supplier_id', fixtures.supplierId)
+        .eq('supplier_id', supplierId)
       for (const row of leftovers ?? []) {
         await admin.from('supplier_invoice_lines').delete().eq('supplier_invoice_id', row.id)
         await admin.from('supplier_invoices').delete().eq('id', row.id)
@@ -674,6 +726,7 @@ async function main() {
       await admin.from('vehicles').delete().eq('id', vehicleId)
     }
     if (fixtures.supplierId) await admin.from('suppliers').delete().eq('id', fixtures.supplierId)
+    if (fixtures.supplierBId) await admin.from('suppliers').delete().eq('id', fixtures.supplierBId)
     if (fixtures.categoryId) {
       await admin.from('vehicle_categories').delete().eq('id', fixtures.categoryId)
     }

@@ -88,9 +88,10 @@ export function CreateSupplierInvoicePanel({
         <Field
           label="Référence du fournisseur"
           name="externalRef"
-          hint="Numéro porté par le document reçu (§30). Distinct du numéro ADIKOM."
+          error={errors.externalRef}
+          hint="Numéro porté par le document reçu (§30). Unique pour ce fournisseur : une même facture ne s’enregistre pas deux fois."
         >
-          <Input name="externalRef" placeholder="FRN-2026-0042" />
+          <Input name="externalRef" placeholder="FRN-2026-0042" error={errors.externalRef} />
         </Field>
 
         <Field label="Date de la facture" name="invoiceDate" required error={errors.invoiceDate}>
@@ -164,8 +165,17 @@ export function EditSupplierInvoicePanel({
         <Input name="dueDate" type="date" defaultValue={dueDate ?? ''} error={errors.dueDate} />
       </Field>
 
-      <Field label="Référence du fournisseur" name="externalRef">
-        <Input name="externalRef" defaultValue={externalRef ?? ''} />
+      <Field
+        label="Référence du fournisseur"
+        name="externalRef"
+        error={errors.externalRef}
+        hint="Unique pour ce fournisseur."
+      >
+        <Input
+          name="externalRef"
+          defaultValue={externalRef ?? ''}
+          error={errors.externalRef}
+        />
       </Field>
 
       <Field label="Observations" name="notes">

@@ -114,6 +114,10 @@ const ERROR_PATTERNS: readonly [RegExp, string][] = [
     'L’échéance ne peut pas précéder la date de la facture.',
   ],
   [
+    /supplier_invoices_external_ref_unique|duplicate key/i,
+    'Une facture de ce fournisseur porte déjà cette référence. Une même facture ne s’enregistre pas deux fois.',
+  ],
+  [
     /n'est pas lisible avec vos droits/i,
     'Certaines informations nécessaires à cette opération ne sont pas accessibles avec vos droits.',
   ],
@@ -139,6 +143,21 @@ function toAmount(raw: string): number | null {
   if (cleaned === '') return null
   const value = Number(cleaned)
   return Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
+/**
+ * Doublon de référence fournisseur — DEC-028.
+ *
+ * Le message de la base NOMME la facture déjà enregistrée. C'est exactement ce
+ * que l'utilisateur doit lire pour la retrouver : il est donc conservé, et
+ * rendu au CHAMP concerné plutôt qu'en tête de formulaire (CLAUDE.md §39).
+ *
+ * Il ne révèle ni table, ni contrainte, ni trace technique — seule une
+ * référence métier que le lecteur a déjà le droit de voir.
+ */
+function duplicateReference(message: string): string | null {
+  if (!/porte déjà la référence/i.test(message)) return null
+  return message.replace(/^.*?Opération refusée\s*:\s*/i, '').trim()
 }
 
 /* -------------------------------------------------------------------------- */
@@ -180,7 +199,11 @@ export async function createSupplierInvoiceAction(
         p_notes: orNull(readText(formData, 'notes')),
       })
 
-      if (error) throw new Error(error.message)
+      if (error) {
+        const duplicate = duplicateReference(error.message)
+        if (duplicate) return { fieldErrors: { externalRef: duplicate } }
+        throw new Error(error.message)
+      }
 
       revalidatePath('/facturation/fournisseurs')
       redirect(`/facturation/fournisseurs/${data as string}?cree=1`)
@@ -225,7 +248,11 @@ export async function updateSupplierInvoiceAction(
         p_notes: orNull(readText(formData, 'notes')),
       })
 
-      if (error) throw new Error(error.message)
+      if (error) {
+        const duplicate = duplicateReference(error.message)
+        if (duplicate) return { fieldErrors: { externalRef: duplicate } }
+        throw new Error(error.message)
+      }
 
       revalidatePath(`/facturation/fournisseurs/${invoiceId}`)
       revalidatePath('/facturation/fournisseurs')

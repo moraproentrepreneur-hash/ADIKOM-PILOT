@@ -80,6 +80,14 @@ begin
     raise exception 'La référence externe du fournisseur est absente (§30).';
   end if;
 
+  -- DEC-028 : l'unicité par fournisseur ne dépend d'aucun droit de lecture.
+  if not exists (
+    select 1 from pg_indexes
+    where schemaname = 'public' and indexname = 'supplier_invoices_external_ref_unique'
+  ) then
+    raise exception 'L''index d''unicité de la référence fournisseur est absent (DEC-028).';
+  end if;
+
   raise notice '[OK] 1. Tables, type et sept statuts conformes à Module 07 §31.';
 end $$;
 
@@ -307,6 +315,74 @@ begin
   update recette_fac set invoice = v_id;
 
   raise notice '[OK] 7. FAC-F-AAAA-000001, référence fournisseur distincte (§30).';
+end $$;
+
+
+-- --- 7 bis. LA RÉFÉRENCE FOURNISSEUR NE SE RÉPÈTE PAS — DEC-028 ---------------------------
+--
+-- Unique POUR CE FOURNISSEUR. Deux fournisseurs peuvent porter la même
+-- référence : leurs numérotations sont indépendantes.
+do $$
+declare
+  v_sa   uuid := (select supplier_a from recette_fac);
+  v_sb   uuid := (select supplier_b from recette_fac);
+  v_id   uuid;
+  v_bis  uuid;
+  v_msg  text;
+begin
+  -- 1. Même fournisseur, même référence : REFUSÉ, et le message NOMME la
+  --    facture existante.
+  begin
+    perform public.create_supplier_invoice(v_sa, current_date, null, 'FRN-2026-77', 'Doublon');
+    raise exception 'ÉCHEC : un doublon de référence a été accepté.';
+  exception when unique_violation then
+    get stacked diagnostics v_msg = message_text;
+    if v_msg !~ 'porte déjà la référence' then
+      raise exception 'Message de refus inattendu : %', v_msg;
+    end if;
+    if v_msg !~ 'FAC-F-' then
+      raise exception 'Le refus ne nomme pas la facture existante : %', v_msg;
+    end if;
+  end;
+
+  -- 2. La casse et les espaces de bordure ne créent pas une autre référence.
+  begin
+    perform public.create_supplier_invoice(v_sa, current_date, null, '  frn-2026-77 ', 'Casse');
+    raise exception 'ÉCHEC : une variante de casse a contourné l''unicité.';
+  exception when unique_violation then null;
+  end;
+
+  -- 3. AUTRE fournisseur, même référence : ACCEPTÉ.
+  v_bis := public.create_supplier_invoice(v_sb, current_date, null, 'FRN-2026-77', 'Autre émetteur');
+  if v_bis is null then
+    raise exception 'Deux fournisseurs devraient pouvoir porter la même référence.';
+  end if;
+
+  -- 4. Une facture SANS référence ne bloque rien, et peut se répéter.
+  perform public.create_supplier_invoice(v_sa, current_date, null, null, 'Sans référence 1');
+  perform public.create_supplier_invoice(v_sa, current_date, null, null, 'Sans référence 2');
+
+  -- 5. Une facture ANNULÉE libère sa référence : sans quoi corriger une saisie
+  --    erronée deviendrait impossible, rien ne se supprimant ici.
+  v_id := public.create_supplier_invoice(v_sa, current_date, null, 'FRN-2026-99', 'À annuler');
+  perform public.cancel_supplier_invoice(v_id, 'Saisie erronée');
+
+  v_id := public.create_supplier_invoice(v_sa, current_date, null, 'FRN-2026-99', 'Ressaisie');
+  if v_id is null then
+    raise exception 'La référence d''une facture annulée devrait être réutilisable.';
+  end if;
+
+  -- 6. La règle vaut aussi à la MODIFICATION : un PATCH direct qui ferait
+  --    converger deux références est refusé, par le déclencheur comme par
+  --    l'index.
+  begin
+    update public.supplier_invoices set external_ref = 'FRN-2026-77'
+     where id = v_id;
+    raise exception 'ÉCHEC : un UPDATE direct a créé un doublon.';
+  exception when unique_violation then null;
+  end;
+
+  raise notice '[OK] 7 bis. Référence unique par fournisseur ; casse ignorée, annulée libérée (DEC-028).';
 end $$;
 
 

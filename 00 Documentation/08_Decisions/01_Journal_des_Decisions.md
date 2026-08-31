@@ -61,6 +61,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-025 | Cadrage de l'Étape 2.3 — cycle d'exploitation | Arbitrages ADIKOM | Validée — **clôt DEC-014** | 2026-08-24 |
 | DEC-026 | Imputation fournisseur — LOT 4 de l'Étape 2.4 | Arbitrages et contradiction | Appliquée — **tranche une contradiction** | 2026-08-29 |
 | DEC-027 | Facture fournisseur — LOT 5 de l'Étape 2.5 | Arbitrages | Appliquée — **ouvre DEC-013** | 2026-08-30 |
+| DEC-028 | Unicité de la référence fournisseur | Arbitrage ADIKOM | Appliquée — **clôt DEC-027 §i** | 2026-08-31 |
 
 ---
 
@@ -1588,6 +1589,79 @@ fournisseur** restent deux colonnes distinctes (`Module 07` §30).
 
 ---
 
+## DEC-028 — Unicité de la référence fournisseur
+
+**Date :** 31 août 2026
+**Portée :** métier et technique
+**Statut :** appliquée · **clôt le point ouvert par DEC-027 §i**
+
+### Décision d'ADIKOM
+
+La référence portée par le document du fournisseur est **unique pour ce
+fournisseur** :
+
+- deux fournisseurs différents peuvent porter la même référence ;
+- une seconde facture du **même** fournisseur portant la **même** référence est
+  **refusée par la base**, avec un message explicite ;
+- le refus et le cas positif sont l'un et l'autre éprouvés par les recettes.
+
+### Deux couches, et ce que chacune garantit
+
+| Couche | Garantit |
+|---|---|
+| **Déclencheur** | Le refus **nomme la facture existante** (`FAC-F-2026-000012`), ce qui permet de la retrouver. Un code d'erreur PostgreSQL ne l'aurait pas fait. |
+| **Index unique partiel** | La règle tient **sans dépendre d'un droit de lecture**, et ferme la course entre deux saisies simultanées — qu'aucun déclencheur ne peut voir. |
+
+Le déclencheur LIT `supplier_invoices` : un appelant sans
+`billing.supplier_invoices.view` ne verrait rien et passerait. Contrairement au
+plafond du LOT 4, cette cécité est ici **sans danger** — l'index arrête
+l'écriture de toute façon. C'est pourquoi aucune capacité de lecture
+supplémentaire n'est exigée pour enregistrer une facture.
+
+### Portée — les factures annulées en sont exclues
+
+La règle existe pour empêcher d'enregistrer **deux fois la même dette**, donc de
+la payer deux fois. Une facture annulée n'est plus une dette : elle ne reçoit
+plus d'imputation et ne sera jamais réglée.
+
+L'y inclure créerait une **impasse** : rien ne se supprime dans ce système
+(`CLAUDE.md` §22), et corriger une saisie erronée passe par l'annulation puis
+une nouvelle saisie — qui porte forcément la **même** référence, celle imprimée
+sur le document reçu. La règle interdirait exactement la correction qu'elle rend
+nécessaire.
+
+C'est le traitement déjà retenu pour les imputations annulées, qui sortent du
+plafond de `Workflow 06` §40 : **ce qui est annulé cesse de compter.**
+
+### Comparaison — casse et espaces de bordure ignorés
+
+« FRN-2026-77 », « frn-2026-77 » et «  FRN-2026-77  » sont la même référence sur
+le document reçu. Une règle sensible à la casse laisserait passer précisément le
+doublon qu'elle prétend interdire.
+
+La valeur **stockée** reste celle qui a été saisie : seule la **comparaison** est
+normalisée. Le système n'écrit jamais autre chose que ce qu'il a lu.
+
+### Ce que la règle ne fait pas
+
+Elle ne rend pas la référence **obligatoire**. `Module 07` §30 la pose comme
+facultative, et une facture reçue sans référence lisible reste une facture à
+payer : plusieurs factures sans référence coexistent donc chez un même
+fournisseur.
+
+### Conséquences
+
+- Migration **048** : un index unique partiel, un déclencheur, aucune permission
+  créée — une règle d'intégrité n'est pas une capacité. Catalogue : 153.
+- Le message de refus est rendu **au champ concerné** plutôt qu'en tête de
+  formulaire (`CLAUDE.md` §39), en conservant le numéro de la facture existante.
+- Recettes : `db:verify:supplier-invoices` porté de 20 à 21 contrôles (refus,
+  variante de casse, second fournisseur accepté, référence libérée par
+  l'annulation, `PATCH` direct refusé) ; `verify:supplier-invoices` porté de 33 à
+  36 contrôles, dont le refus **vu à l'écran**.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -1598,7 +1672,7 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 4. **DEC-014** — Régime de taxes applicable. *Le fuseau horaire est tranché : `Indian/Comoro`, confirmé par **DEC-025 §e**.*
 5. **DEC-005** — Confirmation des formats restants et de la règle de remise à zéro annuelle. *Partiellement tranché : les formats client, fournisseur et véhicule sont confirmés par **DEC-021**. Les documents commerciaux relèvent désormais de **DEC-023**, dont l'implémentation est reportée à l'Étape 2.5. Restent à confirmer les objets datés non commerciaux — réservation, location, maintenance, imputation.*
 6. **DEC-023 §4** — Validation par le responsable comptable et fiscal d'ADIKOM de la convention de référence des factures, avant toute première émission. *Le LOT 5 conserve pour cette raison le format provisoire `FAC-F-2026-000001`, paramétrable (**DEC-027 §h**).*
-7. **DEC-027 §i** — Une même référence de facture peut-elle être enregistrée deux fois pour un même fournisseur ? Aucune contrainte d'unicité n'a été posée, faute de règle documentée ; le risque de double enregistrement est signalé, non arbitré.
+~~7. **DEC-027 §i** — Une même référence de facture peut-elle être enregistrée deux fois pour un même fournisseur ?~~ **Tranché par DEC-028** (31 août 2026) : unique par fournisseur, refus explicite par la base.
 
 ---
 
