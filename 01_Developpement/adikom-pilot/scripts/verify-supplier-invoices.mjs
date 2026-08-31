@@ -362,9 +362,22 @@ async function main() {
       let text = await mainText(page)
       check(/FAC-F-\d{4}-\d{6}/.test(text), 'Le numéro interne ADIKOM est attribué')
       check(text.includes(`FRN-${STAMP}`), 'La référence du fournisseur est conservée, distincte')
+      /*
+       * Les cinq montants restent SÉPARÉS (CLAUDE.md §57).
+       *
+       * Ce contrôle disait, avant le LOT 6, qu'aucun règlement n'était géré.
+       * Ils le sont : ce qui reste en jeu est que brut, imputé, net, réglé et
+       * reste dû soient nommés distinctement — et que ce compte, dépourvu de
+       * `billing.supplier_payments.view`, se voie DIRE qu'il ne peut pas lire
+       * les règlements plutôt que de lire zéro.
+       */
       check(
-        /Aucun règlement n’est géré/.test(text),
-        'L’écran DIT qu’aucun montant payé ni solde n’est calculé'
+        /Total réglé/.test(text) && /Reste dû/.test(text),
+        'Les cinq montants sont nommés séparément'
+      )
+      check(
+        /ne peut pas consulter les règlements/i.test(text),
+        'Et l’écran dit que les règlements ne sont pas lisibles ici (DEC-017)'
       )
 
       /** Le montant brut lu sur la fiche, en entier (DEC-010). */

@@ -478,18 +478,31 @@ async function main() {
 
       await page.goto(`${base}/facturation/fournisseurs/${invoiceId}`, { waitUntil: 'load' })
 
-      // Une facture réglée ne s'annule pas.
-      await act(page, 'Annuler la facture', 'doit d’abord être annulé')
+      /*
+       * Une facture ENGAGÉE ne s'annule pas.
+       *
+       * Celle-ci l'est deux fois : une imputation la réduit, des règlements la
+       * soldent. Le refus nomme la première rencontrée — c'est l'imputation,
+       * dont le contrôle s'exécute avant. Ce qui compte est qu'il NOMME un
+       * motif, et qu'il indique la sortie.
+       */
+      await act(page, 'Annuler la facture', 'doit d’abord')
       let text = await mainText(page)
       check(
-        /doit d’abord être annulé/i.test(text),
-        'Une facture réglée ne s’annule pas, et l’écran dit pourquoi'
+        /doit d’abord en être détachée|doit d’abord être annulé/i.test(text),
+        'Une facture engagée ne s’annule pas, et l’écran dit pourquoi'
       )
 
-      // Annulation d'un règlement.
+      /*
+       * Annulation d'un règlement.
+       *
+       * Le panneau ne s'offre qu'aux règlements validés : il disparaît avec le
+       * succès, emportant son message. Le repère devient donc l'état de la
+       * facture, qui repasse de « Payée » à « Partiellement payée ».
+       */
       await page.reload({ waitUntil: 'load' })
-      await page.getByRole('group').filter({ hasText: 'Annuler ce règlement' }).first().click()
-      await act(page, 'Annuler le règlement', 'Le règlement est annulé')
+      await page.getByText('Annuler ce règlement').first().click()
+      await actUntil(page, 'Annuler le règlement', 'Partiellement payée')
 
       await page.reload({ waitUntil: 'load' })
       const remaining = await rowAmount(page, 'Reste dû')

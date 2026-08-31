@@ -619,16 +619,17 @@ async function main() {
 
     {
       /*
-       * `supplier_invoices` a quitté cette liste le 30/08/2026 : le LOT 5 l'a
-       * livrée. Ce qui reste en jeu, c'est qu'AUCUN RÈGLEMENT n'existe — et
-       * que le cycle d'imputation joué ci-dessus n'a rattaché aucune facture.
+       * `supplier_invoices` a quitté cette liste le 30/08/2026 (LOT 5),
+       * `supplier_payments` et `financial_accounts` le 31/08/2026 (LOT 6). Ce
+       * qui reste hors périmètre est la facturation CLIENT — et le fait que le
+       * cycle d'imputation joué ci-dessus n'ait rattaché aucune facture.
        */
       const absent = []
-      for (const table of ['supplier_payments', 'payments', 'financial_accounts']) {
+      for (const table of ['customer_invoices', 'customer_payments', 'supplier_balances']) {
         const { error } = await admin.from(table).select('*').limit(1)
         if (!error) absent.push(table)
       }
-      check(absent.length === 0, 'Aucune table de règlement n’est apparue', absent.join(', '))
+      check(absent.length === 0, 'Aucune table de facturation client n’est apparue', absent.join(', '))
 
       const { data: attached } = await admin
         .from('imputations')
