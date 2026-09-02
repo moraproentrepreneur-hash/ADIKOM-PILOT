@@ -621,16 +621,18 @@ async function main() {
       /*
        * `supplier_invoices` a quitté cette liste le 30/08/2026 (LOT 5),
        * `supplier_payments` et `financial_accounts` le 31/08/2026 (LOT 6),
-       * `customer_invoices` le 01/09/2026 (LOT 7). Ce qui reste hors périmètre
-       * est l'ENCAISSEMENT client — et le fait que le cycle d'imputation joué
-       * ci-dessus n'ait rattaché aucune facture.
+       * `customer_invoices` le 01/09/2026 (LOT 7), `customer_payments` le
+       * 02/09/2026 (LOT 8). Ce qui reste hors périmètre est l'AVANCE client et
+       * sa répartition sur plusieurs factures (Workflow 08 §37, §41 :
+       * « lorsque cette fonctionnalité est retenue ») — et le fait que le cycle
+       * d'imputation joué ci-dessus n'ait rattaché aucune facture.
        */
       const absent = []
-      for (const table of ['customer_payments', 'supplier_balances', 'payment_allocations']) {
+      for (const table of ['supplier_balances', 'payment_allocations', 'customer_advances']) {
         const { error } = await admin.from(table).select('*').limit(1)
         if (!error) absent.push(table)
       }
-      check(absent.length === 0, 'Aucune table d’encaissement client n’est apparue', absent.join(', '))
+      check(absent.length === 0, 'Ni avance client ni répartition n’est apparue', absent.join(', '))
 
       const { data: attached } = await admin
         .from('imputations')
