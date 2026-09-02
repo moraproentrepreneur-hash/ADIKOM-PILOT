@@ -29,7 +29,7 @@
 import { chromium } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 
-import { loadEnvFile, required } from './lib/env.mjs'
+import { dayOffset, loadEnvFile, required } from './lib/env.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -55,7 +55,14 @@ const MARK = `RECETTE FAC ${STAMP}`
 const BASE_READERS = ['parties.clients.view', 'rental.fleet.view', 'rental.rentals.view']
 
 const PROFILES = {
-  // Le compte complet : il facture ET il clôture.
+  /*
+   * Le compte complet : il facture ET il clôture.
+   *
+   * `customer_payments.view` s'y ajoute depuis le LOT 8 : une facture encaissée
+   * ne s'annule pas, et le contrôle lit la somme encaissée sous les droits de
+   * l'appelant. Sans ce droit, elle vaudrait 0 et l'annulation passerait sur
+   * une facture pourtant réglée — l'acte est donc refusé (DEC-031 §e).
+   */
   full: [
     ...BASE_READERS,
     'rental.rentals.financial.view',
@@ -65,6 +72,7 @@ const PROFILES = {
     'billing.customer_invoices.update',
     'billing.customer_invoices.issue',
     'billing.customer_invoices.cancel',
+    'billing.customer_payments.view',
   ],
   // Facture, mais ne clôture pas : l'exploitation reste un autre métier.
   billingOnly: [
@@ -431,7 +439,7 @@ async function main() {
         'Et l’écran DIT que la durée n’est pas proposée (DEC-008)'
       )
 
-      await page.fill('#dueDate', '2026-12-31')
+      await page.fill('#dueDate', dayOffset(60))
       await page.waitForTimeout(800)
       await page.getByRole('button', { name: 'Préparer la facture' }).click()
       await page.waitForURL(/\/facturation\/clients\/[0-9a-f-]{36}/, { timeout: 45000 })
@@ -527,9 +535,15 @@ async function main() {
       check(total === 450000, 'Total : 520 000 − 70 000 = 450 000', String(total))
 
       const text = await mainText(page)
+      /*
+       * Une facture préparée n'a rien encaissé — et depuis le LOT 8, la somme
+       * est LUE, non supposée. Le solde vaut donc le total : c'est le contrôle
+       * qui remplace « les encaissements ne sont pas gérés ».
+       */
+      check((await rowAmount(page, 'Encaissé')) === 0, 'Encaissé : 0 KMF, une somme lue')
       check(
-        /encaissements clients ne sont pas encore gérés/i.test(text),
-        'L’écran DIT qu’aucun encaissement n’est géré, sans afficher 0 (DEC-017)'
+        (await rowAmount(page, 'Solde')) === 450000,
+        'Solde : 450 000 KMF — rien n’a été encaissé sur cette facture'
       )
       check(
         /Réduction/.test(text) && /Geste commercial/.test(text),
@@ -624,8 +638,8 @@ async function main() {
         String(billed)
       )
       check(
-        /encaissements clients ne sont pas encore gérés/i.test(text),
-        'Le total encaissé n’est pas affiché à zéro : l’écran le dit'
+        (await rowAmount(page, 'Total encaissé')) === 0,
+        'Le total encaissé du client est lu, et vaut 0 : rien n’a été versé'
       )
 
       await context.close()
@@ -755,12 +769,23 @@ async function main() {
       check(rental?.locked_amount === 150000, 'Le tarif verrouillé n’a pas bougé')
       check(rental?.status === 'CLOSED', 'La location est bien clôturée', `${rental?.status}`)
 
-      // Aucun encaissement, aucune écriture de trésorerie.
-      const { count: entries } = await admin
-        .from('treasury_entries')
+      /*
+       * FACTURER N'ENCAISSE RIEN.
+       *
+       * Le LOT 8 a livré les règlements clients : d'autres factures en portent
+       * désormais. Ce que ce contrôle doit prouver reste le même — facturer et
+       * clôturer ne font entrer aucun argent — et il se mesure donc sur LES
+       * FACTURES DE CETTE RECETTE, jamais sur toute la base.
+       */
+      const { count: collected } = await admin
+        .from('customer_payments')
         .select('id', { count: 'exact', head: true })
-        .eq('kind', 'CUSTOMER_PAYMENT')
-      check(entries === 0, 'Aucune écriture d’encaissement client n’a été produite', `${entries}`)
+        .in('customer_invoice_id', fixtures.invoices)
+      check(
+        collected === 0,
+        'Aucun encaissement n’a été produit par la facturation',
+        `${collected}`
+      )
 
       const [{ count: clients }, { count: vehicles }] = await Promise.all([
         admin

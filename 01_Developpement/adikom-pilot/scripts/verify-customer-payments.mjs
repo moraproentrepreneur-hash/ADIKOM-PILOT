@@ -26,7 +26,7 @@
 import { chromium } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 
-import { loadEnvFile, required } from './lib/env.mjs'
+import { dayOffset, loadEnvFile, required } from './lib/env.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -303,8 +303,8 @@ async function main() {
     // Facture de 450 000 KMF : trois jours à 150 000, émise.
     const { data: invId } = await admin.rpc('create_customer_invoice', {
       p_client_id: client.id,
-      p_invoice_date: '2026-09-01',
-      p_due_date: '2026-09-30',
+      p_invoice_date: dayOffset(-1),
+      p_due_date: dayOffset(30),
       p_rental_id: rentalId,
       p_notes: `${MARK} — facture`,
     })
@@ -371,7 +371,7 @@ async function main() {
 
       await page.selectOption('#accountId', accountId)
       await page.fill('#amount', '200000')
-      await page.fill('#receivedOn', '2026-09-05')
+      await page.fill('#receivedOn', dayOffset(0))
       await page.selectOption('#method', 'BANK_TRANSFER')
       await page.fill('#externalRef', `VIR-${STAMP}`)
       await act(page, 'Enregistrer le règlement', 'Le règlement est enregistré')
@@ -413,7 +413,7 @@ async function main() {
 
       await page.selectOption('#accountId', accountId)
       await page.fill('#amount', '250001')
-      await page.fill('#receivedOn', '2026-09-06')
+      await page.fill('#receivedOn', dayOffset(0))
       await act(page, 'Enregistrer le règlement', 'dépasse le reste dû')
 
       let text = await mainText(page)
@@ -434,7 +434,7 @@ async function main() {
        */
       await page.selectOption('#accountId', accountId)
       await page.fill('#amount', '250000')
-      await page.fill('#receivedOn', '2026-09-06')
+      await page.fill('#receivedOn', dayOffset(0))
       await page.selectOption('#method', 'CASH')
       await actUntil(page, 'Enregistrer le règlement', 'soldée')
 

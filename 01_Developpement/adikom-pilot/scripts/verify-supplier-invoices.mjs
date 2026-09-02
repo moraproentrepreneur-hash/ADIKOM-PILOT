@@ -27,7 +27,7 @@
 import { chromium } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 
-import { loadEnvFile, required } from './lib/env.mjs'
+import { dayOffset, loadEnvFile, required } from './lib/env.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -343,8 +343,8 @@ async function main() {
 
       await page.selectOption('#supplierId', supplier.id)
       await page.fill('#externalRef', `FRN-${STAMP}`)
-      await page.fill('#invoiceDate', '2026-08-01')
-      await page.fill('#dueDate', '2026-09-01')
+      await page.fill('#invoiceDate', dayOffset(-30))
+      await page.fill('#dueDate', dayOffset(30))
 
       /*
        * Le bouton est désigné par son NOM, jamais par `button[type=submit]` :
@@ -446,7 +446,7 @@ async function main() {
       await page.waitForFunction(() => document.querySelector('#supplierId') !== null)
       await page.selectOption('#supplierId', supplier.id)
       await page.fill('#externalRef', `FRN-${STAMP}`)
-      await page.fill('#invoiceDate', '2026-08-02')
+      await page.fill('#invoiceDate', dayOffset(-29))
       await act(page, 'Enregistrer la facture', 'porte déjà la référence')
 
       text = await mainText(page)
@@ -466,7 +466,7 @@ async function main() {
       await page.waitForFunction(() => document.querySelector('#supplierId') !== null)
       await page.selectOption('#supplierId', fixtures.supplierBId)
       await page.fill('#externalRef', `FRN-${STAMP}`)
-      await page.fill('#invoiceDate', '2026-08-02')
+      await page.fill('#invoiceDate', dayOffset(-29))
       await page.waitForTimeout(800)
       await page.getByRole('button', { name: 'Enregistrer la facture' }).click()
       await page.waitForURL(/\/facturation\/fournisseurs\/[0-9a-f-]{36}/, { timeout: 45000 })

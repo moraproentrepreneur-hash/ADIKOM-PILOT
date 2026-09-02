@@ -48,3 +48,21 @@ export function maskConnectionString(url) {
     return '(chaîne de connexion illisible)'
   }
 }
+
+/**
+ * Date du calendrier, décalée de `days` jours — au format `AAAA-MM-JJ`.
+ *
+ * UNE RECETTE NE DOIT PAS EXPIRER AVEC LE CALENDRIER.
+ *
+ * Une échéance écrite en dur finit par tomber dans le passé : la facture se lit
+ * alors « En retard » — à juste titre — et le contrôle qui attendait « Dette
+ * reconnue » échoue sans qu'aucune régression n'ait eu lieu. Les dates d'une
+ * recette se posent donc PAR RAPPORT AU JOUR OÙ ELLE S'EXÉCUTE.
+ *
+ * `Indian/Comoro` (DEC-025 §e) : le jour est celui d'ADIKOM, pas celui de la
+ * machine qui lance la recette.
+ */
+export function dayOffset(days = 0) {
+  const now = new Date(Date.now() + days * 86400_000)
+  return now.toLocaleDateString('en-CA', { timeZone: 'Indian/Comoro' })
+}
