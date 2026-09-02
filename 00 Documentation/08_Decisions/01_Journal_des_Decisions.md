@@ -1998,6 +1998,173 @@ ajouté aux arbitrages en attente.
 
 ---
 
+## DEC-031 — Règlements clients et solde des créances (LOT 8)
+
+**Date :** 2 septembre 2026
+**Portée :** métier, technique et sécurité
+**Statut :** appliquée · **achève l'Étape 2.5 de DEC-021**
+
+### Contexte — le dernier maillon financier
+
+DEC-021 désigne l'Étape 2.5 : *Facturation → Paiements → Soldes → Clôture*. Les
+LOTs 5 et 6 ont livré la facture fournisseur et son règlement, le LOT 7 la
+facture client. Restait ce que le client verse — et sans quoi une créance
+reconnue ne pouvait pas être dite soldée :
+
+> DEC-030 §h : « Aucun **règlement client**, aucun encaissement, aucun solde
+> client — ils relèvent du LOT 8. »
+
+### a. Un encaissement est l'exact miroir d'un décaissement
+
+`Workflow 08` §47 est explicite :
+
+> « Lorsqu'un paiement client est encaissé : **Banque/Caisse augmente**. »
+
+L'écriture produite est donc une **ENTRÉE**, là où le règlement fournisseur
+produit une sortie. Le sens est porté par le sens, jamais par le signe du
+montant (`Module 06` §19) — et un déclencheur vérifie que l'écriture correspond
+bien au règlement dont elle se réclame, dans le bon sens.
+
+Comme au LOT 6, l'écriture est une **conséquence**, pas un second acte :
+`treasury.entries.create` n'est pas exigée du caissier. Une écriture **libre**,
+elle, le reste — et la recette le prouve dans les deux sens.
+
+### b. Le trop-perçu est REFUSÉ, parce qu'aucune règle ne le traite
+
+`Workflow 08` §40 :
+
+> « Si un client verse un montant supérieur à une facture, le système doit
+> appliquer **une règle définie par ADIKOM**. […] Le système **ne doit pas
+> décider automatiquement sans règle métier**. »
+
+Les trois issues que §40 envisage — affectation à une autre facture, conservation
+en avance, autre règle — dépendent toutes de décisions qui n'existent pas :
+§37 (répartition sur plusieurs factures) et §41 (avance client) sont l'une
+comme l'autre assorties de « **lorsque cette fonctionnalité est retenue** ».
+
+Un versement supérieur au solde est donc **refusé**, et le refus DIT pourquoi.
+Le système ne fabrique ni avoir ni avance par accident. Même traitement qu'au
+LOT 6 pour le dépassement du reste dû fournisseur (§22).
+
+### c. Seule une facture ÉMISE s'encaisse
+
+Un brouillon ne reconnaît aucune créance (§25) ; une facture annulée n'en
+reconnaît plus. Encaisser l'un ou l'autre enregistrerait de l'argent reçu sur
+une créance qui n'existe pas. Symétrique du LOT 6, où seule une facture
+**validée** se règle.
+
+### d. « Payée » et « Partiellement payée » deviennent LISIBLES — et restent DÉRIVÉES
+
+`Workflow 07` §61 : « Le statut doit être calculé à partir des règlements
+réellement enregistrés. »
+
+Le LOT 7 refusait ces deux transitions faute de règlements. Ils existent : le
+refus **demeure**, et seul son motif change. Un statut stocké doublerait la
+somme qui le dit et pourrait la contredire — il suffirait d'un règlement annulé
+pour qu'une facture reste « Payée » sans l'être. Même doctrine qu'au LOT 6
+(DEC-029 §d).
+
+Conséquence : **aucune facture ne porte « Payée » en base**. L'écran l'affiche,
+la base non — et une recette le vérifie explicitement.
+
+| Montant | Source |
+|---|---|
+| Sous-total | Σ (quantité × prix) des lignes actives qui ajoutent |
+| Réductions | Σ des lignes actives de type « réduction » (§24) |
+| Total | Sous-total − réductions (§23) |
+| **Encaissé** | **Σ des règlements VALIDÉS** (Workflow 08 §21, §28) |
+| **Solde** | **Total − encaissé** |
+
+Aucun de ces montants n'est stocké. Un encaissement **illisible** vaut `null`,
+jamais 0 : l'écran DIT qu'il ne sait pas (DEC-017, DEC-024).
+
+### e. Une facture encaissée ne s'annule pas
+
+L'argent est **entré** sur un compte : l'annuler laisserait un encaissement
+pesant sur un document annulé. Les règlements s'annulent d'abord, et le refus
+nomme l'ordre à suivre — symétrique exact de la règle posée au LOT 6 pour la
+facture fournisseur réglée.
+
+Corollaire assumé : **annuler une facture client exige désormais
+`billing.customer_payments.view`**. Sans ce droit, la somme encaissée vaudrait 0
+sous RLS et l'annulation passerait sur une facture pourtant réglée. « Une somme
+illisible n'est pas une somme nulle » (DEC-026 §f).
+
+### f. La numérotation n'invente aucun format
+
+La règle `payment` — « Règlement », `REG`, année, six chiffres, remise à zéro
+annuelle — existe depuis la migration 005 et sert déjà les règlements
+fournisseurs. Elle est **générique**. En créer une seconde inventerait un format
+que DEC-005 n'a pas arrêté : la série reste unique, et demeure paramétrable si
+ADIKOM veut l'en séparer.
+
+### g. Un défaut trouvé par l'audit, corrigé avant livraison
+
+L'audit des capacités a révélé un défaut **antérieur au LOT 8**, présent depuis
+le LOT 6 : `cancel_supplier_payment` — et sa jumelle client — annulait le
+règlement **sans annuler son écriture** lorsque l'appelant ne détenait pas
+`treasury.entries.view`.
+
+Sous RLS, un `UPDATE … WHERE` **lit** les lignes qu'il vise : la policy de
+SELECT de `treasury_entries` s'applique en plus de celle d'UPDATE. Sans ce
+droit, l'`UPDATE` ne trouvait aucune écriture — et n'en disait rien. Le
+règlement passait « Annulé », le compte gardait son mouvement.
+
+`Workflow 08` §45 nomme précisément cette incohérence : « un paiement annulé
+continue d'être comptabilisé ».
+
+**Migration 054** : les deux annulations exigent `treasury.entries.view`
+nommément, et **vérifient** qu'aucune écriture validée ne subsiste — refusant
+en bloc plutôt que de réussir à moitié. C'est la leçon de la migration 050,
+sous une autre forme : une écriture invisible n'est pas une écriture
+inexistante.
+
+Le défaut n'avait jamais été vu parce que le profil qui l'éprouvait portait
+`treasury.entries.view` par ailleurs. Un profil **complet** ne trouve pas ce
+genre de défaut ; un profil **minimal**, oui.
+
+### h. Ce que le LOT 8 ne fait pas
+
+Aucune **avance client** (§41), aucune **affectation d'avance** (§42), aucune
+**répartition** d'un versement sur plusieurs factures (§37) — les trois sont
+assorties de « lorsque cette fonctionnalité est retenue ». Aucun **avoir**
+(Workflow 07 §44). Aucun **rapprochement** bancaire ou de caisse (§43, §44 ;
+`Module 06` §42 : « rapprochement futur »). Aucune **écriture libre** — dépôt,
+retrait, virement interne restent hors périmètre. Aucune **taxe** (DEC-014).
+Aucun **document** de reçu : `billing.customer_payments` n'expose ni `.download`
+ni `.print`, et en créer une d'office est proscrit (DEC-024).
+
+### Conséquences
+
+- Migration **053** : un type, une table, une colonne d'origine sur les
+  écritures avec sa contrainte d'unicité d'origine, une fonction de calcul,
+  deux fonctions atomiques `SECURITY INVOKER`, cinq déclencheurs, RLS, audit,
+  interdiction de suppression, révocation d'`EXECUTE` à PUBLIC (DEC-022).
+- Migration **054** : correction du défaut §g, sur les **deux** annulations.
+- `fn_treasury_entry_source` et `fn_treasury_entry_immutable` sont **réécrites** :
+  elles connaissent les deux origines, et refusent qu'une écriture s'en réclame
+  de deux.
+- `fn_customer_invoice_transition` est **réécrite** : le refus de « Payée »
+  change de motif, pas de nature.
+- **Aucune permission créée** — les trois codes `billing.customer_payments.*`
+  existent depuis la migration 007. Catalogue : 153, inchangé.
+- Onglet **Paiements** de la fiche client ouvert (Workflow 08 §32) ; carte
+  **Règlements** et acte d'encaissement sur la fiche de facture ; colonne
+  **Solde** dans la liste ; colonnes **Encaissé** et **Solde** à l'export, sous
+  `billing.customer_payments.view`.
+- Le vocabulaire des **modes de paiement** rejoint `features/treasury` : il
+  appartient au mouvement, non au sens dans lequel il va.
+- Recettes : `db:verify:customer-payments` (18 contrôles),
+  `verify:customer-payments`, et `verify:capabilities` porté de 143 à
+  **164 contrôles**.
+- Les recettes des LOTs 3, 4 et 5 cessent d'exiger l'absence de
+  `customer_payments` — le LOT 8 l'a livrée — et vérifient désormais que
+  l'**avance client** et la **répartition** restent hors périmètre. Celle du
+  LOT 7 mesure l'absence d'encaissement **sur sa propre facture**, non sur
+  toute la base.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -2009,8 +2176,9 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 5. **DEC-005** — Confirmation des formats restants et de la règle de remise à zéro annuelle. *Partiellement tranché : les formats client, fournisseur et véhicule sont confirmés par **DEC-021**. Les documents commerciaux relèvent désormais de **DEC-023**, dont l'implémentation est reportée à l'Étape 2.5. Restent à confirmer les objets datés non commerciaux — réservation, location, maintenance, imputation.*
 6. **DEC-023 §4** — Validation par le responsable comptable et fiscal d'ADIKOM de la convention de référence des factures, avant toute première émission. *Le LOT 5 conserve pour cette raison le format provisoire `FAC-F-2026-000001`, paramétrable (**DEC-027 §h**).*
 ~~7. **DEC-027 §i** — Une même référence de facture peut-elle être enregistrée deux fois pour un même fournisseur ?~~ **Tranché par DEC-028** (31 août 2026) : unique par fournisseur, refus explicite par la base.
-8. **DEC-029 §c** — ADIKOM souhaite-t-elle séparer la **saisie** et la **validation** d'un règlement fournisseur (`Workflow 08` §56) ? Aujourd'hui, un règlement constate un décaissement effectué et naît validé ; le catalogue n'offre aucune capacité de validation. La séparation suppose d'en créer une : c'est une décision d'organisation.
-9. **DEC-030 §i** — La **facture client doit-elle être remise au client** sous forme de document ? Le catalogue porte `billing.customer_invoices.print` mais pas `.download`, et DEC-024 interdit de déduire l'une de l'autre. Produire le PDF suppose donc de créer `billing.customer_invoices.download` : c'est une décision de capacité, prise ici pour signalement et non appliquée. *Se rattache à **DEC-023 §4**, la convention de référence restant à valider avant toute première émission d'un document comptable.*
+8. **DEC-029 §c** — ADIKOM souhaite-t-elle séparer la **saisie** et la **validation** d'un règlement (`Workflow 08` §56) ? Aujourd'hui, un règlement constate un mouvement effectué et naît validé ; le catalogue n'offre aucune capacité de validation. La séparation suppose d'en créer une : c'est une décision d'organisation. *La question vaut à l'identique pour les **règlements clients** depuis **DEC-031**.*
+9. **DEC-031 §b** — Que devient un **trop-perçu client** ? `Workflow 08` §40 impose une règle définie par ADIKOM et interdit au système d'en décider seul. Les trois issues qu'il envisage supposent chacune une fonctionnalité non retenue : affectation à une autre facture (§37), conservation en **avance** (§41, §42), ou autre règle validée. En attendant, tout versement supérieur au solde est **refusé**, avec son motif. Trancher suppose d'arrêter la règle **et** de décider si l'avance devient un objet du système.
+10. **DEC-030 §i** — La **facture client doit-elle être remise au client** sous forme de document ? Le catalogue porte `billing.customer_invoices.print` mais pas `.download`, et DEC-024 interdit de déduire l'une de l'autre. Produire le PDF suppose donc de créer `billing.customer_invoices.download` : c'est une décision de capacité, prise ici pour signalement et non appliquée. *Se rattache à **DEC-023 §4**, la convention de référence restant à valider avant toute première émission d'un document comptable.*
 
 ---
 

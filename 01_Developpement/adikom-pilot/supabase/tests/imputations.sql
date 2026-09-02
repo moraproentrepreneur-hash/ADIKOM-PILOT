@@ -102,18 +102,20 @@ end $$;
 --
 -- Le LOT 5 a livré la facture fournisseur : `supplier_invoice_id` porte
 -- désormais une clé étrangère. `customer_invoices` a quitté cette liste le
--- 01/09/2026 (LOT 7). Ce qui reste hors périmètre est l'ENCAISSEMENT client, et
--- tout solde qui serait stocké au lieu d'être calculé.
+-- 01/09/2026 (LOT 7), `customer_payments` le 02/09/2026 (LOT 8). Ce qui reste
+-- hors périmètre est l'AVANCE client et sa répartition sur plusieurs factures
+-- (Workflow 08 §37, §41 : « lorsque cette fonctionnalité est retenue »), ainsi
+-- que tout solde qui serait stocké au lieu d'être calculé.
 do $$
 declare v_bad text[];
 begin
   select array_agg(tablename) into v_bad
   from pg_tables
   where schemaname = 'public'
-    and tablename in ('customer_payments', 'supplier_balances', 'payment_allocations');
+    and tablename in ('supplier_balances', 'payment_allocations', 'customer_advances');
 
   if v_bad is not null then
-    raise exception 'Des objets d''encaissement client existent déjà : %', v_bad;
+    raise exception 'Des objets d''avance ou de répartition existent déjà : %', v_bad;
   end if;
 
   if not exists (
@@ -132,7 +134,7 @@ begin
     raise exception 'La clé étrangère vers `supplier_invoices` est absente (LOT 5).';
   end if;
 
-  raise notice '[OK] 3. Facture fournisseur rattachée par clé étrangère ; aucun encaissement client.';
+  raise notice '[OK] 3. Facture fournisseur rattachée par clé étrangère ; ni avance ni répartition.';
 end $$;
 
 

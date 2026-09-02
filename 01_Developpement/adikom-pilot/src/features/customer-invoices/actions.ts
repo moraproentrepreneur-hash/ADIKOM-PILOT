@@ -93,7 +93,11 @@ const ERROR_PATTERNS: readonly [RegExp, string][] = [
   ],
   [
     /état de règlement d'une facture se CALCULE/i,
-    'L’état de règlement découle des encaissements enregistrés, et les règlements clients ne sont pas encore gérés.',
+    'L’état de règlement se calcule des encaissements enregistrés : il ne se déclare pas.',
+  ],
+  [
+    /ont été encaissés sur cette facture/i,
+    'Des règlements soldent encore cette facture : chacun doit d’abord être annulé.',
   ],
   [
     /« En retard » se déduit de l'échéance/i,

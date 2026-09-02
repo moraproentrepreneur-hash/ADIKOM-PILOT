@@ -1,19 +1,20 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Receipt } from 'lucide-react'
+import { ArrowLeft, Banknote, Receipt } from 'lucide-react'
 
 import { Badge, Card, Empty, EmptyState, InfoRow, PageHeader } from '@/components/ui/primitives'
 import { Notice } from '@/components/ui/feedback'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
-import { formatDate, formatDateTime } from '@/lib/dates'
+import { formatDate, formatDateTime, todayISO } from '@/lib/dates'
 import { getRentalDetail } from '@/features/rentals/data'
 import {
   getCustomerInvoiceDetail,
   listCustomerInvoiceLines,
 } from '@/features/customer-invoices/data'
 import {
+  acceptsPayments,
   CUSTOMER_INVOICE_STATUS_EFFECT,
   CUSTOMER_INVOICE_STATUS_LABELS,
   CUSTOMER_INVOICE_STATUS_TONES,
@@ -31,22 +32,30 @@ import {
   EditCustomerInvoicePanel,
   IssueCustomerInvoicePanel,
 } from '@/features/customer-invoices/panels'
+import { listInvoiceCustomerPayments } from '@/features/customer-payments/data'
+import {
+  CancelCustomerPaymentPanel,
+  RecordCustomerPaymentPanel,
+} from '@/features/customer-payments/panels'
+import { listOperableAccounts } from '@/features/treasury/data'
+import { PAYMENT_METHOD_LABELS } from '@/features/treasury/constants'
 
 export const metadata: Metadata = { title: 'Facture client' }
 
 /**
- * Fiche d'une facture client — Étape 2.5, LOT 7.
+ * Fiche d'une facture client — Étape 2.5, LOTs 7 et 8.
  *
  * ELLE RÉPOND À LA QUESTION DE WORKFLOW 07 §74 : « La facture doit toujours être
  * explicable. » Chaque ligne porte sa nature, sa quantité, son prix unitaire et
  * sa justification ; une réduction est visible comme telle (§24) ; la location
- * d'origine est atteignable en un clic (§49).
+ * d'origine est atteignable en un clic (§49) ; chaque encaissement est daté,
+ * nommé et rattaché au compte qu'il a crédité (§13, §47).
  *
- * CE QUE CET ÉCRAN REFUSE D'AFFICHER.
+ * CE QU'ELLE REFUSE D'AFFICHER.
  *
- * Un montant encaissé et un solde. Ils supposent des règlements clients, qui
- * relèvent d'une étape ultérieure : afficher « 0 KMF encaissé » laisserait
- * croire que le système l'a vérifié.
+ * Un montant encaissé lu sans droit. Sans `billing.customer_payments.view`,
+ * l'encaissé et le solde valent `null` — l'écran le DIT plutôt que d'afficher
+ * un zéro qui se lirait « rien d'encaissé » (DEC-017, DEC-024).
  */
 export default async function CustomerInvoiceDetailPage(
   props: PageProps<'/facturation/clients/[id]'>
@@ -57,20 +66,37 @@ export default async function CustomerInvoiceDetailPage(
   const searchParams = await props.searchParams
   const justCreated = searchParams.cree === '1'
 
-  const [canUpdate, canIssue, canCancel, canSeeRentals, canSeeRentalAmounts] = await Promise.all([
+  const [
+    canUpdate,
+    canIssue,
+    canCancel,
+    canSeeRentals,
+    canSeeRentalAmounts,
+    canSeePayments,
+    canPay,
+    canCancelPayment,
+    canSeeAccounts,
+  ] = await Promise.all([
     can(PERMISSIONS.CUSTOMER_INVOICES_UPDATE),
     can(PERMISSIONS.CUSTOMER_INVOICES_ISSUE),
     can(PERMISSIONS.CUSTOMER_INVOICES_CANCEL),
     can(PERMISSIONS.RENTALS_VIEW),
     can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
+    can(PERMISSIONS.CUSTOMER_PAYMENTS_VIEW),
+    can(PERMISSIONS.CUSTOMER_PAYMENTS_CREATE),
+    can(PERMISSIONS.CUSTOMER_PAYMENTS_CANCEL),
+    can(PERMISSIONS.ACCOUNTS_VIEW),
   ])
 
-  const invoice = await getCustomerInvoiceDetail(id)
+  const invoice = await getCustomerInvoiceDetail(id, { canSeePayments })
   if (!invoice) notFound()
 
   const editable = isEditable(invoice.status)
 
-  const [lines, rental] = await Promise.all([
+  const shown = displayStatus(invoice.status, invoice.dueDate, invoice.total, invoice.paidAmount)
+  const payable = acceptsPayments(shown)
+
+  const [lines, rental, payments, accounts] = await Promise.all([
     listCustomerInvoiceLines(id),
     /*
      * Le tarif verrouillé n'est proposé qu'à qui a le droit de le voir : lire
@@ -80,9 +106,16 @@ export default async function CustomerInvoiceDetailPage(
     invoice.rentalId && editable && canSeeRentals && canSeeRentalAmounts
       ? getRentalDetail(invoice.rentalId)
       : Promise.resolve(null),
+    /*
+     * Sans la capacité, la section DISPARAÎT : une liste vide se lirait
+     * « aucun encaissement », affirmation qu'un refus de lecture ne permet pas
+     * (DEC-017).
+     */
+    canSeePayments ? listInvoiceCustomerPayments(id) : Promise.resolve(null),
+    // Module 06 §10 : seuls les comptes actifs sont proposés.
+    payable && canPay && canSeeAccounts ? listOperableAccounts() : Promise.resolve(null),
   ])
 
-  const shown = displayStatus(invoice.status, invoice.dueDate, invoice.total, invoice.paidAmount)
   const hasRentalLine = lines.some((line) => line.kind === 'RENTAL')
 
   return (
@@ -114,8 +147,8 @@ export default async function CustomerInvoiceDetailPage(
 
       {shown === 'OVERDUE' && (
         <Notice tone="warning" className="mb-5">
-          L’échéance de cette facture est <strong>dépassée</strong>. Aucun encaissement n’étant
-          géré, ce constat repose sur l’échéance seule.
+          L’échéance de cette facture est <strong>dépassée</strong> et son solde n’est pas
+          encaissé.
         </Notice>
       )}
 
@@ -145,16 +178,24 @@ export default async function CustomerInvoiceDetailPage(
                 <span className="font-medium tabular">{formatAmount(invoice.total)}</span>
               </InfoRow>
 
-              <InfoRow label="Encaissé" hint="Règlements clients (§32).">
-                <span className="text-muted">
-                  Les encaissements clients ne sont pas encore gérés.
-                </span>
+              <InfoRow label="Encaissé" hint="Règlements validés (Workflow 08 §21, §32).">
+                {invoice.paidAmount === null ? (
+                  <span className="text-muted">
+                    Votre compte ne peut pas consulter les règlements.
+                  </span>
+                ) : (
+                  <span className="tabular">{formatAmount(invoice.paidAmount)}</span>
+                )}
               </InfoRow>
 
-              <InfoRow label="Solde" hint="Total moins les encaissements (§28).">
-                <span className="text-muted">
-                  Non calculable tant qu’aucun encaissement n’est enregistré.
-                </span>
+              <InfoRow label="Solde" hint="Total moins les encaissements validés (§21, §28).">
+                {invoice.remainingDue === null ? (
+                  <span className="text-muted">
+                    Non calculable sans le droit de consulter les règlements.
+                  </span>
+                ) : (
+                  <span className="font-medium tabular">{formatAmount(invoice.remainingDue)}</span>
+                )}
               </InfoRow>
 
               <InfoRow label="Effet">{CUSTOMER_INVOICE_STATUS_EFFECT[shown]}</InfoRow>
@@ -215,6 +256,88 @@ export default async function CustomerInvoiceDetailPage(
               </div>
             )}
           </Card>
+
+          {canSeePayments ? (
+            <Card
+              title="Règlements"
+              description="Encaissements réels, rattachés au compte crédité (Workflow 08 §13, §47)."
+            >
+              {payments === null || payments.length === 0 ? (
+                <EmptyState
+                  icon={Banknote}
+                  title="Aucun règlement"
+                  description={
+                    payable
+                      ? 'Cette créance n’a encore fait entrer aucun argent sur un compte.'
+                      : 'Seule une facture émise peut être encaissée.'
+                  }
+                />
+              ) : (
+                <ul className="divide-y divide-line">
+                  {payments.map((payment) => (
+                    <li key={payment.id} className="py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium text-ink tabular">{payment.paymentNo}</p>
+                          <p className="text-xs text-muted">
+                            {formatDate(payment.receivedOn)} ·{' '}
+                            {PAYMENT_METHOD_LABELS[payment.method]}
+                            {payment.externalRef ? ` · ${payment.externalRef}` : ''}
+                          </p>
+                          <p className="text-xs text-muted">
+                            {payment.accountLabel ? (
+                              <Link
+                                href={`/tresorerie/comptes/${payment.accountId}`}
+                                className="text-adikom-500 hover:underline"
+                              >
+                                {payment.accountLabel}
+                              </Link>
+                            ) : (
+                              'Compte non lisible avec vos droits'
+                            )}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <span
+                            className={
+                              payment.status === 'CANCELLED'
+                                ? 'text-sm text-muted line-through tabular'
+                                : 'font-medium tabular'
+                            }
+                          >
+                            + {formatAmount(payment.amount)}
+                          </span>
+                          <Badge tone={payment.status === 'CANCELLED' ? 'danger' : 'success'}>
+                            {payment.status === 'CANCELLED' ? 'Annulé' : 'Validé'}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      {canCancelPayment && payment.status === 'VALIDATED' && (
+                        <details className="mt-3">
+                          <summary className="cursor-pointer text-xs text-muted hover:text-ink">
+                            Annuler ce règlement
+                          </summary>
+                          <div className="mt-3 rounded-control border border-line p-4">
+                            <CancelCustomerPaymentPanel
+                              paymentId={payment.id}
+                              invoiceId={id}
+                              amount={payment.amount}
+                            />
+                          </div>
+                        </details>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          ) : (
+            <Notice tone="warning">
+              Votre compte ne peut pas consulter les règlements : cette facture peut avoir été
+              encaissée sans que cet écran puisse le montrer.
+            </Notice>
+          )}
         </div>
 
         <div className="space-y-5">
@@ -320,7 +443,28 @@ export default async function CustomerInvoiceDetailPage(
             </Card>
           )}
 
-          {canCancel && isCancellable(invoice.status) && (
+          {canPay && payable && (
+            <Card
+              title="Enregistrer un règlement"
+              description="L’encaissement qui solde la créance (Workflow 08 §5, §47)."
+            >
+              <RecordCustomerPaymentPanel
+                invoiceId={id}
+                accounts={
+                  !canSeeAccounts
+                    ? null
+                    : (accounts ?? []).map((account) => ({
+                        id: account.id,
+                        label: `${account.label} (${account.accountNo})`,
+                      }))
+                }
+                remainingDue={invoice.remainingDue}
+                today={todayISO()}
+              />
+            </Card>
+          )}
+
+          {canCancel && isCancellable(shown) && (
             <Card title="Annuler" description="L’historique est conservé.">
               <CancelCustomerInvoicePanel
                 invoiceId={id}
@@ -339,9 +483,17 @@ export default async function CustomerInvoiceDetailPage(
                   ? invoice.total > 0
                     ? 'Les lignes sont saisies : la facture peut être émise. L’émission fige ses montants.'
                     : 'Ajoutez au moins une ligne facturable : une facture sans total ne peut pas être émise.'
-                  : invoice.rentalId
-                    ? 'La créance est reconnue et la location est « Facturée ». Elle peut désormais être clôturée, même avant encaissement.'
-                    : 'La créance est reconnue. Son encaissement relève d’une étape ultérieure.'}
+                  : invoice.remainingDue === null
+                    ? 'La créance est reconnue. Son solde n’est pas calculable avec vos droits.'
+                    : invoice.remainingDue <= 0
+                      ? invoice.rentalId
+                        ? 'Cette facture est soldée. La location qu’elle facture peut être clôturée si elle ne l’est pas déjà.'
+                        : 'Cette facture est soldée : son total est intégralement encaissé.'
+                      : `Reste ${formatAmount(invoice.remainingDue)} à encaisser.${
+                          invoice.rentalId
+                            ? ' La location, elle, peut être clôturée sans attendre le paiement (Workflow 01 §42).'
+                            : ''
+                        }`}
             </p>
           </Card>
         </div>

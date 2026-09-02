@@ -5,21 +5,24 @@ import { reportQueryFailure } from '@/lib/server-action'
 import type { CustomerInvoiceLineKind, CustomerInvoiceStatus } from './constants'
 
 /**
- * Accès aux données de la facturation client — Étape 2.5, LOT 7.
+ * Accès aux données de la facturation client — Étape 2.5, LOTs 7 et 8.
  *
  * Toutes les requêtes passent par le client porteur de la session : RLS reste la
  * barrière au niveau des données. Sans `billing.customer_invoices.view`, ces
  * fonctions ne renvoient rien — et l'appelant doit alors DIRE qu'il ne sait pas,
  * jamais afficher zéro (DEC-017).
  *
- * LES QUATRE MONTANTS, ET CE QUE CE MODULE EN SAIT
+ * LES CINQ MONTANTS, ET CE QUE CE MODULE EN SAIT
  *
  *   Sous-total   Σ (quantité × prix) des lignes actives qui ajoutent.
  *   Réductions   Σ des lignes actives de type « réduction » (§24).
  *   Total        Sous-total − réductions (§23).
- *   Encaissé     N'EXISTE PAS ENCORE — les règlements clients relèvent du lot
- *                suivant. La valeur est `null`, jamais 0 : un zéro affirmerait
- *                que le système a vérifié qu'aucun encaissement n'a eu lieu.
+ *   Encaissé     Σ des règlements VALIDÉS (LOT 8). Exige EN PLUS
+ *                `billing.customer_payments.view` : sans elle, la valeur est
+ *                `null`, JAMAIS 0 — un zéro affirmerait que le système a
+ *                vérifié qu'aucun encaissement n'a eu lieu.
+ *   Solde        Total − encaissé (Workflow 08 §21), donc `null` dès que
+ *                l'encaissé l'est.
  *
  * Aucun de ces montants n'est stocké : chacun est une somme refaite à chaque
  * lecture, comme le montant brut d'une facture fournisseur au LOT 5.
@@ -27,17 +30,24 @@ import type { CustomerInvoiceLineKind, CustomerInvoiceStatus } from './constants
 
 export type { CustomerInvoiceStatus, CustomerInvoiceLineKind } from './constants'
 
+/**
+ * Quelles sommes l'appelant a le droit de lire.
+ *
+ * Ce n'est pas une option d'affichage : une somme illisible vaut `null`, et
+ * l'écran DIT qu'il ne sait pas — il n'affiche jamais zéro à sa place
+ * (DEC-017, DEC-024).
+ */
+export type AmountOptions = {
+  canSeePayments: boolean
+}
+
 export type CustomerInvoiceAmounts = {
   subtotal: number
   discount: number
   total: number
-  /**
-   * Σ des encaissements validés. Toujours `null` dans ce lot : les règlements
-   * clients ne sont pas gérés. Le champ existe pour que l'écran distingue
-   * « non encaissé » de « non calculable » le jour où ils existeront.
-   */
+  /** Σ des encaissements validés. `null` sans `billing.customer_payments.view`. */
   paidAmount: number | null
-  /** Total − encaissé. `null` tant que l'encaissement l'est. */
+  /** Total − encaissé : ce qui reste dû (Workflow 08 §21). `null` si l'un manque. */
   remainingDue: number | null
 }
 
@@ -128,28 +138,51 @@ function sanitizeSearch(term: string): string {
 }
 
 /**
- * Montants d'un lot de factures — une requête, jamais N.
+ * Montants d'un lot de factures — une requête par source, jamais N.
  *
  * Les lignes sont lues sous `billing.customer_invoices.view`, comme la facture
  * elle-même : elles ne s'attribuent pas séparément. Une facture illisible ne
  * remonte de toute façon pas dans la liste.
+ *
+ * Les ENCAISSEMENTS relèvent d'une autre capacité (DEC-024). Sans
+ * `billing.customer_payments.view`, la somme serait vide et le solde, faux : on
+ * renvoie alors `null`, et l'écran le dit.
  */
-async function loadAmounts(invoiceIds: string[]): Promise<Map<string, CustomerInvoiceAmounts>> {
+async function loadAmounts(
+  invoiceIds: string[],
+  options: AmountOptions
+): Promise<Map<string, CustomerInvoiceAmounts>> {
   const amounts = new Map<string, CustomerInvoiceAmounts>()
   if (invoiceIds.length === 0) return amounts
 
   const supabase = await createSupabaseServerClient()
 
-  const { data, error } = await supabase
-    .from('customer_invoice_lines')
-    .select('customer_invoice_id, kind, quantity, unit_price, is_archived')
-    .in('customer_invoice_id', invoiceIds)
+  const [lines, payments] = await Promise.all([
+    supabase
+      .from('customer_invoice_lines')
+      .select('customer_invoice_id, kind, quantity, unit_price, is_archived')
+      .in('customer_invoice_id', invoiceIds),
+    options.canSeePayments
+      ? supabase
+          .from('customer_payments')
+          .select('customer_invoice_id, amount, status')
+          .in('customer_invoice_id', invoiceIds)
+          .eq('status', 'VALIDATED')
+      : Promise.resolve({ data: null, error: null }),
+  ])
 
-  if (error) {
+  if (lines.error) {
     reportQueryFailure(
       'lignes de facture client',
-      error,
+      lines.error,
       'Le montant des factures n’a pas pu être calculé.'
+    )
+  }
+  if (payments.error) {
+    reportQueryFailure(
+      'règlements clients',
+      payments.error,
+      'Le total encaissé n’a pas pu être calculé.'
     )
   }
 
@@ -157,7 +190,7 @@ async function loadAmounts(invoiceIds: string[]): Promise<Map<string, CustomerIn
   const subtotals = new Map<string, number>()
   const discounts = new Map<string, number>()
 
-  for (const line of data ?? []) {
+  for (const line of lines.data ?? []) {
     if (line.is_archived) continue
     const bucket = line.kind === 'DISCOUNT' ? discounts : subtotals
     bucket.set(
@@ -166,17 +199,23 @@ async function loadAmounts(invoiceIds: string[]): Promise<Map<string, CustomerIn
     )
   }
 
+  const paid = new Map<string, number>()
+  for (const row of payments.data ?? []) {
+    paid.set(row.customer_invoice_id, (paid.get(row.customer_invoice_id) ?? 0) + row.amount)
+  }
+
   for (const id of invoiceIds) {
     const subtotal = subtotals.get(id) ?? 0
     const discount = discounts.get(id) ?? 0
+    const total = subtotal - discount
+    const paidAmount = options.canSeePayments ? (paid.get(id) ?? 0) : null
 
     amounts.set(id, {
       subtotal,
       discount,
-      total: subtotal - discount,
-      // Les encaissements clients n'existent pas : on ne prétend pas savoir.
-      paidAmount: null,
-      remainingDue: null,
+      total,
+      paidAmount,
+      remainingDue: paidAmount === null ? null : total - paidAmount,
     })
   }
 
@@ -192,7 +231,8 @@ const NO_AMOUNTS: CustomerInvoiceAmounts = {
 }
 
 export async function listCustomerInvoices(
-  filters: CustomerInvoiceFilters = {}
+  filters: CustomerInvoiceFilters = {},
+  options: AmountOptions = { canSeePayments: false }
 ): Promise<CustomerInvoiceListItem[]> {
   const supabase = await createSupabaseServerClient()
 
@@ -238,7 +278,10 @@ export async function listCustomerInvoices(
   }
 
   const rows = (data ?? []) as unknown as RawRow[]
-  const amounts = await loadAmounts(rows.map((row) => row.id))
+  const amounts = await loadAmounts(
+    rows.map((row) => row.id),
+    options
+  )
 
   let items = rows.map((row) => ({
     id: row.id,
@@ -256,25 +299,43 @@ export async function listCustomerInvoices(
   }))
 
   /*
-   * « Impayées » et « En retard » portent sur une facture ÉMISE dont le solde
-   * court encore. Les encaissements n'existant pas, toute facture émise est
-   * réputée non soldée — et l'écran le dit explicitement plutôt que de laisser
-   * croire à une vérification qui n'a pas eu lieu.
+   * « Impayées » et « En retard » se filtrent sur le SOLDE, jamais en base : la
+   * valeur n'y est pas écrite (§61, DEC-025 §a). Une facture dont le solde n'est
+   * pas lisible est conservée — on ne l'écarte pas sur une somme qu'on n'a pas
+   * pu lire (DEC-017).
    */
   if (filters.unpaid || filters.status === 'OVERDUE') {
-    items = items.filter((item) => item.status === 'ISSUED')
+    items = items.filter(
+      (item) => item.status === 'ISSUED' && (item.remainingDue === null || item.remainingDue > 0)
+    )
   }
 
-  // Sans encaissement enregistré, aucune facture ne peut être dite payée.
-  if (filters.status === 'PAID' || filters.status === 'PARTIALLY_PAID') {
-    items = []
+  if (filters.status === 'PAID') {
+    items = items.filter(
+      (item) =>
+        item.status === 'ISSUED' &&
+        item.remainingDue !== null &&
+        item.remainingDue <= 0 &&
+        item.total > 0
+    )
+  }
+
+  if (filters.status === 'PARTIALLY_PAID') {
+    items = items.filter(
+      (item) =>
+        item.status === 'ISSUED' &&
+        item.remainingDue !== null &&
+        item.remainingDue > 0 &&
+        (item.paidAmount ?? 0) > 0
+    )
   }
 
   return items
 }
 
 export async function getCustomerInvoiceDetail(
-  id: string
+  id: string,
+  options: AmountOptions = { canSeePayments: false }
 ): Promise<CustomerInvoiceDetail | null> {
   const supabase = await createSupabaseServerClient()
 
@@ -300,7 +361,7 @@ export async function getCustomerInvoiceDetail(
     updated_at: string
   }
 
-  const amounts = await loadAmounts([row.id])
+  const amounts = await loadAmounts([row.id], options)
 
   return {
     id: row.id,
@@ -373,16 +434,18 @@ export async function listCustomerInvoiceLines(
  * se lirait « ce client n'a jamais été facturé » (DEC-017).
  */
 export async function listCustomerInvoicesForClient(
-  clientId: string
+  clientId: string,
+  options: AmountOptions = { canSeePayments: false }
 ): Promise<CustomerInvoiceListItem[]> {
-  return listCustomerInvoices({ clientId })
+  return listCustomerInvoices({ clientId }, options)
 }
 
 /** Facture portée par une location, s'il en existe une non annulée. */
 export async function getInvoiceForRental(
-  rentalId: string
+  rentalId: string,
+  options: AmountOptions = { canSeePayments: false }
 ): Promise<CustomerInvoiceListItem | null> {
-  const invoices = await listCustomerInvoices({ rentalId })
+  const invoices = await listCustomerInvoices({ rentalId }, options)
   return invoices.find((invoice) => invoice.status !== 'CANCELLED') ?? null
 }
 

@@ -101,24 +101,19 @@ export function acceptsPayments(status: SupplierInvoiceStatus): boolean {
   return status === 'VALIDATED'
 }
 
-/** Modes de paiement — Workflow 08 §12. */
-export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'BANK_DEPOSIT' | 'CHEQUE' | 'OTHER'
-
-export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
-  CASH: 'Espèces',
-  BANK_TRANSFER: 'Virement bancaire',
-  BANK_DEPOSIT: 'Dépôt bancaire',
-  CHEQUE: 'Chèque',
-  OTHER: 'Autre mode',
-}
-
-export const PAYMENT_METHOD_ORDER: PaymentMethod[] = [
-  'BANK_TRANSFER',
-  'CASH',
-  'BANK_DEPOSIT',
-  'CHEQUE',
-  'OTHER',
-]
+/*
+ * Modes de paiement — Workflow 08 §12.
+ *
+ * Le vocabulaire a rejoint `features/treasury` au LOT 8 : un encaissement
+ * client et un règlement fournisseur empruntent les mêmes modes, et le mode
+ * appartient au MOUVEMENT, non au sens dans lequel il va. La réexportation
+ * garde ce module comme point d'entrée de ses propres écrans.
+ */
+export {
+  PAYMENT_METHOD_LABELS,
+  PAYMENT_METHOD_ORDER,
+  type PaymentMethod,
+} from '@/features/treasury/constants'
 
 /**
  * Les trois états dérivés — Module 07 §31 et §55, DEC-025 §a.

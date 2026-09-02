@@ -349,21 +349,27 @@ export const EXPORTS: Record<string, ExportDefinition> = {
     entityType: 'customer_invoices',
     moduleCode: 'billing',
     async build(filters) {
-      const rows = await listCustomerInvoices({
-        search: filters.q,
-        status: filters.statut,
-        clientId: filters.client,
-        from: filters.du,
-        to: filters.au,
-      })
-
       /*
-       * NI MONTANT ENCAISSÉ, NI SOLDE.
+       * L'ENCAISSÉ ET LE SOLDE NE SORTENT QU'AVEC
+       * `billing.customer_payments.view`, comme à l'écran.
        *
-       * Ils supposent des règlements clients, qui n'existent pas. Une colonne à
-       * zéro dans un classeur exporté ferait autorité alors qu'elle n'aurait
-       * rien lu (DEC-017) — la colonne n'existe donc pas du tout.
+       * Sans ce droit, les colonnes n'existent pas — plutôt que d'exister à
+       * zéro, ce qui ferait d'un classeur exporté l'affirmation qu'aucun
+       * encaissement n'a eu lieu (DEC-017, DEC-024).
        */
+      const mayReadPayments = await can(PERMISSIONS.CUSTOMER_PAYMENTS_VIEW)
+
+      const rows = await listCustomerInvoices(
+        {
+          search: filters.q,
+          status: filters.statut,
+          clientId: filters.client,
+          from: filters.du,
+          to: filters.au,
+        },
+        { canSeePayments: mayReadPayments }
+      )
+
       return dataset(
         rows,
         [
@@ -385,6 +391,22 @@ export const EXPORTS: Record<string, ExportDefinition> = {
           { header: 'Sous-total', width: 18, format: 'amount', value: (r) => r.subtotal },
           { header: 'Réductions', width: 18, format: 'amount', value: (r) => r.discount },
           { header: 'Total', width: 18, format: 'amount', value: (r) => r.total },
+          ...(mayReadPayments
+            ? ([
+                {
+                  header: 'Encaissé',
+                  width: 18,
+                  format: 'amount' as const,
+                  value: (r: (typeof rows)[number]) => r.paidAmount,
+                },
+                {
+                  header: 'Solde',
+                  width: 18,
+                  format: 'amount' as const,
+                  value: (r: (typeof rows)[number]) => r.remainingDue,
+                },
+              ])
+            : []),
           {
             header: 'État',
             width: 22,
@@ -394,7 +416,9 @@ export const EXPORTS: Record<string, ExportDefinition> = {
               ],
           },
         ],
-        'Sous-total, réductions et total — les encaissements ne sont pas gérés'
+        mayReadPayments
+          ? 'Sous-total, réductions, total, encaissements et solde'
+          : 'Sous-total, réductions et total — les encaissements ne sont pas lisibles'
       )
     },
   },

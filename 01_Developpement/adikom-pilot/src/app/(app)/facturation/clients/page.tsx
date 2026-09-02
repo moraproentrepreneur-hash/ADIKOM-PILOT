@@ -21,18 +21,19 @@ import {
 export const metadata: Metadata = { title: 'Factures clients' }
 
 /**
- * Répertoire des factures clients — Étape 2.5, LOT 7.
+ * Répertoire des factures clients — Étape 2.5, LOTs 7 et 8.
  *
- * LES TROIS MONTANTS, SÉPARÉS (Workflow 07 §23).
+ * LES MONTANTS, SÉPARÉS (Workflow 07 §23).
  *
  * Sous-total, réductions et total sont affichés distinctement : une réduction
- * doit être identifiable, jamais fondue dans un prix (§24).
+ * doit être identifiable, jamais fondue dans un prix (§24). Le SOLDE s'y ajoute
+ * depuis le LOT 8 — total moins les encaissements validés (Workflow 08 §21).
  *
- * CE QUE CET ÉCRAN REFUSE D'AFFICHER.
+ * CE QU'IL REFUSE D'AFFICHER.
  *
- * Un montant encaissé et un solde. Ils supposent des RÈGLEMENTS CLIENTS, qui
- * relèvent d'une étape ultérieure : afficher « 0 KMF encaissé » laisserait
- * croire que le système l'a vérifié. Il dit donc ce qu'il ne sait pas (DEC-017).
+ * Un solde lu sans droit. Sans `billing.customer_payments.view`, la colonne
+ * annonce qu'elle n'est pas calculable, au lieu d'afficher un zéro qui se
+ * lirait « rien d'encaissé » (DEC-017, DEC-024).
  */
 export default async function CustomerInvoicesPage(props: PageProps<'/facturation/clients'>) {
   await requirePermissionOrRedirect(PERMISSIONS.CUSTOMER_INVOICES_VIEW)
@@ -50,13 +51,14 @@ export default async function CustomerInvoicesPage(props: PageProps<'/facturatio
     unpaid: read('impayees') === '1',
   }
 
-  const [canCreate, canExport] = await Promise.all([
+  const [canCreate, canExport, canSeePayments] = await Promise.all([
     can(PERMISSIONS.CUSTOMER_INVOICES_CREATE),
     can(PERMISSIONS.CUSTOMER_INVOICES_EXPORT),
+    can(PERMISSIONS.CUSTOMER_PAYMENTS_VIEW),
   ])
 
   const [invoices, clients] = await Promise.all([
-    listCustomerInvoices(filters),
+    listCustomerInvoices(filters, { canSeePayments }),
     listClientFilters(),
   ])
 
@@ -93,10 +95,17 @@ export default async function CustomerInvoicesPage(props: PageProps<'/facturatio
       />
 
       <Notice tone="info" className="mb-5">
-        Une facture <strong>émise</strong> reconnaît une créance et fige ses montants. Les{' '}
-        <strong>encaissements</strong> ne sont pas encore gérés : aucune facture n’est donc
-        affichée « payée », et le solde n’est pas calculé.
+        Une facture <strong>émise</strong> reconnaît une créance et fige ses montants.{' '}
+        <strong>« Payée »</strong> et <strong>« Partiellement payée »</strong> ne s’écrivent
+        jamais : elles se calculent des règlements enregistrés (Workflow 07 §61).
       </Notice>
+
+      {!canSeePayments && (
+        <Notice tone="warning" className="mb-5">
+          Votre compte ne peut pas consulter les règlements clients : le solde de chaque facture
+          reste inconnu de cet écran, et aucune n’y est dite payée.
+        </Notice>
+      )}
 
       <form method="get" className="mb-5">
         <Card>
@@ -177,8 +186,8 @@ export default async function CustomerInvoicesPage(props: PageProps<'/facturatio
             icon={FileText}
             title={hasFilters ? 'Aucune facture ne correspond' : 'Aucune facture client'}
             description={
-              filters.status === 'PAID' || filters.status === 'PARTIALLY_PAID'
-                ? 'Les encaissements clients ne sont pas encore gérés : aucune facture ne peut être dite payée.'
+              (filters.status === 'PAID' || filters.status === 'PARTIALLY_PAID') && !canSeePayments
+                ? 'Cet état se calcule des règlements enregistrés, que votre compte ne peut pas consulter.'
                 : hasFilters
                   ? 'Modifiez ou réinitialisez les filtres pour élargir la recherche.'
                   : 'Une facture se prépare depuis une location « À facturer », ou pour une prestation isolée.'
@@ -208,6 +217,7 @@ export default async function CustomerInvoicesPage(props: PageProps<'/facturatio
                     <th className="px-5 py-3 font-medium text-ink">Sous-total</th>
                     <th className="px-5 py-3 font-medium text-ink">Réductions</th>
                     <th className="px-5 py-3 font-medium text-ink">Total</th>
+                    <th className="px-5 py-3 font-medium text-ink">Solde</th>
                     <th className="px-5 py-3 font-medium text-ink">État</th>
                   </tr>
                 </thead>
@@ -271,6 +281,13 @@ export default async function CustomerInvoicesPage(props: PageProps<'/facturatio
                         <td className="px-5 py-3 font-medium text-ink tabular">
                           {formatAmount(invoice.total)}
                         </td>
+                        <td className="px-5 py-3 text-muted tabular">
+                          {invoice.remainingDue === null ? (
+                            <span className="text-xs italic">Non calculable</span>
+                          ) : (
+                            formatAmount(invoice.remainingDue)
+                          )}
+                        </td>
                         <td className="px-5 py-3">
                           <Badge tone={CUSTOMER_INVOICE_STATUS_TONES[shown]}>
                             {CUSTOMER_INVOICE_STATUS_LABELS[shown]}
@@ -317,6 +334,11 @@ export default async function CustomerInvoicesPage(props: PageProps<'/facturatio
                           {invoice.rentalId === null
                             ? 'Facture de services'
                             : (invoice.rentalNo ?? 'Location non lisible')}
+                        </dd>
+                        <dd>
+                          {invoice.remainingDue === null
+                            ? 'Solde non calculable avec vos droits'
+                            : `Solde ${formatAmount(invoice.remainingDue)}`}
                         </dd>
                       </dl>
                     </Link>

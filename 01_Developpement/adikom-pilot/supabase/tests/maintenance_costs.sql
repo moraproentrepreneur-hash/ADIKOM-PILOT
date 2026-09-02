@@ -381,19 +381,19 @@ begin
   end if;
 
   /*
-   * Aucun encaissement client n'existe : le LOT 3 ne pouvait rien y écrire, et
-   * ne doit pas l'avoir créé.
+   * Ce que le LOT 3 ne pouvait pas créer, et ne doit pas avoir créé.
    *
    * `imputations` a quitté cette liste le 29/08/2026 (LOT 4),
    * `supplier_invoices` le 30/08/2026 (LOT 5), `supplier_payments` le
-   * 31/08/2026 (LOT 6), `customer_invoices` le 01/09/2026 (LOT 7). Ce que ce
-   * contrôle doit désormais prouver, c'est que SAISIR UN COÛT ne crée rien —
-   * la garantie du §44, pas l'absence des tables.
+   * 31/08/2026 (LOT 6), `customer_invoices` le 01/09/2026 (LOT 7),
+   * `customer_payments` le 02/09/2026 (LOT 8). Ce que ce contrôle doit
+   * désormais prouver, c'est que SAISIR UN COÛT ne crée rien — la garantie du
+   * §44, pas l'absence des tables.
    */
   select array_agg(tablename) into v_tbl
   from pg_tables
   where schemaname = 'public'
-    and tablename in ('customer_payments', 'supplier_balances', 'payment_allocations');
+    and tablename in ('supplier_balances', 'payment_allocations', 'customer_advances');
   if v_tbl is not null then
     raise exception 'Le LOT 3 a créé des objets hors périmètre : %.', v_tbl;
   end if;

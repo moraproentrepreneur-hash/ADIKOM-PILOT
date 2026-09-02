@@ -1,7 +1,7 @@
 import type { BadgeTone } from '@/components/ui/primitives'
 
 /**
- * Libellés et états de la facture client — Étape 2.5, LOT 7.
+ * Libellés et états de la facture client — Étape 2.5, LOTs 7 et 8.
  *
  * Workflow 07 §27 : les six statuts recommandés, et rien de plus.
  *
@@ -13,10 +13,14 @@ import type { BadgeTone } from '@/components/ui/primitives'
  *                                doit être calculé à partir des règlements
  *                                réellement enregistrés. »
  *
- * La base refuse les trois transitions ; `displayStatus` les produit — le jour
- * où les encaissements clients existeront. Aujourd'hui, ils n'existent pas :
- * `paidAmount` vaut toujours `null`, et l'écran le DIT plutôt que d'afficher un
- * zéro qui se lirait « rien à encaisser » (DEC-017).
+ * La base refuse les trois transitions ; `displayStatus` les produit. Depuis le
+ * LOT 8, les encaissements existent : « Payée » se lit enfin — et reste un
+ * calcul, jamais une colonne.
+ *
+ * `paidAmount` vaut `null` lorsque le lecteur n'a pas
+ * `billing.customer_payments.view` : on ne conclut alors RIEN sur
+ * l'encaissement, plutôt que d'afficher un zéro qui se lirait « rien
+ * d'encaissé » (DEC-017, DEC-024).
  */
 
 export type CustomerInvoiceStatus =
@@ -77,9 +81,21 @@ export function isEditable(status: CustomerInvoiceStatus): boolean {
   return status === 'DRAFT'
 }
 
-/** Elle s'annule tant qu'elle n'est ni annulée ni encaissée. */
+/**
+ * Elle s'annule tant qu'elle n'est ni annulée ni encaissée.
+ *
+ * À passer l'état AFFICHÉ, pas l'état stocké : « Payée » et « Partiellement
+ * payée » ne s'écrivent jamais en base (§61), et une facture déjà encaissée s'y
+ * lit encore « Émise ». Le serveur refuse de toute façon (LOT 8), mais proposer
+ * un acte voué au refus ne se justifie pas.
+ */
 export function isCancellable(status: CustomerInvoiceStatus): boolean {
   return status !== 'CANCELLED' && status !== 'PAID' && status !== 'PARTIALLY_PAID'
+}
+
+/** Seule une facture ÉMISE s'encaisse : ni brouillon, ni annulée (§26). */
+export function acceptsPayments(status: CustomerInvoiceStatus): boolean {
+  return status === 'ISSUED' || status === 'PARTIALLY_PAID' || status === 'OVERDUE'
 }
 
 /* -------------------------------------------------------------------------- */

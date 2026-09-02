@@ -718,11 +718,19 @@ begin
     raise exception 'Le tarif verrouillé de la location a bougé : %.', v_amount;
   end if;
 
-  -- Aucun règlement, aucune écriture : ce lot n'encaisse rien.
+  /*
+   * FACTURER N'ENCAISSE RIEN.
+   *
+   * Le LOT 8 a livré les règlements clients : d'autres factures en portent
+   * désormais. Ce que ce contrôle doit prouver reste le même — émettre une
+   * facture ne fait entrer aucun argent — et il se mesure donc sur LA FACTURE
+   * DE CETTE RECETTE, jamais sur toute la base.
+   */
   if exists (
-    select 1 from public.treasury_entries where kind = 'CUSTOMER_PAYMENT'
+    select 1 from public.customer_payments p
+    where p.customer_invoice_id = (select invoice from recette_fac)
   ) then
-    raise exception 'Une écriture d''encaissement client existe : ce lot n''en produit aucune.';
+    raise exception 'Émettre une facture a produit un encaissement.';
   end if;
 
   raise notice '[OK] 19. Ni parc, ni tarif, ni trésorerie touchés par la facturation.';

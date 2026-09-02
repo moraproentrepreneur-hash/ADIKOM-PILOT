@@ -86,6 +86,32 @@ export function acceptsOperations(status: FinancialAccountStatus): boolean {
   return status === 'ACTIVE'
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Modes de paiement — Workflow 08 §12                                        */
+/*                                                                             */
+/*  Le mode appartient au MOUVEMENT, pas au sens dans lequel il va : un        */
+/*  encaissement client et un règlement fournisseur empruntent les mêmes.      */
+/*  Le vocabulaire vit donc ici, et les deux domaines s'y réfèrent.            */
+/* -------------------------------------------------------------------------- */
+
+export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'BANK_DEPOSIT' | 'CHEQUE' | 'OTHER'
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  CASH: 'Espèces',
+  BANK_TRANSFER: 'Virement bancaire',
+  BANK_DEPOSIT: 'Dépôt bancaire',
+  CHEQUE: 'Chèque',
+  OTHER: 'Autre mode',
+}
+
+export const PAYMENT_METHOD_ORDER: PaymentMethod[] = [
+  'BANK_TRANSFER',
+  'CASH',
+  'BANK_DEPOSIT',
+  'CHEQUE',
+  'OTHER',
+]
+
 /**
  * Montant signé d'une écriture — §19 : « le sens doit être clairement visible ».
  *

@@ -48,6 +48,7 @@ import { getInvoiceForRental } from '@/features/customer-invoices/data'
 import {
   CUSTOMER_INVOICE_STATUS_LABELS,
   CUSTOMER_INVOICE_STATUS_TONES,
+  displayStatus as displayInvoiceStatus,
   formatAmount,
 } from '@/features/customer-invoices/constants'
 
@@ -116,12 +117,17 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
    * se lirait « cette location n'a pas été facturée », affirmation qu'un refus
    * de lecture ne permet pas (DEC-017).
    */
-  const [canSeeInvoices, canCreateInvoice] = await Promise.all([
+  const [canSeeInvoices, canCreateInvoice, canSeeCustomerPayments] = await Promise.all([
     can(PERMISSIONS.CUSTOMER_INVOICES_VIEW),
     can(PERMISSIONS.CUSTOMER_INVOICES_CREATE),
+    // Et voir une facture n'est pas voir ce qui l'a soldée (DEC-024) : sans
+    // cette capacité, l'état affiché reste « Émise », jamais « Payée ».
+    can(PERMISSIONS.CUSTOMER_PAYMENTS_VIEW),
   ])
 
-  const invoice = canSeeInvoices ? await getInvoiceForRental(id) : null
+  const invoice = canSeeInvoices
+    ? await getInvoiceForRental(id, { canSeePayments: canSeeCustomerPayments })
+    : null
 
   const shown = displayStatus(rental.status, rental.expectedReturnAt)
   const beforeDeparture = rental.status === 'PREPARING' || rental.status === 'CONFIRMED'
@@ -328,9 +334,31 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
                     <span className="font-medium tabular">{formatAmount(invoice.total)}</span>
                   </InfoRow>
                   <InfoRow label="État">
-                    <Badge tone={CUSTOMER_INVOICE_STATUS_TONES[invoice.status]}>
-                      {CUSTOMER_INVOICE_STATUS_LABELS[invoice.status]}
-                    </Badge>
+                    {(() => {
+                      // « Payée » et « En retard » se calculent (Workflow 07
+                      // §61, DEC-025 §a) : l'état affiché n'est jamais celui
+                      // qui dort en base.
+                      const invoiceStatus = displayInvoiceStatus(
+                        invoice.status,
+                        invoice.dueDate,
+                        invoice.total,
+                        invoice.paidAmount
+                      )
+                      return (
+                        <Badge tone={CUSTOMER_INVOICE_STATUS_TONES[invoiceStatus]}>
+                          {CUSTOMER_INVOICE_STATUS_LABELS[invoiceStatus]}
+                        </Badge>
+                      )
+                    })()}
+                  </InfoRow>
+                  <InfoRow label="Solde" hint="Total moins les encaissements validés.">
+                    {invoice.remainingDue === null ? (
+                      <span className="text-muted">
+                        Votre compte ne peut pas consulter les règlements.
+                      </span>
+                    ) : (
+                      <span className="tabular">{formatAmount(invoice.remainingDue)}</span>
+                    )}
                   </InfoRow>
                   <InfoRow label="Échéance">
                     {formatDate(invoice.dueDate) ?? <Empty />}

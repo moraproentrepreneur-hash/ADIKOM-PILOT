@@ -258,6 +258,20 @@ const PROFILES = {
     'billing.supplier_payments.view',
     'billing.supplier_payments.create',
   ],
+  /*
+   * Peut annuler un règlement, mais ne voit AUCUNE écriture.
+   *
+   * L'annulation doit défaire l'écriture produite : sans le droit de la lire,
+   * elle est refusée en bloc plutôt que réussie à moitié (migration 054).
+   */
+  pay_cancel_blind: [
+    ...READERS,
+    'treasury.accounts.view',
+    'billing.supplier_invoices.view',
+    'billing.imputations.view',
+    'billing.supplier_payments.view',
+    'billing.supplier_payments.cancel',
+  ],
   // Consulte les règlements, n'en enregistre aucun.
   pay_view: [
     ...READERS,
@@ -323,10 +337,19 @@ const PROFILES = {
     'billing.customer_invoices.view',
     'billing.customer_invoices.issue',
   ],
+  /*
+   * Annuler une facture exige de VOIR CE QUI LA SOLDE.
+   *
+   * Depuis le LOT 8, une facture encaissée ne s'annule pas : la somme
+   * encaissée est lue sous les droits de l'appelant, et sans
+   * `customer_payments.view` elle vaudrait 0 — l'annulation passerait sur une
+   * facture pourtant réglée. Même exigence que côté fournisseur (`inv_cancel`).
+   */
   cli_cancel: [
     ...READERS,
     'billing.customer_invoices.view',
     'billing.customer_invoices.cancel',
+    'billing.customer_payments.view',
   ],
   // Peut émettre, mais ne voit AUCUNE location : la facture porte pourtant un
   // contrat dont l'état conditionne l'acte. On n'agit pas à l'aveugle.
@@ -348,6 +371,92 @@ const PROFILES = {
   ],
   // Peut clôturer, et RIEN de la facturation : l'acte d'exploitation tient seul.
   loc_close: [...READERS, 'rental.rentals.close'],
+
+  /*
+   * LOT 8 — les règlements clients.
+   *
+   * Trois capacités, trois actes, et une frontière : ENCAISSER n'est pas
+   * ÉCRIRE DANS LA TRÉSORERIE. L'écriture d'entrée est la conséquence du
+   * règlement, non un acte libre (DEC-029 §f).
+   */
+  enc_view: [
+    ...READERS,
+    'billing.customer_invoices.view',
+    'billing.customer_payments.view',
+    'treasury.accounts.view',
+  ],
+  /*
+   * EXACTEMENT les quatre capacités qu'exige un encaissement, et RIEN d'autre —
+   * surtout aucun droit d'écriture sur la facture ni sur les écritures.
+   *
+   * C'est le profil qui éprouve la leçon de la migration 051 : un
+   * `select … for update` sur la facture appliquerait sa policy d'ÉCRITURE et
+   * déclarerait la facture « introuvable » à qui n'a pas le droit de la
+   * modifier. Un profil complet ne le verrait jamais.
+   */
+  enc_create: [
+    'billing.customer_invoices.view',
+    'billing.customer_payments.view',
+    'billing.customer_payments.create',
+    'treasury.accounts.view',
+  ],
+  /*
+   * Annuler un règlement, c'est aussi annuler SON ÉCRITURE.
+   *
+   * `treasury.entries.view` en fait partie : sous RLS, un `UPDATE … WHERE` lit
+   * les lignes qu'il vise, et sans ce droit l'écriture survivrait au règlement
+   * annulé — le compte porterait un mouvement sans cause (migration 054).
+   */
+  enc_cancel: [
+    ...READERS,
+    'billing.customer_invoices.view',
+    'billing.customer_payments.view',
+    'billing.customer_payments.cancel',
+    'treasury.entries.view',
+  ],
+  // Le même, PRIVÉ de la lecture des écritures : l'annulation doit être
+  // refusée, jamais réussie à moitié.
+  enc_cancel_blind: [
+    ...READERS,
+    'billing.customer_invoices.view',
+    'billing.customer_payments.view',
+    'billing.customer_payments.cancel',
+  ],
+  // Peut encaisser, mais ne voit AUCUN compte : celui à créditer serait désigné
+  // à l'aveugle (Workflow 08 §13).
+  enc_blind_account: [
+    ...READERS,
+    'billing.customer_invoices.view',
+    'billing.customer_payments.view',
+    'billing.customer_payments.create',
+  ],
+  /*
+   * Peut annuler une facture, et ne voit AUCUN règlement.
+   *
+   * Sans `customer_payments.view`, la somme encaissée vaudrait 0 sous RLS et
+   * l'annulation passerait sur une facture pourtant encaissée. Le refus doit
+   * donc être ANTÉRIEUR au calcul, et nommer la capacité manquante.
+   */
+  enc_blind_cancel: [
+    ...READERS,
+    'billing.customer_invoices.view',
+    'billing.customer_invoices.cancel',
+  ],
+  // Le compte complet du domaine, pour les contrôles positifs.
+  enc_full: [
+    ...READERS,
+    'billing.customer_invoices.view',
+    'billing.customer_invoices.create',
+    'billing.customer_invoices.issue',
+    'billing.customer_invoices.cancel',
+    'billing.customer_payments.view',
+    'billing.customer_payments.create',
+    'billing.customer_payments.cancel',
+    'treasury.accounts.view',
+    'treasury.accounts.create',
+    'treasury.balances.view',
+    'treasury.entries.view',
+  ],
 }
 
 async function createProfile(admin, key, codes) {
@@ -414,6 +523,7 @@ async function main() {
     accounts: [],
     payments: [],
     customerInvoices: [],
+    customerPayments: [],
   }
 
   /** Session PostgREST d'un profil : exactement ce dont dispose un appelant. */
@@ -458,8 +568,9 @@ async function main() {
       .single()
     fixtures.ruleId = rule.id
 
-    // F et G servent au LOT 7 : deux locations menées jusqu'à « À facturer ».
-    for (const suffix of ['A', 'B', 'C', 'D', 'E', 'F', 'G']) {
+    // F et G servent au LOT 7, H au LOT 8 : des locations menées jusqu'à
+    // « À facturer », puis facturées.
+    for (const suffix of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
       const { data: vehicleNo } = await admin.rpc('next_number', { p_entity_key: 'vehicle' })
       const { data: vehicle } = await admin
         .from('vehicles')
@@ -1765,12 +1876,40 @@ async function main() {
         `${untouched?.status}`
       )
 
+      /*
+       * ANNULER UN RÈGLEMENT, C'EST ANNULER SON ÉCRITURE (migration 054).
+       *
+       * Sans `treasury.entries.view`, l'`UPDATE` sur les écritures n'en verrait
+       * aucune sous RLS : le règlement passerait « Annulé » et le compte
+       * garderait son décaissement. Le refus est ANTÉRIEUR.
+       */
+      const entryBlindCanceller = await session('pay_cancel_blind')
+      const cancelBlindEntries = await entryBlindCanceller.rpc('cancel_supplier_payment', {
+        p_payment_id: paymentId,
+      })
+      check(
+        refused(cancelBlindEntries),
+        'Annuler un règlement est refusé sans `treasury.entries.view`',
+        'on ne défait pas un mouvement qu’on ne peut pas lire'
+      )
+
       const cancelled = await owner.rpc('cancel_supplier_payment', {
         p_payment_id: paymentId,
         p_reason: 'Audit',
       })
       check(!refused(cancelled), 'La capacité `cancel` annule le règlement',
         cancelled.error?.message ?? '')
+
+      const { data: supplierEntry } = await admin
+        .from('treasury_entries')
+        .select('status')
+        .eq('supplier_payment_id', paymentId)
+        .maybeSingle()
+      check(
+        supplierEntry?.status === 'CANCELLED',
+        'Et l’écriture suit l’annulation (§28)',
+        `${supplierEntry?.status}`
+      )
 
       const { data: afterCancel } = await balViewer.rpc('financial_account_balance', {
         p_account_id: accountId,
@@ -2099,6 +2238,292 @@ async function main() {
 
     /* ------------------------------------------------------------------ */
     console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('RÈGLEMENTS CLIENTS (LOT 8)\n')
+
+    {
+      const viewer = await session('enc_view')
+      const payer = await session('enc_create')
+      const canceller = await session('enc_cancel')
+      const blindAccount = await session('enc_blind_account')
+      const blindCancel = await session('enc_blind_cancel')
+      const owner = await session('enc_full')
+
+      /* --- UNE FACTURE ÉMISE, À ENCAISSER. */
+      const encRental = await makeInvoiceableRental(7, 600)
+
+      const { data: encInvId, error: encInvError } = await owner.rpc('create_customer_invoice', {
+        p_client_id: fixtures.clientId,
+        p_invoice_date: '2026-09-03',
+        p_due_date: '2026-09-30',
+        p_rental_id: encRental,
+        p_notes: `${MARK} — à encaisser`,
+      })
+      if (encInvError) throw new Error(`facture à encaisser : ${encInvError.message}`)
+
+      const encInvoice = String(encInvId)
+      fixtures.customerInvoices.push(encInvoice)
+
+      await owner.rpc('add_customer_invoice_line', {
+        p_invoice_id: encInvoice,
+        p_kind: 'RENTAL',
+        p_label: `${MARK} — location`,
+        p_quantity: 2,
+        p_unit_price: 100000,
+      })
+      await owner.rpc('issue_customer_invoice', { p_invoice_id: encInvoice })
+
+      const { data: encAccId } = await owner.rpc('create_financial_account', {
+        p_kind: 'CASH',
+        p_label: `${MARK} — Caisse client`,
+        p_opening_balance: 0,
+      })
+      const encAccount = String(encAccId)
+      if (encAccId) fixtures.accounts.push(encAccount)
+
+      /* --- ENCAISSER exige `customer_payments.create`. */
+      const payByViewer = await viewer.rpc('record_customer_payment', {
+        p_invoice_id: encInvoice,
+        p_account_id: encAccount,
+        p_amount: 50000,
+        p_received_on: '2026-09-04',
+        p_method: 'CASH',
+      })
+      check(
+        refused(payByViewer),
+        'record_customer_payment refusée sans `customer_payments.create`'
+      )
+
+      const payByCanceller = await canceller.rpc('record_customer_payment', {
+        p_invoice_id: encInvoice,
+        p_account_id: encAccount,
+        p_amount: 50000,
+        p_received_on: '2026-09-04',
+        p_method: 'CASH',
+      })
+      check(
+        refused(payByCanceller),
+        '`customer_payments.cancel` n’enregistre pas un encaissement',
+        'annuler n’est pas encaisser'
+      )
+
+      const forgePayment = await viewer.from('customer_payments').insert({
+        payment_no: `REG-FORGE-${STAMP}`,
+        customer_invoice_id: encInvoice,
+        account_id: encAccount,
+        amount: 50000,
+        received_on: '2026-09-04',
+        method: 'CASH',
+      })
+      check(refused(forgePayment), 'INSERT direct dans `customer_payments` refusé de même')
+
+      /* --- ENCAISSER À L'AVEUGLE SUR LE COMPTE EST REFUSÉ (§13). */
+      const blindPay = await blindAccount.rpc('record_customer_payment', {
+        p_invoice_id: encInvoice,
+        p_account_id: encAccount,
+        p_amount: 50000,
+        p_received_on: '2026-09-04',
+        p_method: 'CASH',
+      })
+      check(
+        refused(blindPay),
+        'Encaisser est refusé sans `treasury.accounts.view`',
+        'on ne crédite pas un compte qu’on ne peut pas lire'
+      )
+
+      /*
+       * LE CONTRÔLE POSITIF SE FAIT AU PROFIL MINIMAL.
+       *
+       * `enc_create` ne porte QUE les quatre capacités de l'acte — aucun droit
+       * d'écriture sur la facture, aucun sur les écritures. C'est ce contrôle
+       * qui prouve qu'encaisser n'exige pas de pouvoir modifier la créance
+       * (leçon de la migration 051).
+       */
+      const paid = await payer.rpc('record_customer_payment', {
+        p_invoice_id: encInvoice,
+        p_account_id: encAccount,
+        p_amount: 50000,
+        p_received_on: '2026-09-04',
+        p_method: 'CASH',
+        p_external_ref: `ENC-${STAMP}`,
+      })
+      check(
+        !refused(paid),
+        'Les quatre capacités suffisent : encaisser n’exige aucun droit sur la facture',
+        paid.error?.message ?? ''
+      )
+
+      const paymentId = String(paid.data)
+      if (paid.data) fixtures.customerPayments.push(paymentId)
+
+      /* --- L'ÉCRITURE EST UNE CONSÉQUENCE, PAS UN SECOND ACTE. */
+      const { data: entry } = await admin
+        .from('treasury_entries')
+        .select('direction, kind, amount, status')
+        .eq('customer_payment_id', paymentId)
+        .maybeSingle()
+      check(
+        entry?.direction === 'IN' && entry?.kind === 'CUSTOMER_PAYMENT' && entry?.amount === 50000,
+        'L’encaissement a produit une ENTRÉE, sans `treasury.entries.create` (§47)',
+        `${entry?.direction} ${entry?.amount}`
+      )
+
+      /* --- MAIS UNE ÉCRITURE LIBRE RESTE INTERDITE. */
+      const freeEntry = await payer.from('treasury_entries').insert({
+        account_id: encAccount,
+        entry_date: '2026-09-04',
+        direction: 'IN',
+        kind: 'DEPOSIT',
+        amount: 10000,
+      })
+      check(
+        refused(freeEntry),
+        'Une écriture LIBRE reste refusée sans `treasury.entries.create`',
+        'produire une écriture n’est pas pouvoir en écrire n’importe laquelle'
+      )
+
+      /* --- « PAYÉE » NE S'ÉCRIT PAS, MÊME AU PORTEUR DE TOUT LE DOMAINE. */
+      const patchPaid = await owner
+        .from('customer_invoices')
+        .update({ status: 'PAID' })
+        .eq('id', encInvoice)
+      const { data: afterPaid } = await admin
+        .from('customer_invoices')
+        .select('status')
+        .eq('id', encInvoice)
+        .maybeSingle()
+      check(
+        refused(patchPaid) || afterPaid?.status === 'ISSUED',
+        'PATCH direct vers « Payée » sans effet : le statut se calcule (§61)',
+        `${afterPaid?.status}`
+      )
+
+      /* --- UNE FACTURE ENCAISSÉE NE S'ANNULE PAS. */
+      const blindInvoiceCancel = await blindCancel.rpc('cancel_customer_invoice', {
+        p_invoice_id: encInvoice,
+        p_reason: 'Audit',
+      })
+      check(
+        refused(blindInvoiceCancel),
+        'Annuler une facture est refusé sans `customer_payments.view`',
+        'une somme illisible n’est pas une somme nulle'
+      )
+
+      const paidInvoiceCancel = await owner.rpc('cancel_customer_invoice', {
+        p_invoice_id: encInvoice,
+        p_reason: 'Audit',
+      })
+      check(
+        refused(paidInvoiceCancel),
+        'Et refusé tout court sur une facture encaissée',
+        'les règlements s’annulent d’abord'
+      )
+
+      /* --- ANNULER exige `customer_payments.cancel`. */
+      const cancelByPayer = await payer.rpc('cancel_customer_payment', {
+        p_payment_id: paymentId,
+      })
+      check(
+        refused(cancelByPayer),
+        'cancel_customer_payment refusée sans `customer_payments.cancel`',
+        'encaisser n’est pas défaire'
+      )
+
+      /*
+       * ANNULER UN RÈGLEMENT, C'EST ANNULER SON ÉCRITURE (migration 054).
+       *
+       * Sans `treasury.entries.view`, l'`UPDATE` sur les écritures n'en verrait
+       * aucune sous RLS : le règlement passerait « Annulé » et le compte
+       * garderait son mouvement. Le refus est ANTÉRIEUR, et il le dit.
+       */
+      const blindCanceller = await session('enc_cancel_blind')
+      const cancelBlind = await blindCanceller.rpc('cancel_customer_payment', {
+        p_payment_id: paymentId,
+      })
+      check(
+        refused(cancelBlind),
+        'Annuler un règlement est refusé sans `treasury.entries.view`',
+        'on ne défait pas un mouvement qu’on ne peut pas lire'
+      )
+
+      const { data: stillValidated } = await admin
+        .from('customer_payments')
+        .select('status')
+        .eq('id', paymentId)
+        .maybeSingle()
+      check(
+        stillValidated?.status === 'VALIDATED',
+        'Et le règlement n’est pas annulé à moitié',
+        `${stillValidated?.status}`
+      )
+
+      const patchCancel = await payer
+        .from('customer_payments')
+        .update({ status: 'CANCELLED', cancelled_at: new Date().toISOString() })
+        .eq('id', paymentId)
+      const { data: afterPatchCancel } = await admin
+        .from('customer_payments')
+        .select('status')
+        .eq('id', paymentId)
+        .maybeSingle()
+      check(
+        refused(patchCancel) || afterPatchCancel?.status === 'VALIDATED',
+        'PATCH direct vers « Annulé » sans effet de même',
+        `${afterPatchCancel?.status}`
+      )
+
+      const cancelled = await canceller.rpc('cancel_customer_payment', {
+        p_payment_id: paymentId,
+        p_reason: 'Audit',
+      })
+      check(
+        !refused(cancelled),
+        'La capacité `cancel` annule le règlement',
+        cancelled.error?.message ?? ''
+      )
+
+      const { data: entryAfter } = await admin
+        .from('treasury_entries')
+        .select('status')
+        .eq('customer_payment_id', paymentId)
+        .maybeSingle()
+      check(
+        entryAfter?.status === 'CANCELLED',
+        'L’écriture suit l’annulation du règlement (§28)',
+        `${entryAfter?.status}`
+      )
+
+      /* --- LECTURE ET SUPPRESSION. */
+      const noBilling = await session('acc_view')
+      const blindRead = await noBilling
+        .from('customer_payments')
+        .select('id')
+        .eq('id', paymentId)
+      check(
+        (blindRead.data?.length ?? 0) === 0,
+        'RLS ne livre aucun règlement sans `customer_payments.view`'
+      )
+
+      const seen = await viewer
+        .from('customer_payments')
+        .select('payment_no')
+        .eq('id', paymentId)
+        .maybeSingle()
+      check(
+        Boolean(seen.data?.payment_no),
+        'Avec `customer_payments.view`, le règlement est lisible'
+      )
+
+      const removal = await owner.from('customer_payments').delete().eq('id', paymentId)
+      const { data: stillHere } = await admin
+        .from('customer_payments')
+        .select('id')
+        .eq('id', paymentId)
+        .maybeSingle()
+      check(refused(removal) || Boolean(stillHere), 'Aucune suppression possible')
+    }
+
+    /* ------------------------------------------------------------------ */
+    console.log('\n──────────────────────────────────────────────────────────────')
     console.log('CATALOGUE ET DONNÉES DEMO\n')
 
     {
@@ -2135,6 +2560,15 @@ async function main() {
       await admin.rpc('cancel_supplier_payment', { p_payment_id: id })
       await admin.from('treasury_entries').delete().eq('supplier_payment_id', id)
       await admin.from('supplier_payments').delete().eq('id', id)
+    }
+    /*
+     * Un règlement client retient sa facture ET son compte (`on delete
+     * restrict`) : il part avant les deux, avec l'écriture qu'il a produite.
+     */
+    for (const id of fixtures.customerPayments) {
+      await admin.rpc('cancel_customer_payment', { p_payment_id: id })
+      await admin.from('treasury_entries').delete().eq('customer_payment_id', id)
+      await admin.from('customer_payments').delete().eq('id', id)
     }
     for (const id of fixtures.invoices) {
       await admin.from('supplier_payments').delete().eq('supplier_invoice_id', id)
