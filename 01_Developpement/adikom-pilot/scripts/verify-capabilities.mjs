@@ -457,6 +457,75 @@ const PROFILES = {
     'treasury.balances.view',
     'treasury.entries.view',
   ],
+
+  /*
+   * LOT 9 — le tableau de bord.
+   *
+   * Trois capacités composent, elles n'ouvrent rien : `dashboard.view` autorise
+   * l'écran, `dashboard.fleet.view` la synthèse du parc, `dashboard.financial.view`
+   * celle de l'argent. Aucune ne donne accès aux données qu'elle résume, et la
+   * capacité source ne suffit pas non plus (DEC-024, dans les deux sens).
+   *
+   * Les profils ci-dessous sont construits SANS `READERS` : ils ne portent que
+   * ce qui est nommé, faute de quoi la moitié des refus attendus ne pourrait
+   * pas être observée.
+   */
+  pil_nu: ['dashboard.view'],
+  pil_ops: ['dashboard.view', 'rental.rentals.view'],
+  // L'écran n'ouvre pas les locations : la capacité source manque.
+  pil_ops_muet: ['dashboard.view', 'rental.reservations.view'],
+  // La synthèse du parc, sans les véhicules qu'elle résume : refus attendu.
+  pil_parc_aveugle: ['dashboard.view', 'dashboard.fleet.view'],
+  // Les véhicules, sans la capacité de synthèse : refus attendu aussi.
+  pil_parc_sans_synthese: ['dashboard.view', 'rental.fleet.view'],
+  pil_parc: ['dashboard.view', 'dashboard.fleet.view', 'rental.fleet.view'],
+  /*
+   * Toutes les lectures financières, SANS `dashboard.financial.view`.
+   *
+   * Si les quatre sommes lui répondaient, la capacité ne servirait qu'à masquer
+   * des cartes — et masquer n'est pas protéger (Module 01 §28).
+   */
+  pil_argent_sans_synthese: [
+    'dashboard.view',
+    'billing.customer_invoices.view',
+    'billing.customer_payments.view',
+    'billing.supplier_invoices.view',
+    'billing.supplier_payments.view',
+    'billing.imputations.view',
+  ],
+  // Voit les factures clients, PAS les règlements : le facturé lui est dû, la
+  // créance non — elle vaudrait le total, et se lirait « rien n'a été payé ».
+  pil_facture: [
+    'dashboard.view',
+    'dashboard.financial.view',
+    'billing.customer_invoices.view',
+  ],
+  pil_creance: [
+    'dashboard.view',
+    'dashboard.financial.view',
+    'billing.customer_invoices.view',
+    'billing.customer_payments.view',
+  ],
+  /*
+   * LE PROFIL LE PLUS IMPORTANT DU LOT.
+   *
+   * Il voit les factures fournisseurs et les règlements, mais PAS les
+   * imputations. La dette calculée vaudrait alors le BRUT : 1 000 000 là où
+   * ADIKOM ne doit que 500 000 (CLAUDE.md §16, §57). La fonction doit refuser.
+   */
+  pil_dette_aveugle: [
+    'dashboard.view',
+    'dashboard.financial.view',
+    'billing.supplier_invoices.view',
+    'billing.supplier_payments.view',
+  ],
+  pil_dette: [
+    'dashboard.view',
+    'dashboard.financial.view',
+    'billing.supplier_invoices.view',
+    'billing.supplier_payments.view',
+    'billing.imputations.view',
+  ],
 }
 
 async function createProfile(admin, key, codes) {
@@ -2520,6 +2589,175 @@ async function main() {
         .eq('id', paymentId)
         .maybeSingle()
       check(refused(removal) || Boolean(stillHere), 'Aucune suppression possible')
+    }
+
+    /* ------------------------------------------------------------------ */
+    console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('TABLEAU DE BORD — LES SOMMES DU PILOTAGE (LOT 9)\n')
+
+    {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Indian/Comoro' })
+      const wide = { p_from: '2000-01-01', p_to: today }
+
+      const nu = await session('pil_nu')
+      const ops = await session('pil_ops')
+      const opsMuet = await session('pil_ops_muet')
+      const parcAveugle = await session('pil_parc_aveugle')
+      const parcSansSynthese = await session('pil_parc_sans_synthese')
+      const parc = await session('pil_parc')
+      const argentSansSynthese = await session('pil_argent_sans_synthese')
+      const facture = await session('pil_facture')
+      const creance = await session('pil_creance')
+      const detteAveugle = await session('pil_dette_aveugle')
+      const dette = await session('pil_dette')
+
+      /* --- `dashboard.view` seule n'ouvre RIEN ------------------------- */
+
+      check(refused(await nu.rpc('dashboard_operations')), '`dashboard.view` seule : exploitation refusée')
+      check(
+        refused(await nu.rpc('dashboard_reservations', { p_days: 7 })),
+        '`dashboard.view` seule : réservations refusées'
+      )
+      check(refused(await nu.rpc('dashboard_fleet')), '`dashboard.view` seule : parc refusé')
+      check(
+        refused(await nu.rpc('dashboard_customer_invoiced', wide)),
+        '`dashboard.view` seule : facturé refusé'
+      )
+      check(
+        refused(await nu.rpc('dashboard_customer_collected', wide)),
+        '`dashboard.view` seule : encaissé refusé'
+      )
+      check(
+        refused(await nu.rpc('dashboard_customer_receivables')),
+        '`dashboard.view` seule : créances refusées'
+      )
+      check(
+        refused(await nu.rpc('dashboard_supplier_payables')),
+        '`dashboard.view` seule : dettes fournisseurs refusées'
+      )
+
+      /* --- Sans `dashboard.view`, la source ne suffit pas --------------- */
+
+      // `operateur` porte `rental.rentals.view` mais AUCUNE capacité de
+      // pilotage : la porte du tableau de bord reste fermée.
+      const operateur = await session('operateur')
+      check(
+        refused(await operateur.rpc('dashboard_operations')),
+        'Sans `dashboard.view`, voir les locations n’ouvre pas le pilotage'
+      )
+
+      /* --- Exploitation ------------------------------------------------ */
+
+      const opsOk = await ops.rpc('dashboard_operations')
+      check(
+        !refused(opsOk) && Array.isArray(opsOk.data) && opsOk.data.length === 1,
+        'Avec `rental.rentals.view`, l’exploitation répond',
+        opsOk.error?.message ?? `${opsOk.data?.[0]?.running ?? '—'} en cours`
+      )
+      check(
+        refused(await opsMuet.rpc('dashboard_operations')),
+        'Voir les réservations n’autorise pas à compter les locations'
+      )
+      check(
+        !refused(await opsMuet.rpc('dashboard_reservations', { p_days: 7 })),
+        'Et réciproquement : les réservations lui répondent'
+      )
+
+      /* --- Parc : les deux capacités, dans les deux sens ---------------- */
+
+      check(
+        refused(await parcAveugle.rpc('dashboard_fleet')),
+        '`dashboard.fleet.view` sans `rental.fleet.view` : parc refusé'
+      )
+      check(
+        refused(await parcSansSynthese.rpc('dashboard_fleet')),
+        '`rental.fleet.view` sans `dashboard.fleet.view` : parc refusé aussi'
+      )
+      const parcOk = await parc.rpc('dashboard_fleet')
+      check(!refused(parcOk), 'Les deux réunies : le parc répond', parcOk.error?.message ?? '')
+
+      /* --- `dashboard.financial.view` protège vraiment ------------------ */
+
+      check(
+        refused(await argentSansSynthese.rpc('dashboard_customer_invoiced', wide)),
+        'Toutes les lectures financières sans `dashboard.financial.view` : facturé refusé'
+      )
+      check(
+        refused(await argentSansSynthese.rpc('dashboard_customer_receivables')),
+        '… créances refusées : la capacité protège, elle ne masque pas'
+      )
+      check(
+        refused(await argentSansSynthese.rpc('dashboard_supplier_payables')),
+        '… dettes fournisseurs refusées'
+      )
+
+      /* --- Une somme muette est refusée, jamais approchée --------------- */
+
+      const factureOk = await facture.rpc('dashboard_customer_invoiced', wide)
+      check(!refused(factureOk), 'Avec `customer_invoices.view`, le facturé répond')
+      check(
+        refused(await facture.rpc('dashboard_customer_collected', wide)),
+        'Sans `customer_payments.view`, l’encaissé est refusé'
+      )
+      check(
+        refused(await facture.rpc('dashboard_customer_receivables')),
+        'Et la créance aussi : sans les règlements, elle vaudrait le total (050)'
+      )
+
+      const creanceOk = await creance.rpc('dashboard_customer_receivables')
+      check(
+        !refused(creanceOk) && Array.isArray(creanceOk.data),
+        'Les deux lectures réunies : la créance se calcule',
+        creanceOk.error?.message ?? `${creanceOk.data?.[0]?.amount ?? '—'} KMF`
+      )
+
+      /* --- LE CONTRÔLE CENTRAL : une imputation n'est pas un paiement --- */
+
+      check(
+        refused(await detteAveugle.rpc('dashboard_supplier_payables')),
+        'Sans `imputations.view`, la dette fournisseur est REFUSÉE, jamais surévaluée'
+      )
+
+      const detteOk = await dette.rpc('dashboard_supplier_payables')
+      check(
+        !refused(detteOk) && Array.isArray(detteOk.data),
+        'Avec les trois lectures, la dette nette se calcule',
+        detteOk.error?.message ?? `${detteOk.data?.[0]?.amount ?? '—'} KMF`
+      )
+
+      /*
+       * Et la valeur est bien le NET : la facture d'audit porte 600 000 de brut
+       * et 200 000 d'imputation validée. Une dette qui inclurait le brut
+       * dépasserait ce que la même session lit facture par facture.
+       */
+      if (!refused(detteOk) && detteOk.data?.[0]) {
+        const net = Number(detteOk.data[0].amount)
+        const { data: gross } = await dette
+          .from('supplier_invoice_lines')
+          .select('amount')
+        const total = (gross ?? []).reduce((acc, row) => acc + Number(row.amount), 0)
+        check(
+          net <= total,
+          'La dette annoncée ne dépasse jamais le brut des lignes lisibles',
+          `${net} ≤ ${total}`
+        )
+      }
+
+      /* --- Aucune fonction du pilotage n'écrit -------------------------- */
+
+      const before = await admin
+        .from('treasury_entries')
+        .select('id', { count: 'exact', head: true })
+      await Promise.all([
+        dette.rpc('dashboard_supplier_payables'),
+        creance.rpc('dashboard_customer_receivables'),
+        parc.rpc('dashboard_fleet'),
+        ops.rpc('dashboard_operations'),
+      ])
+      const after = await admin
+        .from('treasury_entries')
+        .select('id', { count: 'exact', head: true })
+      check(before.count === after.count, 'Sept lectures, aucune écriture produite')
     }
 
     /* ------------------------------------------------------------------ */

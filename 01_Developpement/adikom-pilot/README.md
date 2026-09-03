@@ -66,6 +66,9 @@ code, la documentation ou un message de commit.
 | `npm run db:status` | Liste les migrations à appliquer, sans rien modifier |
 | `npm run db:verify` | Recette du schéma — socle (transaction annulée) |
 | `npm run db:verify:location` | Recette du schéma — référentiel d'exploitation |
+| `npm run db:verify:dashboard` | Recette des **sommes du pilotage** — tableau de bord |
+| `npm run verify:pilotage` | Recette fonctionnelle — tableau de bord, dans un navigateur |
+| `npm run verify:capabilities` | Audit des capacités — appels directs, refus et autorisations |
 | `npm run verify:users` | Recette sécurité — module Utilisateurs |
 | `npm run verify:referential` | Recette sécurité — clients, fournisseurs, parc, tarifs |
 | `npm run verify:referential:ui` | Recette fonctionnelle — référentiel, dans un navigateur |
@@ -110,6 +113,13 @@ sources accordent séparément ; fermer l'une ne ferme pas l'autre.
 Tout passe par `src/lib/money.ts`. Aucun flottant dans un calcul financier.
 Une imputation n'est pas un paiement : montant brut, imputé, payé et solde
 restent conservés séparément.
+
+**2 bis. Une somme illisible se REFUSE, elle ne s'approche pas.**
+Une fonction `SECURITY INVOKER` qui somme des lignes soumises à RLS doit exiger
+nommément le droit de les lire. Sans lui, elle renverrait un total silencieux et
+faux : un solde réduit à son ouverture (migration 050), une dette fournisseur
+égale à son brut parce que les imputations sont invisibles (migration 055). Un
+zéro ne dit jamais « je n'ai pas le droit de compter ».
 
 **3. Le logo officiel ne se transforme jamais.**
 Le composant `AdikomLogo` est le seul point d'entrée. Il garantit le ratio,

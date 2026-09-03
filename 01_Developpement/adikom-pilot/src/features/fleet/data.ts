@@ -2,6 +2,7 @@ import 'server-only'
 
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { reportQueryFailure } from '@/lib/server-action'
+import { todayISO } from '@/lib/dates'
 import type {
   FuelType,
   OccupationSource,
@@ -408,6 +409,85 @@ export async function listVehicleDocuments(
     fileName: row.file_name,
     isArchived: row.is_archived,
     notes: row.notes,
+  }))
+}
+
+/**
+ * Documents dont l'échéance approche ou est passée — Module 01 §14.
+ *
+ * Une assurance, une visite technique, une carte grise : le tableau de bord
+ * doit pouvoir les signaler avant qu'elles n'expirent. « Les alertes doivent
+ * être basées sur les dates réellement enregistrées » — aucune échéance n'est
+ * déduite d'une périodicité supposée, et un document sans `expires_on` ne
+ * remonte jamais.
+ *
+ * Les documents archivés en sont exclus : ils ont été remplacés.
+ *
+ * La lecture se fait sous `rental.documents.view` OU `rental.fleet.view`, comme
+ * la policy de la table (migration 023). Sans l'une des deux, la requête ne
+ * renvoie rien — l'appelant doit donc avoir vérifié la capacité, sans quoi il
+ * lirait une liste vide comme une absence d'échéance (DEC-017).
+ */
+export type ExpiringDocument = {
+  id: string
+  vehicleId: string
+  vehicleLabel: string
+  docType: VehicleDocumentType
+  label: string
+  expiresOn: string
+}
+
+export async function listExpiringVehicleDocuments(
+  withinDays: number,
+  limit = 5
+): Promise<ExpiringDocument[]> {
+  const supabase = await createSupabaseServerClient()
+
+  // Jour civil des Comores (DEC-025 §e) : une échéance au 30 n'est pas
+  // dépassée le 30, et l'horizon se compte en jours de calendrier.
+  const today = todayISO()
+  const [year, month, day] = today.split('-').map(Number)
+  const horizon = new Date(Date.UTC(year, month - 1, day + withinDays))
+    .toISOString()
+    .slice(0, 10)
+
+  const { data, error } = await supabase
+    .from('vehicle_documents')
+    .select('id, vehicle_id, doc_type, label, expires_on, vehicles ( brand, model, plate )')
+    .eq('is_archived', false)
+    .not('expires_on', 'is', null)
+    .lte('expires_on', horizon)
+    .order('expires_on', { ascending: true })
+    .limit(limit)
+
+  if (error) {
+    reportQueryFailure(
+      'échéances de documents',
+      error,
+      'Les échéances de documents n’ont pas pu être chargées.'
+    )
+  }
+
+  type Raw = {
+    id: string
+    vehicle_id: string
+    doc_type: VehicleDocumentType
+    label: string
+    expires_on: string
+    vehicles?: { brand: string; model: string; plate: string | null } | null
+  }
+
+  return ((data ?? []) as unknown as Raw[]).map((row) => ({
+    id: row.id,
+    vehicleId: row.vehicle_id,
+    // Sans `rental.fleet.view`, le véhicule reste inconnu : le document est
+    // lisible, sa monture ne l'est pas. L'écran le dit plutôt que d'inventer.
+    vehicleLabel: row.vehicles
+      ? `${row.vehicles.brand} ${row.vehicles.model}${row.vehicles.plate ? ` — ${row.vehicles.plate}` : ''}`
+      : 'Véhicule non lisible',
+    docType: row.doc_type,
+    label: row.label,
+    expiresOn: row.expires_on,
   }))
 }
 

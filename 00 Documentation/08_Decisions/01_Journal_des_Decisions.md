@@ -64,6 +64,8 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-028 | Unicité de la référence fournisseur | Arbitrage ADIKOM | Appliquée — **clôt DEC-027 §i** | 2026-08-31 |
 | DEC-029 | Banques & Caisses et règlements — LOT 6 | Arbitrages ADIKOM | Appliquée — **ouvre le module 6** | 2026-08-31 |
 | DEC-030 | Facture client et clôture — LOT 7 | Arbitrages | Appliquée — **clôt le cycle de location** | 2026-09-01 |
+| DEC-031 | Règlements clients et solde des créances — LOT 8 | Arbitrages | Appliquée — **achève l'Étape 2.5** | 2026-09-02 |
+| DEC-032 | Tableau de bord de pilotage — LOT 9 | Arbitrages et sécurité | Appliquée — **ouvre la Phase 3** | 2026-09-02 |
 
 ---
 
@@ -2165,6 +2167,193 @@ ni `.print`, et en créer une d'office est proscrit (DEC-024).
 
 ---
 
+## DEC-032 — Tableau de bord de pilotage (LOT 9)
+
+**Date :** 2 septembre 2026
+**Portée :** métier, technique et sécurité
+**Statut :** appliquée · **ouvre la Phase 3 — Pilotage**
+
+### Contexte — le premier écran, resté vide le plus longtemps
+
+DEC-021 découpe la Phase 2 jusqu'à l'Étape 2.5, achevée par DEC-031. `README`
+§73 et `CLAUDE.md` §61 désignent la suite : **Phase 3 — Pilotage**, dont le
+tableau de bord est la porte d'entrée.
+
+Il existait depuis l'Étape 1, mais n'affichait aucun chiffre — délibérément :
+
+> « Aucune donnée fictive ne doit être affichée » (`Module 01` §6) ; « les
+> indicateurs seront alimentés au fur et à mesure de la mise en service des
+> modules ».
+
+Les modules sont livrés. Le LOT 9 branche les indicateurs sur les données
+réelles, et rien d'autre.
+
+### a. Le tableau de bord ne stocke aucun indicateur
+
+Aucune table, aucune colonne, aucun statut. Un indicateur stocké devrait être
+tenu à jour, et un indicateur périmé est un indicateur **faux**. Chaque chiffre
+est refait à la lecture, sur les mêmes fonctions que les fiches et les listes —
+`customer_invoice_total`, `customer_invoice_paid`, `supplier_invoice_gross`,
+`supplier_invoice_imputed`, `supplier_invoice_paid`, `financial_account_balance`.
+
+**Le pilotage ne connaît donc aucune arithmétique qui lui soit propre.** Il
+assemble ce que les modules savent déjà dire. C'est la doctrine du Tableau de
+location (LOT 1), étendue à l'argent.
+
+### b. Une somme lue par pages est une somme fausse
+
+Les listes de l'application s'arrêtent à 200 lignes : parfait pour un écran,
+**faux pour un total**. Compter côté application aurait produit un chiffre
+d'affaires silencieusement tronqué dès la 201ᵉ facture.
+
+**Migration 055** : sept fonctions `SECURITY INVOKER`, `stable`, qui somment sur
+l'ensemble des lignes **visibles par l'appelant**, sans pagination.
+
+C'est la leçon de la migration 050 — « un solde ne se calcule pas sur des
+écritures illisibles » — appliquée au pilotage. Une somme partielle présentée
+comme un total est pire qu'un refus.
+
+### c. Les trois capacités du tableau de bord composent, elles n'ouvrent rien
+
+`dashboard.view`, `dashboard.financial.view` et `dashboard.fleet.view` existent
+au catalogue depuis la migration 007. **Elles n'avaient jusqu'ici aucun contrôle
+serveur** — elles ne faisaient que masquer des cartes, et `Module 01` §28
+l'interdit : « même si un indicateur est masqué dans l'interface, les données
+correspondantes doivent rester protégées ».
+
+Le LOT 9 leur donne ce contrôle. Les sept fonctions exigent `dashboard.view` ;
+l'état du parc exige en plus `dashboard.fleet.view` ; les quatre sommes
+financières `dashboard.financial.view`.
+
+**Et la capacité source reste exigée en plus, dans les deux sens** (DEC-024) :
+
+| Capacités détenues | Résultat |
+| --- | --- |
+| `dashboard.fleet.view` seule | **refus** — la synthèse ne donne pas accès aux véhicules |
+| `rental.fleet.view` seule | **refus** — voir les véhicules n'autorise pas la synthèse |
+| les deux | l'état du parc répond |
+
+Aucune ne rend l'autre superflue. C'est exactement ce que DEC-024 demande :
+« aucune fonctionnalité contrôlable par utilisateur ne doit être implicitement
+autorisée par une autre permission ».
+
+### d. Une somme muette est refusée, jamais approchée
+
+Le point le plus sensible du lot, et il concerne la règle fondatrice d'ADIKOM.
+
+La dette fournisseur vaut **brut − imputé − payé**. Un lecteur qui verrait les
+factures et les règlements mais **pas les imputations** obtiendrait, sous la
+seule RLS, un imputé de zéro : le tableau de bord annoncerait **1 000 000 KMF**
+là où ADIKOM ne doit que **500 000**.
+
+`CLAUDE.md` §57 : « une imputation de maintenance fournisseur ne doit pas être
+enregistrée comme un paiement » — et elle ne doit pas non plus pouvoir être
+**ignorée**.
+
+`dashboard_supplier_payables` exige donc les trois lectures et **refuse** sinon.
+Même règle côté client : sans `billing.customer_payments.view`, la créance
+vaudrait le total facturé et se lirait « rien n'a été payé ».
+
+### e. La période est un mois civil, sur le fuseau d'ADIKOM
+
+`Module 01` §8 laisse le choix des périodes. Cinq sont retenues : aujourd'hui,
+cette semaine, ce mois — **par défaut** —, ce trimestre, cette année.
+
+Ce sont des périodes **civiles**, jamais des fenêtres glissantes : « ce mois »
+ne veut pas dire « les trente derniers jours ». Un cumul qui recule d'un jour
+chaque nuit ne se compare à rien et ne se rapproche d'aucun relevé.
+
+Les bornes sont calculées sur `Indian/Comoro` (DEC-025 §e). L'application
+s'exécute en UTC sur Vercel : le 1er du mois à 01:00 aux Comores, le serveur est
+encore au 31 du mois précédent. Sans ce soin, le tableau de bord afficherait le
+mois écoulé pendant les trois premières heures de chaque mois — et l'année
+écoulée pendant les trois premières heures de chaque année.
+
+**La période ne s'applique pas à tout.** Les files d'attente, l'état du parc et
+les créances sont des **situations actuelles** : ce que le client doit, il le
+doit quelle que soit la fenêtre affichée. `Module 01` §8 le dit : le filtre ne
+doit servir que « lorsqu'il apporte une valeur réelle ». L'écran nomme cette
+distinction plutôt que de la laisser deviner.
+
+### f. Trois réponses, jamais deux
+
+Chaque indicateur rend l'un de trois états : la **valeur**, un **refus de
+droit** — qui nomme la capacité manquante —, ou une **erreur de chargement**.
+
+Un zéro ne dit aucune des trois choses. « 0 facture en retard » est une bonne
+nouvelle ; « je n'ai pas le droit de compter les factures » n'en est pas une
+(DEC-017). Et `Module 01` §26 l'ajoute : le système « ne doit pas afficher de
+données inventées pour masquer une erreur de chargement ».
+
+Les erreurs sont donc capturées **indicateur par indicateur** : une section en
+échec ne peut pas emporter la page — qui est l'écran d'atterrissage après
+connexion.
+
+Lorsque **rien** n'est ouvert, l'écran le dit en toutes lettres : *« il n'est
+pas vide : il est fermé »*.
+
+### g. Les actions rapides : deux règles, et aucune troisième
+
+`Module 01` §22 : « une action non autorisée ne doit pas être proposée ». Le
+LOT 9 y ajoute une seconde condition : **l'écran de destination doit exister**.
+
+Deux gestes pourtant réels en sont donc absents : créer une **location** —
+elle naît d'une réservation, et son geste vit sur la fiche de celle-ci — et
+**encaisser un règlement**, qui appartient à la facture qu'il solde (LOT 8). Les
+proposer obligerait à inventer un écran d'entrée que le cycle documenté ne
+prévoit pas.
+
+### h. Ce que le LOT 9 ne fait pas
+
+**Aucune « activité récente »** (`Module 01` §21). Les dernières opérations
+importantes existent — c'est le journal d'audit — mais son écran n'est pas
+livré : `/utilisateurs/journal` relève de la **Phase 4**. Le §21 dit « doit
+pouvoir présenter », et le §33 ne le compte pas parmi les critères
+d'acceptation. Il attend donc son module.
+
+**Aucune personnalisation par rôle** au-delà des permissions (§3). Le tableau de
+bord se construit « à partir des données auxquelles l'utilisateur est réellement
+autorisé à accéder » — ce qui est fait — mais aucune disposition différente
+n'est livrée par métier. Y ajouter des dispositions supposerait de savoir
+lesquelles : c'est une décision ADIKOM, pas une déduction.
+
+**Aucun graphique** (§12 : « une représentation graphique **peut** être
+utilisée »). Sept nombres cliquables disent l'état du parc plus vite qu'un
+camembert, et `CLAUDE.md` §41 proscrit les graphiques décoratifs.
+
+**Aucune notification** : le Centre de notifications est un module à part
+(Module 02), et rien de ce lot ne l'anticipe.
+
+**Aucun rapport, aucun export, aucune impression** du tableau de bord. Aucune
+capacité `dashboard.export`, `.download` ou `.print` n'est créée : en créer une
+d'office est proscrit (DEC-024). Le catalogue reste à **153**.
+
+**Aucune actualisation automatique** (§24 : « éviter de donner l'impression
+qu'une donnée est en temps réel si elle ne l'est pas »). La page est rendue à
+chaque visite, jamais mise en cache ; l'actualisation manuelle est celle du
+navigateur.
+
+**Aucun trop-perçu, aucune avance** : DEC-031 §b reste ouvert, et le tableau de
+bord n'en présume rien.
+
+### Conséquences
+
+- Migration **055** : sept fonctions `SECURITY INVOKER` et `stable`, `EXECUTE`
+  retiré à PUBLIC (DEC-022). **Aucune table, aucune colonne, aucune permission.**
+- `dashboard.view`, `dashboard.financial.view` et `dashboard.fleet.view` sont
+  désormais **contrôlées côté serveur**, et plus seulement côté écran.
+- `listExpiringVehicleDocuments` rejoint `features/fleet` : les échéances de
+  documents (§14) se lisent sous `rental.documents.view` **ou**
+  `rental.fleet.view`, comme la policy de la table.
+- Le tableau de bord de l'Étape 1 — un texte, aucun chiffre — est remplacé.
+- Recettes : `db:verify:dashboard` (13 contrôles), `verify:pilotage` (53
+  contrôles), et `verify:capabilities` porté de 164 à **189 contrôles**.
+- Le module **Tiers**, le **Parc**, la **Facturation** et la **Trésorerie** ne
+  sont pas modifiés : le pilotage lit, il n'écrit pas. La recette le vérifie —
+  sept lectures, aucun statut déplacé, aucune écriture produite.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -2179,6 +2368,8 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 8. **DEC-029 §c** — ADIKOM souhaite-t-elle séparer la **saisie** et la **validation** d'un règlement (`Workflow 08` §56) ? Aujourd'hui, un règlement constate un mouvement effectué et naît validé ; le catalogue n'offre aucune capacité de validation. La séparation suppose d'en créer une : c'est une décision d'organisation. *La question vaut à l'identique pour les **règlements clients** depuis **DEC-031**.*
 9. **DEC-031 §b** — Que devient un **trop-perçu client** ? `Workflow 08` §40 impose une règle définie par ADIKOM et interdit au système d'en décider seul. Les trois issues qu'il envisage supposent chacune une fonctionnalité non retenue : affectation à une autre facture (§37), conservation en **avance** (§41, §42), ou autre règle validée. En attendant, tout versement supérieur au solde est **refusé**, avec son motif. Trancher suppose d'arrêter la règle **et** de décider si l'avance devient un objet du système.
 10. **DEC-030 §i** — La **facture client doit-elle être remise au client** sous forme de document ? Le catalogue porte `billing.customer_invoices.print` mais pas `.download`, et DEC-024 interdit de déduire l'une de l'autre. Produire le PDF suppose donc de créer `billing.customer_invoices.download` : c'est une décision de capacité, prise ici pour signalement et non appliquée. *Se rattache à **DEC-023 §4**, la convention de référence restant à valider avant toute première émission d'un document comptable.*
+11. **DEC-032 §h** — Le tableau de bord doit-il proposer une **disposition différente selon le métier** (`Module 01` §3) ? Le contenu suit déjà les permissions : un utilisateur sans droits financiers ne voit aucun montant. Une disposition propre au Gérant, à l'assistante de direction ou au responsable de location supposerait de savoir **laquelle** — quels indicateurs, dans quel ordre, pour quel poste. C'est une décision d'organisation, et l'inventer reviendrait à créer une règle métier.
+12. **DEC-032 §h** — L'**activité récente** (`Module 01` §21) doit-elle figurer au tableau de bord ? Les données existent — le journal d'audit —, mais son écran relève de la Phase 4 et `users.audit.view` en commande la lecture. La question est de savoir si le tableau de bord doit en présenter un extrait, et sous quelle capacité.
 
 ---
 
