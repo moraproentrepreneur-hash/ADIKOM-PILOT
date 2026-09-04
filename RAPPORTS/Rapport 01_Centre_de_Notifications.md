@@ -5,7 +5,7 @@
 **Lot :** LOT 10 — Centre de notifications (Phase 3 — Pilotage, Module 02)
 **Décision de référence :** DEC-033
 **Date :** 4 septembre 2026
-**Commit :** `0b3ae60`
+**Commit de référence :** `42481eb` (déployé et éprouvé en production)
 **État :** livré, déployé, recette de production passée
 
 ---
@@ -397,7 +397,7 @@ n'a disparu** — seul l'état de lecture a changé.
 | `verify:customer-payments` | 36 | ✅ |
 | `verify:customer-invoices` | 52 | ✅ |
 | `verify:dashboard` (tableau de location) | 30 | ✅ |
-| `verify:treasury` | 34 | ✅ (exécutée avant déploiement) |
+| `verify:treasury` | 34 | ✅ |
 
 ### Recettes non exécutées, et pourquoi
 
@@ -423,10 +423,16 @@ Ces recettes restent à relancer par ADIKOM avec les identifiants du Super Admin
 | --- | --- |
 | Dépôt | `moraproentrepreneur-hash/ADIKOM-PILOT` |
 | Branche | `main` |
-| Commit | `0b3ae60` — *feat: le centre de notifications dit ce qui presse, et ce qu il ne voit pas* |
-| Poussé | ✅ `e4e7da2..0b3ae60` |
-| Vérification | `git rev-parse HEAD` **==** `git rev-parse origin/main` |
-| Secrets | ✅ aucun — diff balayée avant le commit |
+| Vérification | `git rev-parse HEAD` **==** `git ls-remote origin main` après chaque poussée |
+| Secrets | ✅ aucun — diff balayée avant chaque commit |
+
+Trois commits :
+
+| Commit | Objet |
+| --- | --- |
+| `0b3ae60` | *feat: le centre de notifications dit ce qui presse, et ce qu il ne voit pas* — le lot |
+| `7081d97` | *docs: rapport du LOT 10, et deux recettes qui ne laissent plus de residus* |
+| `42481eb` | *fix: un compteur de notifications dit son niveau une fois, pas deux* |
 
 ---
 
@@ -437,8 +443,11 @@ Ces recettes restent à relancer par ADIKOM avec les identifiants du Super Admin
 | Projet | `adikom-pilot` |
 | URL de production | https://adikom-pilot.vercel.app |
 | État | **READY** |
-| SHA déployé | `0b3ae60` — **identique au commit local** |
+| SHA déployé | `42481eb` — **identique au commit local** |
 | Déclenchement | automatique au push sur `main` |
+
+Chaque poussée a été suivie jusqu'à l'état `READY`, et le SHA déployé comparé au
+commit local avant toute recette.
 
 ---
 
@@ -453,9 +462,13 @@ Exécutée **après** l'état `READY`, contre https://adikom-pilot.vercel.app.
 | `verify:customer-payments` | 36 | ✅ tous réussis |
 | `verify:customer-invoices` | 52 | ✅ tous réussis |
 | `verify:dashboard` | 30 | ✅ tous réussis |
+| `verify:treasury` | 34 | ✅ tous réussis |
 | `verify:capabilities` | 206 | ✅ tous réussis |
 
-**Total : 464 contrôles de production, aucun échec.**
+**Total : 498 contrôles de production, aucun échec.**
+
+`verify:notifications` et `verify:pilotage` ont été rejouées après le
+déploiement de `42481eb`, dernier commit portant du code.
 
 ---
 
