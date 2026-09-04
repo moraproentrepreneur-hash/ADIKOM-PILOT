@@ -8,6 +8,7 @@ import { requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatAmount } from '@/lib/money'
 import { formatDate, formatDateTime } from '@/lib/dates'
+import { cn } from '@/lib/utils'
 import {
   markAllNotificationsReadAction,
   markNotificationReadAction,
@@ -218,6 +219,16 @@ export default async function NotificationsPage(props: PageProps<'/notifications
 /*  Compteurs — §17                                                            */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Un compteur : un mot, un nombre.
+ *
+ * La couleur ACCOMPAGNE le mot, elle ne le remplace pas (§20 du Module 01) — et
+ * elle ne s'allume qu'au-delà de zéro : « 0 urgent » est une bonne nouvelle, la
+ * peindre en rouge serait un contresens.
+ *
+ * `data-compteur-valeur` porte la valeur brute pour les recettes : un chiffre se
+ * contrôle sans dépendre de sa mise en forme.
+ */
 function Counter({
   label,
   value,
@@ -227,16 +238,24 @@ function Counter({
   value: number
   tone: 'info' | 'danger' | 'warning' | 'neutral'
 }) {
+  const raised = value > 0 && tone !== 'neutral'
+
   return (
-    <div className="rounded-card border border-line bg-white px-4 py-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium text-muted">{label}</p>
-        {value > 0 && tone !== 'neutral' && <Badge tone={tone}>{label}</Badge>}
-      </div>
+    <div
+      className={cn(
+        'rounded-card border bg-white px-4 py-3',
+        raised && tone === 'danger' ? 'border-danger-soft' : 'border-line',
+        raised && tone === 'warning' ? 'border-warning-soft' : ''
+      )}
+    >
+      <p className="text-xs font-medium text-muted">{label}</p>
       <p
         data-compteur={label}
         data-compteur-valeur={value}
-        className="mt-1.5 font-display text-2xl font-semibold text-ink tabular"
+        className={cn(
+          'mt-1.5 font-display text-2xl font-semibold tabular',
+          raised && tone === 'danger' ? 'text-danger' : 'text-ink'
+        )}
       >
         {value.toLocaleString('fr-FR')}
       </p>
