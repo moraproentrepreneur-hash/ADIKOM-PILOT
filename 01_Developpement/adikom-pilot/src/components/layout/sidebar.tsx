@@ -32,6 +32,13 @@ type SidebarProps = {
   isSuperAdmin: boolean
   initiallyCollapsed: boolean
   user: { fullName: string; jobTitle: string | null; email: string }
+  /**
+   * Compteurs affichés sur une entrée, par destination.
+   *
+   * Module 02 §17 : « un compteur de notifications non lues ». Il est calculé
+   * côté serveur, sur l'état réel — l'interface ne fait que l'écrire.
+   */
+  badges?: Record<string, number>
 }
 
 export function Sidebar({
@@ -39,6 +46,7 @@ export function Sidebar({
   isSuperAdmin,
   initiallyCollapsed,
   user,
+  badges,
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(initiallyCollapsed)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -150,6 +158,7 @@ export function Sidebar({
                         level="submenu"
                         collapsed={collapsed}
                         active={pathname === item.href}
+                        badge={badges?.[item.href]}
                         onNavigate={() => setMobileOpen(false)}
                       />
                     ))}
@@ -162,6 +171,7 @@ export function Sidebar({
                   level="menu"
                   collapsed={collapsed}
                   active={pathname === entry.href}
+                  badge={badges?.[entry.href]}
                   onNavigate={() => setMobileOpen(false)}
                 />
               )
@@ -232,15 +242,20 @@ function SidebarLink({
   level,
   collapsed,
   active,
+  badge,
   onNavigate,
 }: {
   item: NavItem
   level: 'menu' | 'submenu'
   collapsed: boolean
   active: boolean
+  badge?: number
   onNavigate: () => void
 }) {
   const Icon = item.icon
+  // Un compteur à zéro ne s'affiche pas : « 0 » n'appelle aucune attention, et
+  // le pastillage permanent finirait par ne plus rien signaler (Module 02 §26).
+  const count = badge && badge > 0 ? badge : null
 
   // Une fonctionnalité non livrée n'est jamais présentée comme disponible
   // (02_Architecture_Fonctionnelle/02_Navigation.md §19).
@@ -287,8 +302,37 @@ function SidebarLink({
           !active && level === 'submenu' && 'text-ink hover:bg-adikom-50 hover:text-adikom-500'
         )}
       >
-        <Icon className="size-4 shrink-0" aria-hidden />
-        {!collapsed && <span className="truncate">{item.label}</span>}
+        <span className="relative shrink-0">
+          <Icon className="size-4" aria-hidden />
+          {/* Rétractée, la barre n'a pas la place d'un nombre : le point suffit
+              à dire « il y a quelque chose », et le libellé du lien le nomme. */}
+          {count !== null && collapsed && (
+            <span
+              className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-danger"
+              aria-hidden
+            />
+          )}
+        </span>
+
+        {!collapsed && (
+          <>
+            <span className="truncate">{item.label}</span>
+            {count !== null && (
+              <span
+                data-badge={item.href}
+                className="ml-auto inline-flex min-w-5 items-center justify-center rounded-badge bg-danger px-1.5 py-0.5 text-[10px] font-semibold text-white tabular"
+              >
+                {count > 99 ? '99+' : count}
+              </span>
+            )}
+          </>
+        )}
+
+        {count !== null && (
+          <span className="sr-only">
+            {count} notification{count > 1 ? 's' : ''} non lue{count > 1 ? 's' : ''}
+          </span>
+        )}
       </Link>
     </li>
   )

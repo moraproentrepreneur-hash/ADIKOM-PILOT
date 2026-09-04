@@ -356,6 +356,7 @@ function ClosedNotice({ board }: { board: Dashboard }) {
     board.lateRentals,
     board.expiringDocuments,
     board.maintenanceRunning,
+    board.unreadNotifications,
   ]
 
   if (sections.some((section) => section.state === 'ok')) return null
@@ -375,6 +376,26 @@ function ClosedNotice({ board }: { board: Dashboard }) {
 
 function Alerts({ board }: { board: Dashboard }) {
   const rows: React.ReactElement[] = []
+
+  /*
+   * Le Centre de notifications, en une ligne — Module 02 §33.
+   *
+   * « Le tableau de bord peut afficher le nombre de notifications non lues […]
+   * Le Centre reste cependant l'endroit principal pour consulter l'ensemble des
+   * notifications. » Cette ligne n'en présente donc aucune : elle compte, et
+   * elle mène.
+   */
+  if (board.unreadNotifications.state === 'ok' && board.unreadNotifications.value > 0) {
+    rows.push(
+      <AlertRow
+        key="notifications"
+        level="watch"
+        title={`${board.unreadNotifications.value} notification(s) non lue(s)`}
+        detail="Centre de notifications — ce qu’il faut savoir ou faire maintenant."
+        href="/notifications"
+      />
+    )
+  }
 
   if (board.operations.state === 'ok' && board.operations.value.late > 0) {
     rows.push(

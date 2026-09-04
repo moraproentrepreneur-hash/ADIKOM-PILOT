@@ -66,6 +66,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-030 | Facture client et clôture — LOT 7 | Arbitrages | Appliquée — **clôt le cycle de location** | 2026-09-01 |
 | DEC-031 | Règlements clients et solde des créances — LOT 8 | Arbitrages | Appliquée — **achève l'Étape 2.5** | 2026-09-02 |
 | DEC-032 | Tableau de bord de pilotage — LOT 9 | Arbitrages et sécurité | Appliquée — **ouvre la Phase 3** | 2026-09-02 |
+| DEC-033 | Centre de notifications — LOT 10 | Arbitrages et sécurité | Appliquée — **ouvre le module 2** | 2026-09-04 |
 
 ---
 
@@ -2354,6 +2355,214 @@ bord n'en présume rien.
 
 ---
 
+## DEC-033 — Centre de notifications (LOT 10)
+
+**Date :** 4 septembre 2026
+**Portée :** métier, technique et sécurité
+**Statut :** appliquée · **ouvre le module 2 — Centre de notifications**
+
+### Contexte — le deuxième écran de la Phase 3
+
+DEC-032 ouvre la Phase 3 par le tableau de bord. `README` §73 et `CLAUDE.md` §61
+en désignent la suite : le **Centre de notifications** (Module 02), qui répond à
+une question voisine mais distincte — le tableau de bord dit *où en est
+l'entreprise*, le Centre dit *ce que je dois savoir ou faire maintenant*
+(`Module 02` §40).
+
+L'entrée « Notifications » existait dans la navigation depuis l'Étape 1, marquée
+« à venir ». La capacité `notifications.view` existait au catalogue depuis la
+migration 007, **sans aucun contrôle serveur**.
+
+### a. Aucune notification n'est stockée
+
+Le point structurant du lot, et il tranche une hésitation réelle.
+
+`Module 02` §3 : « une notification doit toujours être liée à un événement réel
+du système ; le système ne doit jamais générer artificiellement des
+notifications ». La façon la plus sûre de tenir cette règle est de **ne pas
+recopier l'événement** : chaque notification est refaite à la lecture, sur les
+données du module qui la produit.
+
+Une notification stockée devrait être tenue à jour, et **une notification
+périmée est une notification fausse** — « le véhicule doit rentrer aujourd'hui »
+resterait affiché alors qu'il est rentré. C'est la doctrine du Tableau de
+location (LOT 1) et de DEC-032 §a, étendue à la veille.
+
+Trois exigences du module en découlent **sans une ligne de code** :
+
+| Exigence | Comment elle est tenue |
+| --- | --- |
+| §26 — pas de surcharge | une situation résolue cesse d'elle-même de dire |
+| §27 — déduplication | une situation = une clé = une seule ligne |
+| §32 — rien à supprimer | aucune donnée métier n'est touchée, il n'y a rien à supprimer |
+
+**Migration 056** : une seule table, `notification_reads` — qui a lu quoi, et
+quand (§19, §24). Aucune table de notifications, aucun déclencheur de diffusion,
+aucun travail planifié.
+
+### b. Le niveau n'est jamais une appréciation
+
+`Module 02` §25 : « le niveau doit être déterminé par la règle métier
+concernée ». Chaque famille reprend donc un **exemple littéral du §4** :
+
+| Niveau | Familles livrées | Ancrage |
+| --- | --- | --- |
+| **Urgent** | véhicule immobilisé pendant une location ; incident avec dommage important sur un véhicule en location | §4.5, mot pour mot |
+| **Important** | retour non enregistré ; véhicule immobilisé ; document expiré | §4.4 |
+| **À surveiller** | document proche de l'expiration ; maintenance en retard ; contrôle de retour à effectuer ; facture client échue ; facture fournisseur échue | §4.3, §11 |
+| **Rappel** | départ prévu ; retour prévu ; maintenance prévue | §4.2 |
+
+Deux précisions valent d'être écrites :
+
+- **« Incident important »** (§4.5) n'est pas une appréciation : il se lit sur la
+  gravité **constatée** du dommage — `MAJOR`, dont le libellé métier est
+  précisément « Important » (migration 036). Un incident sans dommage important
+  reste « à surveiller ». Aucun incident ne devient urgent par défaut.
+- **« Facture importante en retard »** (§4.4) suppose un **seuil de montant**
+  qu'aucune règle ne fixe. Le niveau retenu est donc le plus bas des deux
+  lectures possibles — « à surveiller » —, et le seuil reste à arbitrer.
+
+Les horizons ne sont pas choisis non plus : **7 jours** pour une maintenance
+prévue et **30 jours** pour une échéance documentaire sont ceux du §28 (le second
+étant déjà celui du tableau de bord, `Module 01` §14).
+
+### c. Une source non autorisée se tait complètement
+
+`Module 02` §22 : « Permission suffisante ? Oui → Notification. Non → Aucune
+notification. » Chaque famille est conditionnée aux capacités dont sa lecture
+dépend : ni titre, ni objet, ni montant ne franchissent la barrière.
+
+**Et là où une omission produirait un mensonge plutôt qu'un silence, la famille
+exige TOUTES ses lectures** (DEC-032 §d) :
+
+| Capacités détenues | Résultat |
+| --- | --- |
+| `supplier_invoices.view` + `supplier_payments.view`, **sans** `imputations.view` | **silence** — le net vaudrait le brut : 1 000 000 KMF réclamés là où ADIKOM ne doit que 700 000 |
+| les trois | la notification annonce le **reste dû** |
+| `customer_invoices.view` **sans** `customer_payments.view` | **silence** — une facture soldée se lirait « impayée » |
+
+`CLAUDE.md` §57 : « une imputation de maintenance fournisseur ne doit pas être
+enregistrée comme un paiement » — et elle ne doit pas non plus pouvoir être
+**ignorée**.
+
+### d. Mais l'écran DIT ce qu'il ne surveille pas
+
+Le silence du §22 est la bonne règle ; appliqué seul, il produirait un écran vide
+**indiscernable d'un écran calme**. « Aucune notification » et « aucune
+notification que vous ayez le droit de voir » ne sont pas la même information
+(DEC-017).
+
+Le Centre nomme donc les **sources non surveillées** et les permissions qui leur
+manquent, sans rien révéler de leur contenu. Lorsque `notifications.view` est la
+seule capacité détenue, l'écran le dit en toutes lettres.
+
+### e. Marquer comme lu n'est pas une capacité de plus
+
+Le catalogue porte `notifications.view` — « Consulter ses notifications » — et
+rien d'autre. Tenir l'état de lecture **de ses propres** notifications est
+inhérent à leur consultation : §19 l'exige de tout utilisateur qui les lit. En
+créer une seconde serait en créer une d'office, ce que **DEC-024 interdit**. Le
+catalogue reste à **153**.
+
+Trois garanties encadrent cette écriture :
+
+1. une ligne de `notification_reads` ne concerne que **son propriétaire** — RLS
+   l'impose en lecture comme en écriture (§23, §37) ;
+2. ni `UPDATE` ni `DELETE` : une lecture est un fait daté, elle ne se réécrit pas
+   et ne s'efface pas ;
+3. les fonctions n'acceptent que les clés de la **propre veille de l'appelant** :
+   une clé inventée, ou celle d'une notification qu'il n'a pas le droit de voir,
+   ne produit aucune ligne. La forme de la clé est en outre contrainte par la
+   base — sans quoi la table serait un espace d'écriture libre.
+
+### f. La lecture est un acte explicite
+
+§19 laisse le choix : une notification ouverte « **peut** être automatiquement
+marquée comme lue selon le comportement UX retenu ». Le comportement retenu est
+le marquage **explicite**, pour une raison tenue du même paragraphe : « une
+notification importante ne doit pas disparaître simplement parce qu'elle a été
+lue ». Ouvrir la location en retard ne la fait donc pas taire — c'est
+l'utilisateur qui déclare l'avoir traitée.
+
+« Tout marquer comme lu » (§20) ne modifie que l'état de lecture : la recette
+vérifie qu'**aucune notification ne disparaît** après le geste.
+
+### g. Trois filtres, et aucune période
+
+§18 cite l'état, le niveau, la catégorie, le module et la période, puis ajoute :
+« les filtres doivent rester simples et ne pas surcharger l'interface ».
+
+Trois sont livrés — **état**, **niveau**, **module**. La **période** n'en est
+pas : la veille ne décrit que des situations **actuelles**, et « ce mois » n'y
+aurait aucun sens. C'est la distinction que DEC-032 §e pose déjà entre un flux et
+une situation. La **catégorie** se confond avec le niveau : elle n'est pas
+dédoublée.
+
+Le filtre s'applique **en base**, avant la limite de 200 lignes : filtrer une
+liste déjà tronquée rendrait un résultat silencieusement incomplet (leçon de
+DEC-032 §b, appliquée à un filtre plutôt qu'à une somme). Le compteur, lui, se
+compte sur l'ensemble de la veille.
+
+### h. Ce que le LOT 10 ne fait pas
+
+**Aucune notification d'INFORMATION** (§4.1). « Nouvelle réservation », « nouveau
+client », « véhicule ajouté » sont des **événements de création**, non des
+situations. Les dériver supposerait une fenêtre (« créé depuis N jours ») que
+rien ne documente, et elles recouvrent l'« activité récente » du §21, dont
+l'écran — le journal d'audit — relève de la Phase 4. Le point était déjà ouvert
+par DEC-032 §h ; il le reste.
+
+**Aucun historique de notifications au-delà de l'état de lecture** (§31). Ce qui
+est conservé, c'est *qui a lu quoi et quand*, et l'événement lui-même dans son
+module. Conserver la notification après la disparition de sa cause supposerait de
+les stocker — donc de décider **quels** événements méritent une ligne, **à qui**
+elle est destinée nommément, et **combien de temps** elle se conserve (§31, §32).
+Ce sont trois décisions d'organisation, pas des déductions.
+
+**Aucun rappel automatique poussé** (§28). Les échéances sont vues à la lecture,
+non annoncées par un travail planifié ; les délais « configurables dans les
+paramètres » supposent le module Paramètres, en Phase 4.
+
+**Aucune notification personnelle nommée** (§23) et **aucun routage par
+responsabilité** (§11, §24). L'audience d'une notification est **la capacité de
+lecture** dont elle dépend, jamais une liste d'utilisateurs : c'est le seul
+critère que la documentation fournit sans qu'il faille l'inventer. Une diffusion
+« au responsable location et à la Direction » suppose de savoir qui c'est, et
+selon quelle règle.
+
+**Aucune notification hors de la location et de la facturation.** Les projets
+(§15) et les utilisateurs (§16) n'ont pas de module livré.
+
+**Aucun canal externe** : ni courriel, ni SMS, ni notification poussée. Le module
+n'en demande aucun.
+
+**Aucune capacité de plus** : ni `notifications.manage`, ni `.delete`, ni
+`.export`. Le catalogue reste à **153** (DEC-024).
+
+### Conséquences
+
+- Migration **056** : une table (`notification_reads`), huit fonctions
+  `SECURITY INVOKER`, `EXECUTE` retiré à PUBLIC (DEC-022). **Aucune permission.**
+- `notifications.view` est désormais **contrôlée côté serveur** — cinq fonctions
+  l'exigent —, et plus seulement côté navigation.
+- L'entrée « Notifications » passe de « à venir » à **livrée**, et porte le
+  compteur de non lues (§17), calculé côté serveur.
+- Le tableau de bord annonce le **nombre de notifications non lues** (§33) sans
+  en présenter aucune : le Centre reste l'endroit principal.
+- **Correction du LOT 9** : le compteur des maintenances ouvertes lisait une
+  table `maintenances` qui n'existe pas — la table est `vehicle_maintenances`.
+  L'indicateur affichait donc en permanence une erreur de chargement, honnête
+  mais fausse. La recette du pilotage vérifie désormais qu'**aucun** indicateur
+  n'est en erreur pour un pilote complet.
+- Recettes : `db:verify:notifications` (15 contrôles), `verify:notifications`
+  (85 contrôles), `verify:capabilities` porté de 189 à **206 contrôles**, et
+  `verify:pilotage` de 53 à **55**.
+- Les modules **Tiers**, **Parc**, **Facturation** et **Trésorerie** ne sont pas
+  modifiés : la veille lit, elle n'écrit pas. La recette le vérifie — aucun
+  statut déplacé, aucune écriture produite, aucune entrée d'audit.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -2369,7 +2578,10 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 9. **DEC-031 §b** — Que devient un **trop-perçu client** ? `Workflow 08` §40 impose une règle définie par ADIKOM et interdit au système d'en décider seul. Les trois issues qu'il envisage supposent chacune une fonctionnalité non retenue : affectation à une autre facture (§37), conservation en **avance** (§41, §42), ou autre règle validée. En attendant, tout versement supérieur au solde est **refusé**, avec son motif. Trancher suppose d'arrêter la règle **et** de décider si l'avance devient un objet du système.
 10. **DEC-030 §i** — La **facture client doit-elle être remise au client** sous forme de document ? Le catalogue porte `billing.customer_invoices.print` mais pas `.download`, et DEC-024 interdit de déduire l'une de l'autre. Produire le PDF suppose donc de créer `billing.customer_invoices.download` : c'est une décision de capacité, prise ici pour signalement et non appliquée. *Se rattache à **DEC-023 §4**, la convention de référence restant à valider avant toute première émission d'un document comptable.*
 11. **DEC-032 §h** — Le tableau de bord doit-il proposer une **disposition différente selon le métier** (`Module 01` §3) ? Le contenu suit déjà les permissions : un utilisateur sans droits financiers ne voit aucun montant. Une disposition propre au Gérant, à l'assistante de direction ou au responsable de location supposerait de savoir **laquelle** — quels indicateurs, dans quel ordre, pour quel poste. C'est une décision d'organisation, et l'inventer reviendrait à créer une règle métier.
-12. **DEC-032 §h** — L'**activité récente** (`Module 01` §21) doit-elle figurer au tableau de bord ? Les données existent — le journal d'audit —, mais son écran relève de la Phase 4 et `users.audit.view` en commande la lecture. La question est de savoir si le tableau de bord doit en présenter un extrait, et sous quelle capacité.
+12. **DEC-032 §h** — L'**activité récente** (`Module 01` §21) doit-elle figurer au tableau de bord ? Les données existent — le journal d'audit —, mais son écran relève de la Phase 4 et `users.audit.view` en commande la lecture. La question est de savoir si le tableau de bord doit en présenter un extrait, et sous quelle capacité. *Étendu par **DEC-033 §h** : la même question vaut pour les notifications d'**information** du `Module 02` §4.1 — « nouvelle réservation », « nouveau client », « véhicule ajouté » —, qui sont des événements de création et non des situations.*
+13. **DEC-033 §b** — À partir de quel **montant** une facture en retard est-elle « importante » (`Module 02` §4.4) ? Sans seuil, une facture échue est notifiée « à surveiller ». Le seuil est une règle de gestion, pas une déduction — et il vaudrait pour les factures clients comme fournisseurs.
+14. **DEC-033 §h** — Les notifications doivent-elles être **conservées après la disparition de leur cause** (`Module 02` §31, §32) ? Aujourd'hui, une situation résolue cesse d'être notifiée, et ce qui est conservé est l'état de lecture — qui a lu quoi, et quand — plus l'événement lui-même dans son module. Un historique de notifications supposerait de les stocker, donc d'arrêter trois règles : **quels** événements méritent une ligne, **à qui** elle est nommément destinée, et **quelle durée de conservation** s'applique.
+15. **DEC-033 §h** — Les notifications doivent-elles être **routées par responsabilité** (`Module 02` §11, §24) ? L'audience est aujourd'hui la **capacité de lecture** dont la notification dépend. Une diffusion « au responsable location, au Support & Logistique et à la Direction » suppose de désigner ces destinataires et la règle qui les choisit. *S'y rattachent les **notifications personnelles** du §23, et les **délais de rappel configurables** du §28, qui supposent le module Paramètres.*
 
 ---
 

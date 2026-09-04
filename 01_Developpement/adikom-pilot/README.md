@@ -68,6 +68,8 @@ code, la documentation ou un message de commit.
 | `npm run db:verify:location` | Recette du schéma — référentiel d'exploitation |
 | `npm run db:verify:dashboard` | Recette des **sommes du pilotage** — tableau de bord |
 | `npm run verify:pilotage` | Recette fonctionnelle — tableau de bord, dans un navigateur |
+| `npm run db:verify:notifications` | Recette de la **veille** — centre de notifications |
+| `npm run verify:notifications` | Recette fonctionnelle — notifications, dans un navigateur |
 | `npm run verify:capabilities` | Audit des capacités — appels directs, refus et autorisations |
 | `npm run verify:users` | Recette sécurité — module Utilisateurs |
 | `npm run verify:referential` | Recette sécurité — clients, fournisseurs, parc, tarifs |
@@ -120,6 +122,13 @@ nommément le droit de les lire. Sans lui, elle renverrait un total silencieux e
 faux : un solde réduit à son ouverture (migration 050), une dette fournisseur
 égale à son brut parce que les imputations sont invisibles (migration 055). Un
 zéro ne dit jamais « je n'ai pas le droit de compter ».
+
+**2 ter. Une veille sans toutes ses lectures se TAIT.**
+Même règle appliquée aux notifications (migration 056) : une famille dont une
+lecture manque ne remonte pas une valeur approchée, elle disparaît — et l'écran
+nomme la source fermée. Une facture fournisseur notifiée sans les imputations
+réclamerait son brut ; une facture client notifiée sans les règlements
+réclamerait son total.
 
 **3. Le logo officiel ne se transforme jamais.**
 Le composant `AdikomLogo` est le seul point d'entrée. Il garantit le ratio,

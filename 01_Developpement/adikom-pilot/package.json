@@ -57,7 +57,9 @@
     "db:verify:customer-payments": "node scripts/run-sql.mjs supabase/tests/customer_payments.sql",
     "verify:customer-payments": "node scripts/verify-customer-payments.mjs",
     "db:verify:dashboard": "node scripts/run-sql.mjs supabase/tests/dashboard.sql",
-    "verify:pilotage": "node scripts/verify-pilotage.mjs"
+    "verify:pilotage": "node scripts/verify-pilotage.mjs",
+    "db:verify:notifications": "node scripts/run-sql.mjs supabase/tests/notifications.sql",
+    "verify:notifications": "node scripts/verify-notifications.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",

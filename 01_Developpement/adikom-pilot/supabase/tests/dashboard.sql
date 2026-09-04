@@ -616,12 +616,17 @@ end $$;
 
 -- --- 13. CE QUI RESTE HORS PÉRIMÈTRE ------------------------------------------------
 --
--- Le LOT 9 ne livre ni notifications, ni journal d'activité sur le tableau de
--- bord, ni rapport. Les mesurer ici évite qu'ils n'apparaissent sans décision.
+-- Le LOT 9 ne livre ni journal d'activité sur le tableau de bord, ni rapport.
+--
+-- Le Centre de notifications, lui, est arrivé au LOT 10 — et le contrôle
+-- ci-dessous n'a rien perdu de son sens : il ne stocke AUCUNE notification.
+-- Aucune table `notifications` n'existe, et le tableau de bord se contente d'en
+-- compter les non lues (Module 02 §33).
 do $$
 begin
   if exists (select 1 from pg_tables where schemaname = 'public' and tablename = 'notifications') then
-    raise exception 'Une table `notifications` est apparue : le Centre de notifications n''est pas du LOT 9.';
+    raise exception
+      'Une table `notifications` est apparue : une notification stockée est une notification qui se périme (DEC-033 §a).';
   end if;
 
   if exists (
@@ -631,7 +636,7 @@ begin
     raise exception 'Une fonction de rapport est apparue hors périmètre.';
   end if;
 
-  raise notice '[OK] 13. Notifications et rapports restent hors périmètre.';
+  raise notice '[OK] 13. Aucune notification stockée ; les rapports restent hors périmètre.';
 end $$;
 
 

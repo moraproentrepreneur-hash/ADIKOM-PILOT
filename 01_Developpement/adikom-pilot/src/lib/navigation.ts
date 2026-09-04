@@ -78,7 +78,7 @@ export const NAVIGATION: NavEntry[] = [
     href: '/notifications',
     icon: Bell,
     permission: PERMISSIONS.NOTIFICATIONS_VIEW,
-    status: 'planned',
+    status: 'ready',
   },
   {
     label: 'Projets & Planification',

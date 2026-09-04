@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 
 import { Sidebar } from '@/components/layout/sidebar'
 import { getPermissionCodes, requireUser } from '@/lib/auth/dal'
+import { countUnreadNotifications } from '@/features/notifications/data'
 
 /**
  * Enveloppe des routes applicatives.
@@ -19,6 +20,16 @@ export default async function AppLayout({ children }: LayoutProps<'/'>) {
 
   const cookieStore = await cookies()
   const collapsed = cookieStore.get('adikom-sidebar')?.value === 'collapsed'
+
+  /*
+   * Le compteur de notifications non lues (Module 02 §17).
+   *
+   * Il est porté par le gabarit, donc par TOUTES les pages : c'est pourquoi sa
+   * lecture ne peut jamais faire échouer un écran. Sans la capacité, ou en cas
+   * d'échec, elle rend `null` et aucune pastille ne s'affiche — l'absence de
+   * pastille ne prétend pas qu'il n'y a rien, elle ne prétend rien du tout.
+   */
+  const unread = await countUnreadNotifications()
 
   return (
     /*
@@ -40,6 +51,7 @@ export default async function AppLayout({ children }: LayoutProps<'/'>) {
           jobTitle: user.jobTitle,
           email: user.email,
         }}
+        badges={unread === null ? undefined : { '/notifications': unread }}
       />
 
       <main className="min-w-0 flex-1 lg:overflow-x-hidden lg:overflow-y-auto">

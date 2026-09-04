@@ -85,6 +85,9 @@ const PROFILES = {
     'treasury.entries.view',
     'rental.reservations.create',
     'parties.clients.create',
+    // LOT 10 : le tableau de bord compte les notifications non lues (Module 02
+    // §33). Il ne les présente pas — le Centre reste l'endroit principal.
+    'notifications.view',
   ],
   /*
    * Le même, PRIVÉ de `dashboard.financial.view`.
@@ -421,6 +424,26 @@ async function main() {
       )
       check(/Assurance/.test(text), 'Le document proche de son expiration est signalé (§14)')
       check(/À surveiller/.test(text), 'Un niveau plus faible est distingué du niveau urgent')
+
+      /*
+       * AUCUN INDICATEUR EN ERREUR DE CHARGEMENT.
+       *
+       * Un indicateur qui échoue le DIT (§26) — c'est la bonne conduite, mais
+       * sur le compte d'un pilote complet, aucun ne doit échouer. Ce contrôle
+       * transforme un message honnête en signal de régression : il aurait vu la
+       * table de maintenances lue sous un nom qui n'existait pas.
+       */
+      check(
+        !/n’a pas pu être chargé/.test(text),
+        'Aucun indicateur n’est en erreur de chargement'
+      )
+
+      // Module 02 §33 — le tableau de bord compte les non lues, sans les
+      // présenter : le Centre reste l'endroit principal.
+      check(
+        /notification\(s\) non lue\(s\)/.test(text),
+        'Le nombre de notifications non lues est annoncé (Module 02 §33)'
+      )
     }
 
     /* ------------------------------------------------------------------ */

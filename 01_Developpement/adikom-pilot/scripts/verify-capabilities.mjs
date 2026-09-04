@@ -22,7 +22,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 
-import { loadEnvFile, required } from './lib/env.mjs'
+import { dayOffset, loadEnvFile, required } from './lib/env.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -522,6 +522,31 @@ const PROFILES = {
   pil_dette: [
     'dashboard.view',
     'dashboard.financial.view',
+    'billing.supplier_invoices.view',
+    'billing.supplier_payments.view',
+    'billing.imputations.view',
+  ],
+
+  /*
+   * LOT 10 — le centre de notifications.
+   *
+   * `notifications.view` ouvre L'ÉCRAN, et rien de plus : chaque famille de la
+   * veille exige en outre la lecture dont elle dépend (Module 02 §22). Et là où
+   * l'omission d'une lecture produirait un chiffre FAUX plutôt qu'un silence, la
+   * famille entière se tait — c'est le cas de la dette fournisseur, dont
+   * l'imputation n'est pas un paiement (CLAUDE.md §57).
+   */
+  notif_nu: ['notifications.view'],
+  notif_veille: ['notifications.view', 'rental.rentals.view'],
+  // Voit les factures fournisseurs et les règlements, PAS les imputations : la
+  // famille doit être absente de sa veille, jamais surévaluée.
+  notif_dette_aveugle: [
+    'notifications.view',
+    'billing.supplier_invoices.view',
+    'billing.supplier_payments.view',
+  ],
+  notif_dette: [
+    'notifications.view',
     'billing.supplier_invoices.view',
     'billing.supplier_payments.view',
     'billing.imputations.view',
@@ -2762,6 +2787,164 @@ async function main() {
 
     /* ------------------------------------------------------------------ */
     console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('CENTRE DE NOTIFICATIONS — LA VEILLE ET SES LECTURES (LOT 10)\n')
+
+    {
+      const nu = await session('notif_nu')
+      const veille = await session('notif_veille')
+      const aveugle = await session('notif_dette_aveugle')
+      const dette = await session('notif_dette')
+      const operateur = await session('operateur')
+
+      /* --- Sans `notifications.view`, aucune des cinq fonctions ne répond -- */
+
+      check(
+        refused(await operateur.rpc('notifications_watch')),
+        'Sans `notifications.view` : la veille est refusée'
+      )
+      check(
+        refused(await operateur.rpc('notifications_feed', {})),
+        'Sans `notifications.view` : le centre est refusé'
+      )
+      check(
+        refused(await operateur.rpc('notifications_summary')),
+        'Sans `notifications.view` : les compteurs sont refusés'
+      )
+      check(
+        refused(await operateur.rpc('notification_mark_all_read')),
+        'Sans `notifications.view` : « tout marquer comme lu » est refusé'
+      )
+      check(
+        refused(
+          await operateur.rpc('notification_mark_read', {
+            p_keys: ['rental.return.late:00000000-0000-0000-0000-000000000000'],
+          })
+        ),
+        'Sans `notifications.view` : marquer une notification est refusé'
+      )
+
+      /* --- Avec elle, l'écran s'ouvre — mais aucune source --------------- */
+
+      const nuFeed = await nu.rpc('notifications_feed', {})
+      check(
+        !refused(nuFeed) && Array.isArray(nuFeed.data),
+        'Avec `notifications.view`, le centre répond',
+        nuFeed.error?.message ?? `${nuFeed.data?.length ?? '—'} ligne(s)`
+      )
+      check(
+        !refused(nuFeed) && (nuFeed.data ?? []).length === 0,
+        '`notifications.view` seule ouvre l’écran, et n’ouvre AUCUNE source (DEC-024)'
+      )
+
+      const veilleFeed = await veille.rpc('notifications_feed', {})
+      check(
+        !refused(veilleFeed) &&
+          !(veilleFeed.data ?? []).some((row) => row.source !== 'rental'),
+        'Avec la seule lecture des locations, aucune notification financière ne remonte'
+      )
+
+      /* --- UNE VEILLE MUETTE EST REFUSÉE, JAMAIS APPROCHÉE -------------- */
+
+      // Une facture fournisseur validée, échue, sans imputation : elle DOIT
+      // remonter au lecteur complet, et rester invisible au lecteur aveugle.
+      const { data: dueInvoiceId } = await admin.rpc('create_supplier_invoice', {
+        p_supplier_id: fixtures.supplierId,
+        p_invoice_date: dayOffset(-12),
+        p_due_date: dayOffset(-4),
+        p_external_ref: `FRN-NOTIF-${STAMP}`,
+        p_notes: `${MARK} — facture échue`,
+      })
+      fixtures.invoices.push(dueInvoiceId)
+      await admin.rpc('add_supplier_invoice_line', {
+        p_invoice_id: dueInvoiceId,
+        p_label: 'Mise à disposition',
+        p_amount: 500000,
+        p_vehicle_id: null,
+      })
+      await admin.rpc('submit_supplier_invoice', { p_invoice_id: dueInvoiceId })
+      await admin.rpc('validate_supplier_invoice', { p_invoice_id: dueInvoiceId })
+
+      const key = `supplier_invoice.overdue:${dueInvoiceId}`
+
+      const detteFeed = await dette.rpc('notifications_feed', {})
+      const seen = (detteFeed.data ?? []).find((row) => row.key === key)
+      check(
+        Boolean(seen),
+        'Avec les trois lectures, la facture fournisseur échue est notifiée',
+        detteFeed.error?.message ?? `${seen?.amount ?? '—'} KMF`
+      )
+      check(
+        seen !== undefined && Number(seen.amount) === 500000,
+        'Le montant annoncé est le reste dû, calculé par la facture elle-même',
+        `${seen?.amount}`
+      )
+
+      const aveugleFeed = await aveugle.rpc('notifications_feed', {})
+      check(
+        !refused(aveugleFeed) && !(aveugleFeed.data ?? []).some((row) => row.key === key),
+        'Sans `imputations.view`, la famille se TAIT : une dette approchée serait fausse'
+      )
+
+      /* --- L'état de lecture n'appartient qu'à son propriétaire --------- */
+
+      const forged = await dette.from('notification_reads').insert({
+        user_id: accounts.notif_nu.id,
+        notification_key: key,
+      })
+      check(
+        refused(forged),
+        'Aucun marquage au nom d’un autre utilisateur (Module 02 §37)'
+      )
+
+      const malformed = await dette.from('notification_reads').insert({
+        user_id: accounts.notif_dette.id,
+        notification_key: 'clé bricolée',
+      })
+      check(refused(malformed), 'Une clé de notification malformée est refusée')
+
+      const marked = await dette.rpc('notification_mark_read', { p_keys: [key] })
+      check(
+        !refused(marked) && Number(marked.data) === 1,
+        'La notification que l’on voit se marque comme lue',
+        `${marked.data}`
+      )
+
+      const blind = await aveugle.rpc('notification_mark_read', { p_keys: [key] })
+      check(
+        !refused(blind) && Number(blind.data) === 0,
+        'Celle que l’on ne voit pas ne se marque pas'
+      )
+
+      const foreign = await dette
+        .from('notification_reads')
+        .select('user_id')
+        .neq('user_id', accounts.notif_dette.id)
+      check(
+        (foreign.data ?? []).length === 0,
+        'Aucune marque de lecture d’autrui n’est lisible (§23)'
+      )
+
+      const rewritten = await dette
+        .from('notification_reads')
+        .update({ read_at: new Date(0).toISOString() })
+        .eq('user_id', accounts.notif_dette.id)
+      const erased = await dette
+        .from('notification_reads')
+        .delete()
+        .eq('user_id', accounts.notif_dette.id)
+      const { count: remaining } = await admin
+        .from('notification_reads')
+        .select('notification_key', { count: 'exact', head: true })
+        .eq('user_id', accounts.notif_dette.id)
+      check(
+        (refused(rewritten) || refused(erased) || remaining === 1) && remaining === 1,
+        'Une lecture ne se réécrit pas et ne s’efface pas',
+        `${remaining} marque(s)`
+      )
+    }
+
+    /* ------------------------------------------------------------------ */
+    console.log('\n──────────────────────────────────────────────────────────────')
     console.log('CATALOGUE ET DONNÉES DEMO\n')
 
     {
@@ -2856,6 +3039,9 @@ async function main() {
       await admin.from('vehicle_categories').delete().eq('id', fixtures.categoryId)
     }
     for (const account of Object.values(accounts)) {
+      // La cascade les emporterait avec le compte ; elles partent d'abord, pour
+      // qu'un audit interrompu ne laisse rien derrière lui.
+      await admin.from('notification_reads').delete().eq('user_id', account.id)
       await admin.from('user_permissions').delete().eq('user_id', account.id)
       await admin.from('app_users').delete().eq('id', account.id)
       await admin.auth.admin.deleteUser(account.id)

@@ -146,6 +146,8 @@ export type Dashboard = {
   lateRentals: Figure<RentalListItem[]>
   expiringDocuments: Figure<ExpiringDocument[]>
   maintenanceRunning: Figure<number>
+  /** Notifications non lues du Centre — Module 02 §33. */
+  unreadNotifications: Figure<number>
   /** Ce que l'utilisateur a le droit d'entreprendre depuis ici (§22). */
   quickActions: PermissionCode[]
 }
@@ -216,6 +218,7 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
     BALANCES_VIEW,
     ENTRIES_VIEW,
     VEHICLE_DOCUMENTS_VIEW,
+    NOTIFICATIONS_VIEW,
   } = PERMISSIONS
 
   /*
@@ -236,6 +239,7 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
     lateRentals,
     expiringDocuments,
     maintenanceRunning,
+    unreadNotifications,
     quickActions,
   ] = await Promise.all([
     gated<Operations>('exploitation', [RENTALS_VIEW], async () => {
@@ -382,12 +386,27 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
     })(),
 
     gated<number>('maintenances', [MAINTENANCE_VIEW], () =>
-      countRows('maintenances', (query) =>
+      countRows('vehicle_maintenances', (query) =>
         query
           .select('id', { count: 'exact', head: true })
           .in('status', ['PLANNED', 'TO_DIAGNOSE', 'IN_PROGRESS', 'ON_HOLD'])
       )
     ),
+
+    /*
+     * Le compteur du Centre de notifications — Module 02 §33.
+     *
+     * « Le tableau de bord peut afficher le nombre de notifications non lues. »
+     * Il n'en calcule aucune : le chiffre vient de `notifications_summary()`
+     * (migration 056), la même fonction que le centre lui-même. Un second
+     * comptage produirait deux vérités sur le même nombre.
+     */
+    gated<number>('notifications', [NOTIFICATIONS_VIEW], async () => {
+      const { data, error } = await supabase.rpc('notifications_summary')
+      if (error) throw new Error(error.message)
+      const row = (data as { unread: number | string }[] | null)?.[0]
+      return Number(row?.unread ?? 0)
+    }),
 
     loadQuickActions(),
   ])
@@ -406,6 +425,7 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
     lateRentals,
     expiringDocuments,
     maintenanceRunning,
+    unreadNotifications,
     quickActions,
   }
 }
