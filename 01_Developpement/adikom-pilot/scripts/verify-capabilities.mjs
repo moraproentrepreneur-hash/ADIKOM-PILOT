@@ -553,7 +553,15 @@ const PROFILES = {
   ],
 }
 
-async function createProfile(admin, key, codes) {
+/**
+ * `accounts` est passé pour que le compte y soit inscrit DÈS SA CRÉATION.
+ *
+ * Une panne réseau entre la création du compte d'authentification et
+ * l'attribution de ses permissions laissait sinon un utilisateur orphelin : la
+ * fonction levait avant de rendre l'objet, et le nettoyage ne le voyait pas
+ * (constaté le 04/09/2026).
+ */
+async function createProfile(admin, accounts, key, codes) {
   const username = `audit.cap.${key}.${STAMP}`
   const email = `${username}@adikom.test`
   const password = `audit-cap-${STAMP}`
@@ -566,6 +574,7 @@ async function createProfile(admin, key, codes) {
   if (error || !created.user) throw new Error(`compte ${key} : ${error?.message}`)
 
   const id = created.user.id
+  accounts[key] = { id, email, password, username }
 
   const { error: profileError } = await admin.from('app_users').insert({
     id,
@@ -588,7 +597,7 @@ async function createProfile(admin, key, codes) {
     .insert(catalog.map((p) => ({ user_id: id, permission_id: p.id, effect: 'ALLOW' })))
   if (grantError) throw new Error(`permissions ${key} : ${grantError.message}`)
 
-  return { id, email, password, username }
+  return accounts[key]
 }
 
 /* -------------------------------------------------------------------------- */
@@ -737,7 +746,7 @@ async function main() {
     fixtures.clientId = client.id
 
     for (const [key, codes] of Object.entries(PROFILES)) {
-      accounts[key] = await createProfile(admin, key, codes)
+      accounts[key] = await createProfile(admin, accounts, key, codes)
     }
 
     /** Une réservation neuve, en attente, sur le véhicule indiqué. */
@@ -3045,6 +3054,71 @@ async function main() {
       await admin.from('user_permissions').delete().eq('user_id', account.id)
       await admin.from('app_users').delete().eq('id', account.id)
       await admin.auth.admin.deleteUser(account.id)
+    }
+
+    /*
+     * BALAYAGE PAR MARQUEUR — le nettoyage par identifiants suivis ne suffit pas.
+     *
+     * Un `delete` refusé ne lève rien avec PostgREST : il rend une erreur que la
+     * boucle ignore. Une seule suppression manquée en retient alors toute une
+     * chaîne — un règlement retient sa facture, sa facture retient son
+     * fournisseur, et son compte reste ouvert. Constaté le 04/09/2026 : un
+     * règlement déjà annulé était resté, et trois lignes avec lui.
+     *
+     * Le balayage reprend donc la chaîne par le MARQUEUR de l'audit, dans
+     * l'ordre des dépendances, puis compte ce qui subsiste.
+     */
+    const { data: strayInvoices } = await admin
+      .from('supplier_invoices')
+      .select('id')
+      .ilike('notes', `%${MARK}%`)
+    for (const invoice of strayInvoices ?? []) {
+      const { data: pays } = await admin
+        .from('supplier_payments')
+        .select('id')
+        .eq('supplier_invoice_id', invoice.id)
+      for (const payment of pays ?? []) {
+        await admin.from('treasury_entries').delete().eq('supplier_payment_id', payment.id)
+        await admin.from('supplier_payments').delete().eq('id', payment.id)
+      }
+      await admin.from('supplier_invoice_lines').delete().eq('supplier_invoice_id', invoice.id)
+      await admin.from('supplier_invoices').delete().eq('id', invoice.id)
+    }
+
+    const { data: strayAccounts } = await admin
+      .from('financial_accounts')
+      .select('id')
+      .ilike('label', `%${MARK}%`)
+    for (const account of strayAccounts ?? []) {
+      await admin.from('treasury_entries').delete().eq('account_id', account.id)
+      await admin.from('financial_accounts').delete().eq('id', account.id)
+    }
+
+    const { data: straySuppliers } = await admin
+      .from('suppliers')
+      .select('id')
+      .ilike('legal_name', `%${MARK}%`)
+    for (const supplier of straySuppliers ?? []) {
+      await admin.from('suppliers').delete().eq('id', supplier.id)
+    }
+
+    const leftovers = []
+    for (const [table, column] of [
+      ['suppliers', 'legal_name'],
+      ['clients', 'legal_name'],
+      ['financial_accounts', 'label'],
+      ['supplier_invoices', 'notes'],
+      ['customer_invoices', 'notes'],
+    ]) {
+      const { count } = await admin
+        .from(table)
+        .select('id', { count: 'exact', head: true })
+        .ilike(column, `%${MARK}%`)
+      if (count) leftovers.push(`${table} : ${count}`)
+    }
+
+    if (leftovers.length > 0) {
+      console.log(`\n${RED}Résidus d'audit non supprimés — ${leftovers.join(', ')}${RESET}`)
     }
 
     console.log(`\n${DIM}Sujets et comptes d'audit supprimés. Données DEMO intactes.${RESET}`)

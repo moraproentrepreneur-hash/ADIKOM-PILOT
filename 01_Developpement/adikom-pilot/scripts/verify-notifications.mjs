@@ -119,7 +119,14 @@ const PROFILES = {
   sans_acces: [...OPERATIONS, 'dashboard.view'],
 }
 
-async function createProfile(admin, key, codes) {
+/**
+ * `accounts` est passé pour que le compte y soit inscrit DÈS SA CRÉATION.
+ *
+ * Une panne réseau entre la création du compte d'authentification et
+ * l'attribution de ses permissions laisserait sinon un utilisateur orphelin :
+ * la fonction lève avant de rendre l'objet, et le nettoyage ne le verrait pas.
+ */
+async function createProfile(admin, accounts, key, codes) {
   const username = `recette.notif.${key}.${STAMP}`
   const email = `${username}@adikom.test`
   const password = `recette-notif-${STAMP}`
@@ -132,6 +139,7 @@ async function createProfile(admin, key, codes) {
   if (error || !created.user) throw new Error(`compte ${key} : ${error?.message}`)
 
   const id = created.user.id
+  accounts[key] = { id, email, password, username }
   const { error: profileError } = await admin.from('app_users').insert({
     id,
     first_name: 'Recette',
@@ -155,7 +163,7 @@ async function createProfile(admin, key, codes) {
     .insert(catalog.map((p) => ({ user_id: id, permission_id: p.id, effect: 'ALLOW' })))
   if (grantError) throw new Error(`permissions ${key} : ${grantError.message}`)
 
-  return { id, email, password, username }
+  return accounts[key]
 }
 
 async function signIn(browser, base, account, landing = '**/tableau-de-bord') {
@@ -309,7 +317,7 @@ async function main() {
     fixtures.vehicleIds.push(vehicle.id)
 
     for (const [key, codes] of Object.entries(PROFILES)) {
-      accounts[key] = await createProfile(admin, key, codes)
+      accounts[key] = await createProfile(admin, accounts, key, codes)
     }
 
     /*
@@ -1220,13 +1228,41 @@ async function main() {
       await admin.auth.admin.deleteUser(account.id)
     }
 
-    /* Balayage par marqueur : une recette interrompue ne laisse rien d'invisible. */
-    const { count: leftovers } = await admin
-      .from('clients')
-      .select('id', { count: 'exact', head: true })
-      .like('legal_name', `%${MARK}%`)
-    if (leftovers && leftovers > 0) {
-      console.log(`\n${RED}Résidus de recette : ${leftovers} client(s) ${MARK}${RESET}`)
+    /*
+     * BALAYAGE PAR MARQUEUR — le nettoyage par identifiants suivis ne suffit pas.
+     *
+     * Un `delete` refusé ne lève rien avec PostgREST : il rend une erreur que la
+     * boucle ignore. Une seule suppression manquée retient alors toute une
+     * chaîne. Le balayage compte donc ce qui subsiste, objet par objet, et le
+     * DIT — une recette silencieuse sur ses résidus n'est pas une recette
+     * propre.
+     */
+    const leftovers = []
+    for (const [table, column] of [
+      ['clients', 'legal_name'],
+      ['suppliers', 'legal_name'],
+      ['financial_accounts', 'label'],
+      ['customer_invoices', 'notes'],
+      ['supplier_invoices', 'notes'],
+    ]) {
+      const { count } = await admin
+        .from(table)
+        .select('id', { count: 'exact', head: true })
+        .ilike(column, `%${MARK}%`)
+      if (count) leftovers.push(`${table} : ${count}`)
+    }
+
+    const { count: strayReads } = await admin
+      .from('notification_reads')
+      .select('notification_key', { count: 'exact', head: true })
+      .in(
+        'user_id',
+        Object.values(accounts).map((account) => account.id)
+      )
+    if (strayReads) leftovers.push(`notification_reads : ${strayReads}`)
+
+    if (leftovers.length > 0) {
+      console.log(`\n${RED}Résidus de recette non supprimés — ${leftovers.join(', ')}${RESET}`)
     }
 
     console.log(`\n${DIM}Sujets et comptes de recette supprimés. Données DEMO intactes.${RESET}`)
