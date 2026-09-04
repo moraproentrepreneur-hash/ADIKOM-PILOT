@@ -78,16 +78,31 @@ const FINANCE = [
   'billing.supplier_payments.view',
 ]
 
+/*
+ * La veille du LOT 12 : échéances et retards de tâches (Module 03 §38).
+ *
+ * Elle n'appartient pas aux lectures d'exploitation — les tâches ne sont pas un
+ * objet de la location —, mais un veilleur COMPLET la détient : sans elle,
+ * l'écran lui annoncerait à juste titre une source non surveillée.
+ */
+const PLANIFICATION = ['projects.tasks.view']
+
 const PROFILES = {
   /* Le veilleur complet : toutes les sources lui sont ouvertes. */
-  veilleur: ['notifications.view', ...OPERATIONS, ...FINANCE],
+  veilleur: ['notifications.view', ...OPERATIONS, ...FINANCE, ...PLANIFICATION],
 
   /*
    * Un second veilleur complet : il éprouve que l'état de lecture est PROPRE à
    * chaque utilisateur (§24). Il porte en plus `dashboard.view`, qui lui ouvre
    * le tableau de bord où le compteur de non lues est annoncé (§33).
    */
-  veilleur2: ['notifications.view', 'dashboard.view', ...OPERATIONS, ...FINANCE],
+  veilleur2: [
+    'notifications.view',
+    'dashboard.view',
+    ...OPERATIONS,
+    ...FINANCE,
+    ...PLANIFICATION,
+  ],
 
   /* L'exploitant : rien de financier. Les factures échues doivent être muettes,
      et les sources fermées NOMMÉES. */
@@ -1130,7 +1145,7 @@ async function main() {
       const { count: total } = await admin
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-      check(total === 153, 'Catalogue conforme', `${total} permissions`)
+      check(total === 157, 'Catalogue conforme', `${total} permissions`)
     }
 
     await veilleurContext.close()

@@ -895,11 +895,11 @@ do $$
 declare v_total int;
 begin
   select count(*) into v_total from public.permissions;
-  if v_total <> 153 then
-    raise exception 'Catalogue attendu à 153 permissions, obtenu %.', v_total;
+  if v_total <> 157 then
+    raise exception 'Catalogue attendu à 157 permissions, obtenu %.', v_total;
   end if;
 
-  raise notice '[OK] 20. Catalogue à 153 permissions : aucune capacité créée par le LOT 5.';
+  raise notice '[OK] 20. Catalogue à 157 permissions : aucune capacité créée par le LOT 5.';
 end $$;
 
 

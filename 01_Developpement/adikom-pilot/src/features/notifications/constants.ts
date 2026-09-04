@@ -71,17 +71,23 @@ export function isLevel(value: string | undefined): value is NotificationLevel {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Deux modules produisent des notifications, et seulement deux : c'est ce que
+ * Trois modules produisent des notifications, et seulement trois : c'est ce que
  * le filtre propose. En annoncer d'autres promettrait des sources qui n'existent
  * pas encore (§38 : l'évolutivité n'est pas une promesse d'écran).
+ *
+ * `projects` est arrivé avec le LOT 12 : le Module 03 §38 demande que les
+ * échéances et les retards de tâche alimentent le centre. Les autres événements
+ * qu'il cite — « tâche attribuée », « modification importante » — sont des
+ * ÉVÉNEMENTS de création et relèvent de l'arbitrage ouvert par DEC-033 §h.
  */
-export const SOURCES = ['rental', 'billing'] as const
+export const SOURCES = ['rental', 'billing', 'projects'] as const
 
 export type NotificationSource = (typeof SOURCES)[number]
 
 export const SOURCE_LABELS: Record<NotificationSource, string> = {
   rental: 'Gestion de location',
   billing: 'Facturation & Paiement',
+  projects: 'Projets & Planification',
 }
 
 export function isSource(value: string | undefined): value is NotificationSource {
@@ -123,6 +129,8 @@ export const KINDS = [
   'VEHICLE_DOCUMENT_EXPIRED',
   'CUSTOMER_INVOICE_OVERDUE',
   'SUPPLIER_INVOICE_OVERDUE',
+  'TASK_DUE',
+  'TASK_LATE',
 ] as const
 
 export type NotificationKind = (typeof KINDS)[number]
@@ -232,6 +240,20 @@ export const KIND_META: Record<NotificationKind, KindMeta> = {
     precision: 'day',
     moment: (at) => `Échéance dépassée depuis le ${at}`,
   },
+  // Module 03 §15 : « cette tâche arrive à échéance demain ». Une échéance est
+  // un JOUR, jamais un instant : afficher « 00:00 » inventerait une précision.
+  TASK_DUE: {
+    title: 'Échéance de tâche proche',
+    origin: 'Projets · Tâches',
+    precision: 'day',
+    moment: (at) => `À faire pour le ${at}`,
+  },
+  TASK_LATE: {
+    title: 'Tâche en retard',
+    origin: 'Projets · Tâches',
+    precision: 'day',
+    moment: (at) => `Échéance dépassée depuis le ${at}`,
+  },
 }
 
 /** Le libellé du montant, lorsqu'il y en a un — jamais « montant » tout court. */
@@ -254,6 +276,7 @@ export const OBJECT_TYPES = [
   'incident',
   'customer_invoice',
   'supplier_invoice',
+  'task',
 ] as const
 
 export type NotificationObject = (typeof OBJECT_TYPES)[number]
@@ -275,6 +298,7 @@ export const OBJECT_HREF: Record<NotificationObject, (id: string) => string> = {
   incident: (id) => `/location/incidents/${id}`,
   customer_invoice: (id) => `/facturation/clients/${id}`,
   supplier_invoice: (id) => `/facturation/fournisseurs/${id}`,
+  task: (id) => `/projets/taches/${id}`,
 }
 
 /** « Action : Voir la location » (§34) — adaptée au contexte, jamais générique. */
@@ -286,6 +310,7 @@ export const OBJECT_ACTION: Record<NotificationObject, string> = {
   incident: 'Voir l’incident',
   customer_invoice: 'Voir la facture',
   supplier_invoice: 'Voir la facture',
+  task: 'Voir la tâche',
 }
 
 export function isObjectType(value: string): value is NotificationObject {
@@ -353,5 +378,16 @@ export const WATCH_SOURCES: WatchSource[] = [
       PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
     ],
     mode: 'all',
+  },
+  /*
+   * Une seule lecture suffit, et c'est voulu : `projects.view` n'est PAS exigée.
+   *
+   * Sans elle, le nom du projet manque — la notification le dit alors sans lui,
+   * et son échéance reste vraie. C'est une ABSENCE, pas un mensonge : la règle
+   * du refus (DEC-034 §c) ne vise que ce qui rendrait le contenu FAUX.
+   */
+  {
+    label: 'Échéances et retards de tâches',
+    requires: [PERMISSIONS.TASKS_VIEW],
   },
 ]

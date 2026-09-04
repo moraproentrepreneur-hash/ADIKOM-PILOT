@@ -13,6 +13,7 @@ import {
   KeyRound,
   LayoutDashboard,
   Layers,
+  ListChecks,
   ReceiptText,
   Settings,
   ShieldCheck,
@@ -80,12 +81,38 @@ export const NAVIGATION: NavEntry[] = [
     permission: PERMISSIONS.NOTIFICATIONS_VIEW,
     status: 'ready',
   },
+  /*
+   * Le module s'ouvre en deux entrées, et non en une.
+   *
+   * `Navigation` §6 le décrit comme un enchaînement « Projet → Tâches →
+   * Responsables → Échéances → Suivi ». Les tâches ne sont pas une sous-page
+   * des projets : elles peuvent être INDÉPENDANTES (Module 03 §10), et leur
+   * lecture relève d'une capacité distincte. Une seule entrée aurait laissé
+   * croire que l'une ouvre l'autre.
+   *
+   * Réunions, rendez-vous, décisions et calendrier ne figurent pas ici : ils
+   * relèvent du LOT 13, et une entrée « à venir » de plus n'aiderait personne
+   * tant que la page n'existe pas.
+   */
   {
     label: 'Projets & Planification',
-    href: '/projets',
     icon: FolderKanban,
-    permission: PERMISSIONS.PROJECTS_VIEW,
-    status: 'planned',
+    items: [
+      {
+        label: 'Projets',
+        href: '/projets',
+        icon: FolderKanban,
+        permission: PERMISSIONS.PROJECTS_VIEW,
+        status: 'ready',
+      },
+      {
+        label: 'Tâches',
+        href: '/projets/taches',
+        icon: ListChecks,
+        permission: PERMISSIONS.TASKS_VIEW,
+        status: 'ready',
+      },
+    ],
   },
   {
     label: 'Tiers',

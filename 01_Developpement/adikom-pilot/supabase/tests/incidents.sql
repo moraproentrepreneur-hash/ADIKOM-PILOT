@@ -409,11 +409,11 @@ begin
 
   select count(*) into total from public.permissions;
 
-  if total <> 153 then
-    raise exception 'Catalogue attendu à 153 permissions, obtenu %.', total;
+  if total <> 157 then
+    raise exception 'Catalogue attendu à 157 permissions, obtenu %.', total;
   end if;
 
-  raise notice '[OK] 11. Catalogue à 153 permissions — aucune création par CE lot.';
+  raise notice '[OK] 11. Catalogue à 157 permissions — aucune création par CE lot.';
 end $$;
 
 

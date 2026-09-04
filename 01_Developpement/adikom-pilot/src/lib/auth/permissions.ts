@@ -23,6 +23,21 @@ export const PERMISSIONS = {
   PROJECTS_CREATE: 'projects.create',
   PROJECTS_UPDATE: 'projects.update',
   PROJECTS_ARCHIVE: 'projects.archive',
+  /*
+   * Les tâches ont leurs propres capacités : le Module 03 §42 les nomme une à
+   * une — « consulter les tâches ; créer une tâche ; modifier une tâche ;
+   * clôturer une tâche ». Aucune n'est incluse dans les quatre capacités du
+   * projet : suivre un projet et intervenir sur ses tâches sont deux choses
+   * (DEC-024, DEC-035 §a, migration 058).
+   *
+   * `close` n'est pas un confort : c'est l'acte qui déclare un travail fait,
+   * fait avancer le pourcentage et fait taire la veille. Le déclencheur
+   * `fn_task_write_guard` l'exige en base, y compris en appel direct.
+   */
+  TASKS_VIEW: 'projects.tasks.view',
+  TASKS_CREATE: 'projects.tasks.create',
+  TASKS_UPDATE: 'projects.tasks.update',
+  TASKS_CLOSE: 'projects.tasks.close',
 
   // --- Tiers · Clients -------------------------------------------------------
   CLIENTS_VIEW: 'parties.clients.view',

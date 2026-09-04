@@ -751,11 +751,11 @@ begin
   end if;
 
   select count(*) into v_total from public.permissions;
-  if v_total <> 153 then
-    raise exception 'Catalogue attendu à 153 permissions, obtenu %.', v_total;
+  if v_total <> 157 then
+    raise exception 'Catalogue attendu à 157 permissions, obtenu %.', v_total;
   end if;
 
-  raise notice '[OK] 20. Facturation client journalisée (% entrées) ; catalogue à 153.', v_count;
+  raise notice '[OK] 20. Facturation client journalisée (% entrées) ; catalogue à 157.', v_count;
 end $$;
 
 

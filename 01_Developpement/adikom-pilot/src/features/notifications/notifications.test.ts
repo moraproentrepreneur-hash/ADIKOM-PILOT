@@ -144,8 +144,11 @@ describe('accès à l’objet concerné (§21, §34)', () => {
 })
 
 describe('filtres (§18)', () => {
-  it('les deux modules producteurs sont nommés', () => {
-    expect(SOURCES).toEqual(['rental', 'billing'])
+  it('les trois modules producteurs sont nommés', () => {
+    // `projects` a rejoint la veille avec le LOT 12 (Module 03 §38 — échéances
+    // et retards de tâches). Un filtre proposé sans famille correspondante
+    // resterait toujours vide ; une famille sans filtre serait introuvable.
+    expect(SOURCES).toEqual(['rental', 'billing', 'projects'])
     for (const source of SOURCES) expect(SOURCE_LABELS[source]).toBeTruthy()
   })
 

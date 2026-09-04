@@ -61,7 +61,9 @@
     "db:verify:notifications": "node scripts/run-sql.mjs supabase/tests/notifications.sql",
     "verify:notifications": "node scripts/verify-notifications.mjs",
     "db:verify:analytics": "node scripts/run-sql.mjs supabase/tests/analytics.sql",
-    "verify:analytics": "node scripts/verify-analytics.mjs"
+    "verify:analytics": "node scripts/verify-analytics.mjs",
+    "db:verify:projects": "node scripts/run-sql.mjs supabase/tests/projects.sql",
+    "verify:projects": "node scripts/verify-projects.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",

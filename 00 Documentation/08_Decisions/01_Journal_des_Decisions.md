@@ -68,6 +68,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-032 | Tableau de bord de pilotage — LOT 9 | Arbitrages et sécurité | Appliquée — **ouvre la Phase 3** | 2026-09-02 |
 | DEC-033 | Centre de notifications — LOT 10 | Arbitrages et sécurité | Appliquée — **ouvre le module 2** | 2026-09-04 |
 | DEC-034 | Statistiques et rapports de facturation — LOT 11 | Arbitrages et sécurité | Appliquée — **achève la Phase 3** | 2026-09-04 |
+| DEC-035 | Projets & Tâches — LOT 12 | Arbitrages, capacités et sécurité | Appliquée — **ouvre la Phase 4** | 2026-09-04 |
 
 ---
 
@@ -2748,6 +2749,207 @@ migration le vérifie elle-même avant de se terminer.
 
 ---
 
+## DEC-035 — Projets & Tâches (LOT 12)
+
+**Date :** 4 septembre 2026
+**Portée :** métier, technique et sécurité
+**Statut :** appliquée · **ouvre la Phase 4 — Organisation**
+
+### Contexte — un module en deux temps
+
+`README` §73 et `CLAUDE.md` §61 ouvrent la Phase 4 par **Projets & Planification**,
+puis les utilisateurs, les groupes, les permissions et les paramètres.
+
+Le `Module 03` est le plus vaste du SaaS : projets, tâches, calendrier, réunions,
+rendez-vous, actions, décisions. Le livrer d'un bloc reviendrait à construire sept
+écrans avant d'en éprouver un seul — exactement ce que `CLAUDE.md` §28 écarte.
+
+Le module est donc coupé en deux, et la coupure suit une frontière réelle plutôt
+qu'un volume :
+
+| Lot | Périmètre | Ce qui le tient ensemble |
+| --- | --- | --- |
+| **LOT 12** | Projets · Tâches · Équipe · Avancement · Retard | Le §54 : *une idée → un projet → des tâches → un responsable → une échéance → un suivi* |
+| **LOT 13** | Calendrier · Réunions · Rendez-vous · Décisions · Actions | Ce qui se **planifie dans le temps** et ce qui en **découle** |
+
+Les critères d'acceptation du §53 se répartissent sans reste : 1 à 8, 14 à 18 et
+20 relèvent du LOT 12 ; 9 à 13 du LOT 13.
+
+### a. Les tâches n'étaient couvertes par aucune capacité
+
+Le catalogue portait quatre capacités de projet depuis la migration 007 —
+`projects.view`, `.create`, `.update`, `.archive` — et **rien** pour les tâches.
+Or `Module 03` §42 les nomme une à une : « consulter les tâches ; créer une
+tâche ; modifier une tâche ; **clôturer une tâche** ».
+
+Quatre capacités sont donc créées. Elles ne sont pas déduites d'un modèle
+général : elles sont **écrites dans le module**, et la fonctionnalité
+correspondante existe (DEC-024 — *une permission ne se crée que si la
+fonctionnalité correspondante existe réellement*).
+
+**Catalogue : 153 → 157.**
+
+Ce qui n'est **pas** créé, et pourquoi :
+
+- `projects.tasks.assign` — attribuer, c'est créer ou modifier ; §42 ne la nomme
+  pas et l'écran n'offre pas d'acte séparé ;
+- `projects.tasks.archive` — une tâche s'**annule** (§12), elle ne se range pas ;
+- `projects.export`, `.download`, `.print` — le lot ne produit **aucun document
+  ni aucun état** ;
+- `projects.meetings.*`, `projects.decisions.*` — le LOT 13 les proposera avec
+  leurs écrans. Une capacité sans fonctionnalité est une capacité d'office.
+
+### b. Clôturer n'est pas modifier ; archiver n'est pas modifier
+
+Le point de sécurité du lot, et il a un précédent : la migration 041 avait
+découvert que `rental.maintenance.close` était **impliquée** par `.update`, faute
+de garde sur le chemin d'un appel direct.
+
+Une policy d'`UPDATE` dit qui peut écrire dans une table ; elle ne sait pas
+distinguer deux actes portés par la même colonne. Deux **déclencheurs** s'en
+chargent :
+
+| Acte | Capacité exigée | Où |
+| --- | --- | --- |
+| Passer une tâche à « Terminée » | `projects.tasks.close` | `fn_task_write_guard` |
+| Tout autre changement d'une tâche | `projects.tasks.update` | `fn_task_write_guard` |
+| Archiver ou restaurer un projet | `projects.archive` | `fn_project_write_guard` |
+| Tout autre changement d'un projet | `projects.update` | `fn_project_write_guard` |
+
+La barrière est au déclencheur, et non dans une fonction : ces tables se
+modifient **directement** par PostgREST, et une garde placée ailleurs ne se
+trouve pas sur ce chemin-là. La recette éprouve les quatre frontières par
+`PATCH` direct, sans passer par aucun écran.
+
+### c. La visibilité suit la capacité, pas l'appartenance
+
+`Module 03` §51 : « un utilisateur ne doit pas pouvoir consulter un projet auquel
+il n'a pas accès ».
+
+Dans tout le SaaS, « avoir accès » signifie **détenir la capacité de lecture** :
+aucun module ne restreint une ligne à ses participants. Retenir ici une
+confidentialité **par projet** créerait une règle métier nouvelle — qui décide
+qu'un projet est confidentiel, qui peut l'ouvrir, ce qu'il advient de ses tâches
+pour les non-membres — qu'aucun document n'énonce.
+
+**Retenu :** `projects.view` ouvre les projets, `projects.tasks.view` ouvre les
+tâches. La **vue personnelle** du §36 est un **filtre**, jamais une frontière de
+sécurité : elle ne montre rien que sa capacité n'ouvre déjà.
+
+*Une confidentialité par projet est **signalée, non inventée** — elle figure aux
+arbitrages ouverts.*
+
+### d. Annulé est terminal, terminé ne l'est pas
+
+Les incidents (migration 038) ont retenu deux états terminaux, au motif qu'un
+incident rouvert serait indiscernable d'un incident jamais clos.
+
+Un projet n'est pas un incident : le rouvrir coûte infiniment moins que de le
+recréer avec ses tâches, et l'**historique le dit** — le journal d'audit
+enregistre les deux mouvements comme des changements d'état. La distinction
+retenue est donc :
+
+- **Annulé** est terminal, pour un projet comme pour une tâche : ce qui est
+  abandonné ne reprend pas, on ouvre autre chose ;
+- **Terminé** se reprend : un projet clos par erreur redevient « En cours », une
+  tâche jugée faite puis constatée incomplète redevient « À faire ».
+
+Rouvrir une tâche **efface** sa date de clôture : la laisser ferait lire
+« terminée le… » sur un travail redevenu à faire.
+
+### e. Aucune référence, et c'est un choix
+
+Clients, véhicules, réservations, factures portent une référence (`DEC-005`,
+`DEC-021`, `DEC-023`) parce qu'ils sont **cités hors du système** — un document,
+un tiers, une pièce comptable.
+
+Un projet ne l'est pas : c'est une coordination interne, identifiée par son nom.
+Le `Module 03` n'en demande d'ailleurs aucune. **Aucune règle de numérotation
+n'est créée**, et la recette vérifie qu'aucune ne l'a été.
+
+### f. L'avancement est refait, jamais recopié
+
+`Module 03` §33 : « 10 tâches, 6 terminées → 60 % », et l'avertissement qui suit
+— « éviter de présenter un pourcentage trompeur ».
+
+Deux conséquences :
+
+1. **Rien n'est stocké.** `projects_task_counts()` compte les tâches réelles à
+   chaque lecture. Un pourcentage tenu par déclencheur serait faux au premier
+   oubli, et **un total faux fait autorité plus longtemps qu'un total absent**
+   (DEC-034 §a).
+2. **Les tâches annulées sortent des deux côtés.** Ni numérateur, ni
+   dénominateur : les compter ferait plafonner l'avancement d'un projet dont
+   plus rien n'est à faire. Dix tâches dont six faites valent 60 % ; l'une
+   annulée, les mêmes six sur neuf valent 67 %.
+
+La fonction **exige** `projects.tasks.view` et refuse sinon (DEC-034 §c) : sans
+elle, RLS rendrait zéro tâche et l'avancement se lirait « 0 % » — c'est-à-dire
+« rien n'est fait », là où la vérité est « je n'ai pas le droit de compter ».
+L'écran **nomme la capacité manquante** (DEC-017).
+
+De même, le **retard** (§16) n'est pas un statut : il se dérive de l'échéance et
+du jour civil des Comores (DEC-025 §e). Une échéance au 4 n'est pas dépassée le 4.
+
+### g. Ce que le LOT 12 ne fait pas
+
+- **Aucune réunion, aucun rendez-vous, aucune décision, aucune action, aucun
+  calendrier** (§19 à §26) — LOT 13, avec les capacités correspondantes.
+- **Aucune sous-tâche, aucune dépendance** (§17, §18). §18 les renvoie lui-même à
+  « progressivement selon les besoins du MVP », et aucune ne figure au §53.
+  Les livrer supposerait d'arrêter la règle de propagation d'un avancement.
+- **Aucun commentaire, aucun document** (§29, §30) : ils accompagneront le compte
+  rendu de réunion, et supposent leur propre capacité.
+- **Aucune pondération des tâches** (§33) : l'évolution est citée par le document
+  comme future.
+
+### h. La veille apprend deux situations, pas trois
+
+`Module 03` §38 énumère huit événements notifiables. Deux sont des **situations**,
+donc dérivables comme les onze familles du LOT 10 :
+
+| Situation | Niveau | Source |
+| --- | --- | --- |
+| Échéance de tâche aujourd'hui ou demain (§15) | **Rappel** — `Module 02` §4.2 | `projects` |
+| Tâche en retard (§16) | **À surveiller** — `Module 02` §4.3 | `projects` |
+
+Les autres — « tâche attribuée », « modification importante », « décision
+enregistrée » — sont des **événements de création** : ils relèvent de
+l'arbitrage ouvert par DEC-033 §h, avec l'activité récente et les notifications
+d'information.
+
+L'audience est la **capacité de lecture**, comme partout : `projects.tasks.view`.
+Un routage nominatif au seul responsable de la tâche (`Module 02` §23) reste
+l'arbitrage ouvert de DEC-033 §h.
+
+**Une seule lecture est exigée, et c'est délibéré** : sans `projects.view`, le
+nom du projet manque, la notification le dit sans lui, et son échéance reste
+vraie. C'est une **absence**, pas un mensonge — la règle du refus (DEC-034 §c) ne
+vise que ce qui rendrait le contenu **faux**.
+
+**Un projet archivé cesse de rappeler, sans rien perdre.** Ses tâches restent
+listées et consultables (§48) ; elles n'alimentent plus la veille. Ranger, c'est
+cesser de suivre — ce n'est pas effacer.
+
+### Conséquences
+
+- Migration **058** : trois tables (`projects`, `project_members`,
+  `project_tasks`), cinq déclencheurs de règle, une fonction d'avancement,
+  **quatre capacités**. Aucune table de notification, aucun avancement stocké.
+- `notifications_watch()` passe de onze à **treize familles** ; le centre de
+  notifications compte désormais **trois** modules producteurs.
+- Écrans : liste des projets, fiche projet, liste et **tableau** des tâches
+  (§34, §35), fiche tâche, **vue personnelle** (§36). La barre latérale ouvre
+  « Projets » et « Tâches » : les tâches ne sont pas une sous-page des projets,
+  elles peuvent être **indépendantes** (§10).
+- Recettes : `db:verify:projects` (20 contrôles), `verify:projects`
+  (76 contrôles).
+- Les modules **Location**, **Facturation** et **Trésorerie** ne sont pas
+  modifiés : un projet **référence**, il ne pilote pas (§45). La recette le
+  vérifie — aucun statut déplacé, aucune écriture ailleurs.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -2768,6 +2970,8 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 14. **DEC-033 §h** — Les notifications doivent-elles être **conservées après la disparition de leur cause** (`Module 02` §31, §32) ? Aujourd'hui, une situation résolue cesse d'être notifiée, et ce qui est conservé est l'état de lecture — qui a lu quoi, et quand — plus l'événement lui-même dans son module. Un historique de notifications supposerait de les stocker, donc d'arrêter trois règles : **quels** événements méritent une ligne, **à qui** elle est nommément destinée, et **quelle durée de conservation** s'applique.
 15. **DEC-034 §h** — Un **rapport doit-il pouvoir être exporté, téléchargé ou imprimé** (`Module 07` §60 — « les formats d'export pourront être définis lors de l'implémentation ») ? Le catalogue ne porte aucune capacité couvrant l'export d'un **état** : `billing.customer_invoices.export` porte sur la liste des factures, et **DEC-024** interdit d'en déduire le droit d'exporter un rapport. Produire un tableur ou un PDF suppose donc de créer `billing.customer.reports.export` et son équivalent fournisseur — décision de capacité, ici **proposée et non appliquée**. *Se rattache à **DEC-023 §4** dès lors qu'un état chiffré serait remis à un tiers.*
 16. **DEC-033 §h** — Les notifications doivent-elles être **routées par responsabilité** (`Module 02` §11, §24) ? L'audience est aujourd'hui la **capacité de lecture** dont la notification dépend. Une diffusion « au responsable location, au Support & Logistique et à la Direction » suppose de désigner ces destinataires et la règle qui les choisit. *S'y rattachent les **notifications personnelles** du §23, et les **délais de rappel configurables** du §28, qui supposent le module Paramètres.*
+17. **DEC-035 §c** — Un projet peut-il être **confidentiel**, c'est-à-dire visible des seuls membres désignés (`Module 03` §51) ? Aujourd'hui, la visibilité suit la capacité — `projects.view` ouvre tous les projets —, comme partout ailleurs dans le SaaS. Une confidentialité par projet suppose d'arrêter trois règles : **qui** décide qu'un projet l'est, **qui** peut l'ouvrir malgré tout (la Direction ? le responsable ?), et ce qu'il advient de ses **tâches** pour un utilisateur qui détient `projects.tasks.view` sans être membre. C'est une décision d'organisation, ici **signalée et non appliquée**.
+18. **DEC-035 §g** — Les **sous-tâches** et les **dépendances entre tâches** (`Module 03` §17, §18) doivent-elles être livrées, et selon quelle règle d'avancement ? Une sous-tâche compte-t-elle dans le pourcentage du projet au même titre qu'une tâche ? Une dépendance bloquante **empêche-t-elle** de commencer, ou se contente-t-elle de l'annoncer ? §18 renvoie lui-même la question « selon les besoins du MVP ».
 
 ---
 
