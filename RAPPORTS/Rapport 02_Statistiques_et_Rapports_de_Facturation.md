@@ -375,6 +375,10 @@ disposant de ces identifiants.
 | Fichiers | 22 modifiés · 5 171 insertions · 59 suppressions |
 | Secrets | aucun — `.env.local` reste ignoré, `.env.example` ne porte que des libellés |
 
+Le présent rapport est ajouté par le commit suivant, `6de0ccb`, qui ne touche
+aucun fichier de l'application : **le code éprouvé en production est bien
+`6102a55`**.
+
 ---
 
 ## 9. Vercel
