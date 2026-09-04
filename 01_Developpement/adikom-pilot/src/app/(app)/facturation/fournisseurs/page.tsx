@@ -6,10 +6,13 @@ import { Badge, ButtonLink, Card, EmptyState, PageHeader } from '@/components/ui
 import { ExportButton } from '@/components/ui/export-button'
 import { Notice } from '@/components/ui/feedback'
 import { Input, Select } from '@/components/ui/form'
+import { Tabs } from '@/components/ui/tabs'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate } from '@/lib/dates'
 import { listSupplierFilters, listSupplierInvoices } from '@/features/supplier-invoices/data'
+import { loadBillingTabs } from '@/features/billing-analytics/data'
+import { resolveAnalyticsPeriod } from '@/features/billing-analytics/period'
 import {
   displayStatus,
   formatAmount,
@@ -60,9 +63,10 @@ export default async function SupplierInvoicesPage(
     can(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW),
   ])
 
-  const [invoices, suppliers] = await Promise.all([
+  const [invoices, suppliers, tabs] = await Promise.all([
     listSupplierInvoices(filters, { canSeeImputations, canSeePayments }),
     listSupplierFilters(),
+    loadBillingTabs('fournisseurs', resolveAnalyticsPeriod(undefined, undefined, undefined)),
   ])
 
   const hasFilters =
@@ -97,6 +101,11 @@ export default async function SupplierInvoicesPage(
           </>
         }
       />
+
+      {/* Un seul onglet ne se dessine pas : il n'y a rien entre quoi choisir. */}
+      {tabs.length > 1 && (
+        <Tabs items={tabs} current="liste" label="Sous-menus des factures fournisseurs" />
+      )}
 
       <Notice tone="info" className="mb-5">
         Une facture validée reconnaît une <strong>dette</strong>. Une <strong>imputation</strong>

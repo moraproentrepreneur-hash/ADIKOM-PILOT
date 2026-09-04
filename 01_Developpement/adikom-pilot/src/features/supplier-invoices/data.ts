@@ -101,7 +101,7 @@ type RawRow = {
   suppliers?: { supplier_no: string; legal_name: string; trade_name: string | null } | null
 }
 
-function supplierLabel(
+export function supplierLabel(
   supplier: { supplier_no: string; legal_name: string; trade_name: string | null } | null | undefined
 ): string | null {
   return supplier ? `${supplier.trade_name ?? supplier.legal_name} (${supplier.supplier_no})` : null

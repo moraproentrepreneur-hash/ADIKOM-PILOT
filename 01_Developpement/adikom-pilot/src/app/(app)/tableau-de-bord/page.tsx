@@ -18,7 +18,8 @@ import {
   type Dashboard,
   type Figure,
 } from '@/features/dashboard/data'
-import { AlertRow, Denied, Kpi, LoadError } from '@/features/dashboard/kpi'
+import { AlertRow, Denied, Kpi, LoadError } from '@/components/ui/figure'
+import { pick } from '@/lib/pilotage/figure'
 import {
   PERIOD_KEYS,
   PERIOD_LABELS,
@@ -310,21 +311,6 @@ export default async function DashboardPage(props: PageProps<'/tableau-de-bord'>
       )}
     </>
   )
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Lire un champ d'un indicateur sans perdre son état                         */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Un refus ou une erreur se PROPAGE au champ qu'on en extrait.
- *
- * Sans cela, une lecture refusée deviendrait `0` en traversant un accesseur —
- * et le tableau afficherait « 0 retard » à qui n'a pas le droit de compter les
- * locations (DEC-017).
- */
-function pick<T>(figure: Figure<T>, read: (value: T) => number): Figure<number> {
-  return figure.state === 'ok' ? { state: 'ok', value: read(figure.value) } : figure
 }
 
 /* -------------------------------------------------------------------------- */

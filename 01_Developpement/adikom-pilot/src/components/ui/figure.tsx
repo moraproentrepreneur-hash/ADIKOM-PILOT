@@ -3,10 +3,10 @@ import { ArrowRight, Lock, TriangleAlert } from 'lucide-react'
 
 import { Badge, type BadgeTone } from '@/components/ui/primitives'
 import { cn } from '@/lib/utils'
-import type { Figure } from './data'
+import type { Figure } from '@/lib/pilotage/figure'
 
 /**
- * Les composants du tableau de bord — Module 01 §7, §19, §20, §25, §26.
+ * Les composants du pilotage — Module 01 §7, §19, §20, §25, §26.
  *
  * UNE CARTE KPI DOIT POUVOIR NE PAS AVOIR DE CHIFFRE.
  *
@@ -22,6 +22,10 @@ import type { Figure } from './data'
  * dépendre uniquement de la couleur. » Chaque niveau porte donc un MOT, pas
  * seulement une teinte : un daltonien, une impression en noir et blanc ou un
  * lecteur d'écran doivent lire la même hiérarchie.
+ *
+ * Nés avec le tableau de bord (LOT 9), ces composants servent aussi les
+ * statistiques et les rapports de facturation (LOT 11) : le même indicateur
+ * ne se dessine pas de deux façons selon l'écran qui le porte (CLAUDE.md §37).
  */
 
 export type Level = 'info' | 'watch' | 'important' | 'urgent'

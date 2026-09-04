@@ -91,7 +91,7 @@ const BASE_SELECT = `
   rentals ( rental_no )
 `
 
-type RawClient = {
+export type RawClient = {
   client_no: string
   type: string
   legal_name: string
@@ -112,7 +112,7 @@ type RawRow = {
 }
 
 /** Même composition que la fiche client : un particulier porte son prénom. */
-function clientLabel(client: RawClient | null | undefined): string | null {
+export function clientLabel(client: RawClient | null | undefined): string | null {
   if (!client) return null
   const name =
     client.type === 'INDIVIDUAL' && client.first_name

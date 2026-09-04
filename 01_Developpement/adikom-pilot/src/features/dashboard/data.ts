@@ -2,6 +2,12 @@ import 'server-only'
 
 import { can } from '@/lib/auth/dal'
 import { PERMISSIONS, type PermissionCode } from '@/lib/auth/permissions'
+import {
+  attempt as attemptIn,
+  denied,
+  gated as gatedIn,
+  type Figure,
+} from '@/lib/pilotage/figure'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { listRentals, type RentalListItem } from '@/features/rentals/data'
 import { listFinancialAccounts, type FinancialAccount } from '@/features/treasury/data'
@@ -43,34 +49,20 @@ import type { Period } from './period'
 /*  L'état d'un indicateur                                                     */
 /* -------------------------------------------------------------------------- */
 
-export type Figure<T> =
-  | { state: 'ok'; value: T }
-  | { state: 'denied'; missing: PermissionCode[] }
-  | { state: 'error' }
-
-const ok = <T,>(value: T): Figure<T> => ({ state: 'ok', value })
-const denied = <T,>(missing: PermissionCode[]): Figure<T> => ({ state: 'denied', missing })
-
-/**
- * Exécute une lecture, ou rend l'échec lisible.
+/*
+ * `Figure` et ses deux outils vivent désormais dans `@/lib/pilotage/figure` :
+ * les statistiques et les rapports de facturation (LOT 11) posent la même
+ * question — un chiffre, un refus nommé, ou un échec dit — et la recopier en
+ * aurait fait deux vérités (CLAUDE.md §37).
  *
- * Le motif technique reste dans les journaux du serveur : l'utilisateur n'a
- * pas à lire un message de PostgREST (CLAUDE.md §43).
+ * Le type reste réexporté ici : c'est sous ce nom que l'écran du tableau de
+ * bord le connaît depuis le LOT 9.
  */
-async function attempt<T>(scope: string, read: () => Promise<T>): Promise<Figure<T>> {
-  try {
-    return ok(await read())
-  } catch (error) {
-    console.error(`[tableau de bord · ${scope}]`, error)
-    return { state: 'error' }
-  }
-}
+export type { Figure }
 
-/** Les capacités absentes parmi celles exigées — l'écran les nomme. */
-async function missingAmong(codes: PermissionCode[]): Promise<PermissionCode[]> {
-  const held = await Promise.all(codes.map((code) => can(code)))
-  return codes.filter((_, index) => !held[index])
-}
+/** Les lectures du tableau de bord se journalisent sous son propre nom. */
+const attempt = <T,>(scope: string, read: () => Promise<T>) =>
+  attemptIn(`tableau de bord · ${scope}`, read)
 
 /**
  * Un indicateur : d'abord les capacités, ensuite seulement la lecture.
@@ -80,15 +72,8 @@ async function missingAmong(codes: PermissionCode[]): Promise<PermissionCode[]> 
  * n'y ajoute aucune sécurité : cela permet seulement de DIRE laquelle manque,
  * au lieu d'afficher une erreur de chargement pour un refus de droit.
  */
-async function gated<T>(
-  scope: string,
-  codes: PermissionCode[],
-  read: () => Promise<T>
-): Promise<Figure<T>> {
-  const missing = await missingAmong(codes)
-  if (missing.length > 0) return denied(missing)
-  return attempt(scope, read)
-}
+const gated = <T,>(scope: string, codes: PermissionCode[], read: () => Promise<T>) =>
+  gatedIn(`tableau de bord · ${scope}`, codes, read)
 
 /* -------------------------------------------------------------------------- */
 /*  Ce que le tableau de bord rend                                             */

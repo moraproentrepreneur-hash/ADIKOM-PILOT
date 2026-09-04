@@ -70,6 +70,8 @@ code, la documentation ou un message de commit.
 | `npm run verify:pilotage` | Recette fonctionnelle — tableau de bord, dans un navigateur |
 | `npm run db:verify:notifications` | Recette de la **veille** — centre de notifications |
 | `npm run verify:notifications` | Recette fonctionnelle — notifications, dans un navigateur |
+| `npm run db:verify:analytics` | Recette des **sommes** — statistiques et rapports de facturation |
+| `npm run verify:analytics` | Recette fonctionnelle — statistiques et rapports, dans un navigateur |
 | `npm run verify:capabilities` | Audit des capacités — appels directs, refus et autorisations |
 | `npm run verify:users` | Recette sécurité — module Utilisateurs |
 | `npm run verify:referential` | Recette sécurité — clients, fournisseurs, parc, tarifs |
@@ -88,6 +90,7 @@ src/
 ├── components/layout/      barre latérale, structure applicative
 ├── features/<domaine>/     actions serveur et composants par domaine métier
 ├── lib/auth/               couche d'accès aux données, permissions
+├── lib/pilotage/           l'état d'un indicateur : valeur, refus nommé, échec dit
 ├── lib/supabase/           clients serveur / navigateur / administration
 ├── lib/money.ts            arithmétique monétaire entière en KMF
 ├── lib/navigation.ts       navigation de référence
@@ -129,6 +132,19 @@ lecture manque ne remonte pas une valeur approchée, elle disparaît — et l'é
 nomme la source fermée. Une facture fournisseur notifiée sans les imputations
 réclamerait son brut ; une facture client notifiée sans les règlements
 réclamerait son total.
+
+**2 quater. Un FLUX se date de son acte ; un STOCK ignore la période.**
+Une facture au jour de son émission, un encaissement au jour où il est reçu, une
+imputation au jour où elle est portée sur la facture, un règlement au jour où il
+est payé (migration 057). Leur différence sur une période n'est donc **pas** un
+solde : un encaissement de septembre peut solder une facture de juillet. Ce qui
+reste dû est un stock, et il se calcule hors période — l'écran doit le dire.
+
+**2 quinquies. Un état dont les lignes ne font pas son total est faux.**
+Un rapport par tiers est un agrégat, pas une liste de détail : il ne se tronque
+pas à 200 lignes. Une somme, elle, ne se calcule jamais sur une liste paginée —
+elle se calcule en base, sur l'ensemble des lignes visibles par l'appelant
+(DEC-032 §b).
 
 **3. Le logo officiel ne se transforme jamais.**
 Le composant `AdikomLogo` est le seul point d'entrée. Il garantit le ratio,

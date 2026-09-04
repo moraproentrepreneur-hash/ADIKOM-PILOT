@@ -6,10 +6,13 @@ import { Badge, ButtonLink, Card, EmptyState, PageHeader } from '@/components/ui
 import { ExportButton } from '@/components/ui/export-button'
 import { Notice } from '@/components/ui/feedback'
 import { Input, Select } from '@/components/ui/form'
+import { Tabs } from '@/components/ui/tabs'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate } from '@/lib/dates'
 import { listClientFilters, listCustomerInvoices } from '@/features/customer-invoices/data'
+import { loadBillingTabs } from '@/features/billing-analytics/data'
+import { resolveAnalyticsPeriod } from '@/features/billing-analytics/period'
 import {
   CUSTOMER_INVOICE_STATUS_LABELS,
   CUSTOMER_INVOICE_STATUS_ORDER,
@@ -57,9 +60,14 @@ export default async function CustomerInvoicesPage(props: PageProps<'/facturatio
     can(PERMISSIONS.CUSTOMER_PAYMENTS_VIEW),
   ])
 
-  const [invoices, clients] = await Promise.all([
+  /*
+   * Les onglets partent sur la période par défaut : la liste n'en porte pas.
+   * Statistiques et Rapports, eux, l'affichent et la reconduisent ensuite.
+   */
+  const [invoices, clients, tabs] = await Promise.all([
     listCustomerInvoices(filters, { canSeePayments }),
     listClientFilters(),
+    loadBillingTabs('clients', resolveAnalyticsPeriod(undefined, undefined, undefined)),
   ])
 
   const hasFilters =
@@ -93,6 +101,11 @@ export default async function CustomerInvoicesPage(props: PageProps<'/facturatio
           </>
         }
       />
+
+      {/* Un seul onglet ne se dessine pas : il n'y a rien entre quoi choisir. */}
+      {tabs.length > 1 && (
+        <Tabs items={tabs} current="liste" label="Sous-menus des factures clients" />
+      )}
 
       <Notice tone="info" className="mb-5">
         Une facture <strong>émise</strong> reconnaît une créance et fige ses montants.{' '}

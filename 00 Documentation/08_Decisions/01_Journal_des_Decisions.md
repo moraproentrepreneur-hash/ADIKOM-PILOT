@@ -67,6 +67,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-031 | Règlements clients et solde des créances — LOT 8 | Arbitrages | Appliquée — **achève l'Étape 2.5** | 2026-09-02 |
 | DEC-032 | Tableau de bord de pilotage — LOT 9 | Arbitrages et sécurité | Appliquée — **ouvre la Phase 3** | 2026-09-02 |
 | DEC-033 | Centre de notifications — LOT 10 | Arbitrages et sécurité | Appliquée — **ouvre le module 2** | 2026-09-04 |
+| DEC-034 | Statistiques et rapports de facturation — LOT 11 | Arbitrages et sécurité | Appliquée — **achève la Phase 3** | 2026-09-04 |
 
 ---
 
@@ -2563,6 +2564,190 @@ n'en demande aucun.
 
 ---
 
+## DEC-034 — Statistiques et rapports de facturation (LOT 11)
+
+**Date :** 4 septembre 2026
+**Portée :** métier, technique et sécurité
+**Statut :** appliquée · **achève la Phase 3 — Pilotage**
+
+### Contexte — le dernier volet du pilotage
+
+`README` §73 et `CLAUDE.md` §61 donnent la Phase 3 en quatre temps : tableau de
+bord (DEC-032), centre de notifications (DEC-033), **statistiques**, **rapports**.
+Le LOT 11 livre les deux derniers.
+
+Ils sont documentés par le `Module 07` — §26 et §27 pour les clients, §58, §59 et
+§60 pour l'ensemble — et par la `Navigation` §10.1 et §10.2, qui les place en
+sous-menus de « Factures clients » et « Factures fournisseurs ».
+
+Quatre capacités les attendaient au catalogue depuis la migration 007, **sans
+aucun contrôle serveur** : `billing.customer.stats.view`,
+`billing.customer.reports.view`, `billing.supplier.stats.view`,
+`billing.supplier.reports.view`. Même situation que `notifications.view` avant le
+LOT 10.
+
+### a. Rien n'est stocké, tout est refait à la lecture
+
+`Module 07` §26 : les indicateurs « doivent être calculés à partir des données
+réelles ». La façon la plus sûre de tenir cette règle est de **ne recopier aucun
+total**.
+
+Un chiffre d'affaires écrit dans une table devrait être tenu à jour par un
+déclencheur sur chaque ligne de facture, chaque réduction, chaque règlement et
+chaque annulation. Le premier oubli produirait un total faux — et **un total
+faux fait autorité plus longtemps qu'un total absent**.
+
+**Migration 057** : huit fonctions, **aucune table, aucune colonne, aucune
+permission**. Toutes appellent les fonctions des factures —
+`customer_invoice_total`, `customer_invoice_paid`, `supplier_invoice_gross`,
+`supplier_invoice_imputed`, `supplier_invoice_paid`. Aucune arithmétique n'est
+réécrite : c'est la doctrine de DEC-032 §a, étendue à la synthèse.
+
+### b. Un flux se date de son acte ; un stock ignore la période
+
+Le point structurant du lot, et il évite un contresens.
+
+| Nature | Ce qui est compté | Quand |
+| --- | --- | --- |
+| **Flux** | facturé | au jour de la facture |
+| **Flux** | encaissé | au jour du règlement (`Workflow 08` §11) |
+| **Flux** | imputé | au jour où l'imputation est **portée** sur la facture |
+| **Flux** | payé | au jour du règlement fournisseur |
+| **Stock** | créances, dettes | **hors période** — ce qui reste dû aujourd'hui |
+
+Conséquence à écrire noir sur blanc : sur une période, **« facturé − encaissé »
+n'est pas un solde**, et « facturé − imputé − payé » n'est pas une dette. Un
+encaissement de septembre peut solder une facture de juillet ; une imputation
+d'octobre peut réduire une facture de juillet. Les écrans le disent en toutes
+lettres, et la recette l'éprouve : la facture datée de J−20 ne compte pas dans la
+journée du règlement, et réciproquement.
+
+C'est la distinction que DEC-032 §e pose déjà entre un flux et une situation,
+appliquée ici aux deux côtés de la facturation.
+
+### c. Une synthèse sans toutes ses lectures se tait
+
+Chaque fonction exige **nommément** les capacités dont sa somme dépend, et
+**refuse** plutôt que de répondre à côté :
+
+| Capacités détenues | Résultat |
+| --- | --- |
+| `customer.stats.view` + `customer_invoices.view`, **sans** `customer_payments.view` | **refus** — l'encaissé vaudrait 0 et le solde le total : toute facture se lirait impayée |
+| `supplier.stats.view` + `supplier_invoices.view` + `supplier_payments.view`, **sans** `imputations.view` | **refus** — le net vaudrait le brut : 1 000 000 KMF réclamés là où ADIKOM ne doit que 700 000 |
+
+`CLAUDE.md` §57 : « une imputation de maintenance fournisseur ne doit pas être
+enregistrée comme un paiement » — et elle ne doit pas non plus pouvoir être
+**ignorée**. C'est la règle **2 ter** du LOT 10, appliquée à une somme plutôt
+qu'à une veille.
+
+L'écran, lui, **nomme la capacité manquante** (DEC-017) : il n'affiche jamais un
+zéro à la place d'un refus.
+
+Les capacités **composent** et n'ouvrent rien (DEC-024) : consulter les
+statistiques des factures clients n'autorise pas à lire les factures. La capacité
+source reste exigée en plus.
+
+### d. Le nom d'un tiers peut manquer sans que le montant soit faux
+
+Les rapports groupent par client et par fournisseur. Sans `parties.clients.view`
+ou `parties.suppliers.view`, RLS masque la ligne du tiers : le rapport affiche
+« Client non lisible », et **les montants restent justes** — ils ne dépendent pas
+du répertoire.
+
+Le refus de la §c ne s'applique donc pas ici, et c'est cohérent : une omission
+qui produirait un **mensonge** fait taire la fonction ; une omission qui produit
+une **absence** se dit. La base rend les **parties** du nom, jamais un libellé
+composé : la composition reste celle de l'application, pour ne pas créer une
+seconde vérité sur l'identité d'un tiers.
+
+### e. Un état ne se tronque pas
+
+`Module 07` §27 et §60 demandent des « états ». Les listes de l'application
+s'arrêtent à 200 lignes — parfait pour un écran, faux pour un état : ses lignes
+ne feraient plus son total.
+
+Les rapports sont donc des **agrégats non tronqués**, bornés par le référentiel
+des tiers et non par le nombre de factures. La recette vérifie le recoupement :
+la somme des lignes de l'état vaut exactement le total de la statistique.
+
+### f. Cinq périodes civiles, et la sixième qui manquait
+
+`Module 07` §59 : « jour, semaine, mois, trimestre, année, période
+personnalisée ». Les cinq premières sont **exactement** celles du tableau de bord
+(DEC-032) — des périodes **civiles**, jamais des fenêtres glissantes — et ne sont
+pas recalculées : `resolvePeriod` en reste la seule vérité.
+
+La **période personnalisée** est l'ajout du lot. Deux dates mal saisies ne
+produisent jamais un résultat qui ait l'air d'une réponse :
+
+- deux dates **inversées** sont remises à l'endroit, et l'écran **l'annonce** ;
+- une date **absente ou inexistante** fait retomber sur le mois, et l'écran
+  **le dit** (DEC-017).
+
+Le **grain** de la série se déduit de l'étendue — le jour, la semaine et le mois
+se lisent par jour ; le trimestre par semaine ; l'année par mois. Ce n'est pas un
+choix d'affichage : il décide de ce que chaque point agrège, et l'écran l'annonce.
+Un grain inconnu est **refusé** par la base plutôt que ramené au mois en silence.
+
+### g. Des sous-menus, pas des entrées de barre latérale
+
+`Navigation` §10.1 et §10.2 placent « Statistiques » et « Rapports » sous
+« Factures clients » et « Factures fournisseurs ». La barre latérale du SaaS
+s'arrête au **menu** : ses troisièmes niveaux sont des pages — « Nouvelle
+facture » l'est déjà, les catégories du parc aussi (**DEC-021 §6**, qui autorise
+l'adaptation de l'organisation des menus).
+
+Les quatre écrans sont donc atteints par des **onglets** — Liste · Statistiques ·
+Rapports —, et la période choisie les suit d'un onglet à l'autre. Un onglet que
+l'utilisateur ne peut pas ouvrir n'est pas proposé : ce n'est pas une protection
+— chaque page exige de nouveau sa capacité, et la recette éprouve l'URL tapée à
+la main — mais une politesse.
+
+### h. Ce que le LOT 11 ne fait pas
+
+**Aucun document produit.** Ni tableur, ni PDF, ni impression. `Module 07` §60
+prévoit que « les formats d'export pourront être définis lors de
+l'implémentation » — c'est-à-dire qu'ils ne le sont pas. Aucune capacité du
+catalogue ne couvre l'export d'un **rapport** : `billing.customer_invoices.export`
+porte sur la **liste des factures**, et DEC-024 interdit d'en déduire le droit
+d'exporter un état. La capacité correspondante est **proposée, non créée** — elle
+figure aux arbitrages ouverts.
+
+**Aucun état des paiements divers** (§59, §60). Le module n'est pas livré et sa
+navigation reste marquée « à venir ». Une colonne vide se lirait « aucun paiement
+divers ».
+
+**Aucune statistique de location, de parc ou de maintenance.** `Module 04` et
+`Module 05` les citent comme évolutions ; la Phase 3 documentée porte sur le
+pilotage financier. Les inventer supposerait d'en arrêter les indicateurs.
+
+**Aucun régime de taxes.** Les totaux sont ceux des factures, tels que le système
+les connaît — **DEC-014** reste ouverte.
+
+**Aucune capacité de plus.** Le catalogue reste à **153** (DEC-024), et la
+migration le vérifie elle-même avant de se terminer.
+
+### Conséquences
+
+- Migration **057** : huit fonctions `SECURITY INVOKER`, `EXECUTE` retiré à
+  PUBLIC (DEC-022). **Aucune table, aucune permission.**
+- Les quatre capacités de statistiques et de rapports sont désormais
+  **contrôlées côté serveur**, et plus seulement côté navigation.
+- Les listes de factures portent trois onglets ; « Statistiques » et « Rapports »
+  passent de l'absence à **livrés**.
+- Les outils du pilotage — `Figure`, `Kpi`, le refus nommé, l'échec dit — quittent
+  `features/dashboard/` pour `lib/pilotage/figure.ts` et
+  `components/ui/figure.tsx` : deux écrans qui posent la même question ne doivent
+  pas y répondre de deux façons (`CLAUDE.md` §37). Le tableau de bord n'en est pas
+  modifié — sa recette le vérifie.
+- Recettes : `db:verify:analytics` (15 contrôles), `verify:analytics`
+  (82 contrôles).
+- Les modules **Tiers**, **Parc**, **Facturation** et **Trésorerie** ne sont pas
+  modifiés : une statistique lit, elle n'écrit pas. La recette le vérifie —
+  aucun statut déplacé, aucune entrée d'audit produite.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -2581,7 +2766,8 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 12. **DEC-032 §h** — L'**activité récente** (`Module 01` §21) doit-elle figurer au tableau de bord ? Les données existent — le journal d'audit —, mais son écran relève de la Phase 4 et `users.audit.view` en commande la lecture. La question est de savoir si le tableau de bord doit en présenter un extrait, et sous quelle capacité. *Étendu par **DEC-033 §h** : la même question vaut pour les notifications d'**information** du `Module 02` §4.1 — « nouvelle réservation », « nouveau client », « véhicule ajouté » —, qui sont des événements de création et non des situations.*
 13. **DEC-033 §b** — À partir de quel **montant** une facture en retard est-elle « importante » (`Module 02` §4.4) ? Sans seuil, une facture échue est notifiée « à surveiller ». Le seuil est une règle de gestion, pas une déduction — et il vaudrait pour les factures clients comme fournisseurs.
 14. **DEC-033 §h** — Les notifications doivent-elles être **conservées après la disparition de leur cause** (`Module 02` §31, §32) ? Aujourd'hui, une situation résolue cesse d'être notifiée, et ce qui est conservé est l'état de lecture — qui a lu quoi, et quand — plus l'événement lui-même dans son module. Un historique de notifications supposerait de les stocker, donc d'arrêter trois règles : **quels** événements méritent une ligne, **à qui** elle est nommément destinée, et **quelle durée de conservation** s'applique.
-15. **DEC-033 §h** — Les notifications doivent-elles être **routées par responsabilité** (`Module 02` §11, §24) ? L'audience est aujourd'hui la **capacité de lecture** dont la notification dépend. Une diffusion « au responsable location, au Support & Logistique et à la Direction » suppose de désigner ces destinataires et la règle qui les choisit. *S'y rattachent les **notifications personnelles** du §23, et les **délais de rappel configurables** du §28, qui supposent le module Paramètres.*
+15. **DEC-034 §h** — Un **rapport doit-il pouvoir être exporté, téléchargé ou imprimé** (`Module 07` §60 — « les formats d'export pourront être définis lors de l'implémentation ») ? Le catalogue ne porte aucune capacité couvrant l'export d'un **état** : `billing.customer_invoices.export` porte sur la liste des factures, et **DEC-024** interdit d'en déduire le droit d'exporter un rapport. Produire un tableur ou un PDF suppose donc de créer `billing.customer.reports.export` et son équivalent fournisseur — décision de capacité, ici **proposée et non appliquée**. *Se rattache à **DEC-023 §4** dès lors qu'un état chiffré serait remis à un tiers.*
+16. **DEC-033 §h** — Les notifications doivent-elles être **routées par responsabilité** (`Module 02` §11, §24) ? L'audience est aujourd'hui la **capacité de lecture** dont la notification dépend. Une diffusion « au responsable location, au Support & Logistique et à la Direction » suppose de désigner ces destinataires et la règle qui les choisit. *S'y rattachent les **notifications personnelles** du §23, et les **délais de rappel configurables** du §28, qui supposent le module Paramètres.*
 
 ---
 
