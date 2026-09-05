@@ -334,11 +334,19 @@ async function updateUserInner(
  * des droits : leur modification exige `users.users.permissions.update`
  * (05_Regles_Metier/05_Permissions.md §24). Sans cette permission, les groupes
  * sont laissés inchangés plutôt que d'échouer bruyamment.
+ *
+ * APPARTENIR N'EST PAS DIRIGER. `is_manager` marque les départements dont la
+ * personne RÉPOND (Module 08 §36) — c'est ce que la vue hiérarchique affiche.
+ * Une responsabilité ne se retient que si le rattachement l'accompagne : diriger
+ * un département auquel on n'appartient pas n'aurait aucun sens, et l'interface
+ * ne le propose pas davantage.
  */
 async function syncAssignments(userId: string, formData: FormData): Promise<string | null> {
   const supabase = await createSupabaseServerClient()
 
   const departmentIds = readMultiple(formData, 'departmentIds')
+  const managedIds = new Set(readMultiple(formData, 'managedDepartmentIds'))
+
   await supabase.from('user_departments').delete().eq('user_id', userId)
 
   if (departmentIds.length > 0) {
@@ -347,6 +355,7 @@ async function syncAssignments(userId: string, formData: FormData): Promise<stri
         user_id: userId,
         department_id: departmentId,
         is_primary: index === 0,
+        is_manager: managedIds.has(departmentId),
       }))
     )
     if (error) return friendlyError(error.message)

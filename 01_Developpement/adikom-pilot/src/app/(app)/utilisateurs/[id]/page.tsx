@@ -161,15 +161,23 @@ export default async function UserDetailPage(props: PageProps<'/utilisateurs/[id
                       <Empty />
                     )}
                   </InfoRow>
+                  {/* §36 — appartenir n'est pas diriger : la vue hiérarchique
+                      distingue les deux, la fiche aussi. */}
                   <InfoRow
                     label="Départements"
-                    hint="Une personne peut en cumuler plusieurs"
+                    hint="Une personne peut en cumuler plusieurs, et en diriger plusieurs"
                   >
                     {user.departments.length > 0 ? (
                       <span className="flex flex-wrap gap-1.5">
-                        {user.departments.map((name) => (
-                          <Badge key={name}>{name}</Badge>
-                        ))}
+                        {user.departments.map((name) =>
+                          user.managedDepartments.includes(name) ? (
+                            <Badge key={name} tone="info">
+                              Responsable · {name}
+                            </Badge>
+                          ) : (
+                            <Badge key={name}>{name}</Badge>
+                          )
+                        )}
                       </span>
                     ) : (
                       <Empty />

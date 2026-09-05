@@ -14,10 +14,10 @@ import {
   Gavel,
   Handshake,
   History,
-  KeyRound,
   LayoutDashboard,
   Layers,
   ListChecks,
+  Network,
   ReceiptText,
   Settings,
   ShieldCheck,
@@ -337,14 +337,22 @@ export const NAVIGATION: NavEntry[] = [
         href: '/utilisateurs/groupes',
         icon: ShieldCheck,
         permission: PERMISSIONS.GROUPS_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
+      /*
+       * La vue hiérarchique porte SA capacité, et elle est autonome.
+       *
+       * `users.hierarchy.view` n'est pas déduite de `users.users.view` : la
+       * migration 008 l'accorde à « Direction » et « Assistant(e) de direction »
+       * SANS la lecture des utilisateurs. L'organigramme montre la structure,
+       * la liste montre les fiches — deux choses distinctes (DEC-024).
+       */
       {
         label: 'Vue hiérarchique',
         href: '/utilisateurs/hierarchie',
-        icon: KeyRound,
+        icon: Network,
         permission: PERMISSIONS.HIERARCHY_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
       {
         label: 'Journal d’activité',

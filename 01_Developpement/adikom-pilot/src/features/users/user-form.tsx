@@ -36,6 +36,70 @@ function SubmitButton({ label }: { label: string }) {
   )
 }
 
+/**
+ * Rattachement à un département, et responsabilité éventuelle — Module 08 §36.
+ *
+ * Deux cases, parce que ce sont deux faits distincts : appartenir à un
+ * département n'est pas en répondre. La seconde ne s'active qu'avec la
+ * première — on ne dirige pas un département auquel on n'appartient pas — et
+ * elle vit HORS du libellé cliquable, sans quoi chaque clic sur « Responsable »
+ * décocherait le rattachement.
+ */
+function DepartmentOption({
+  department,
+  attached,
+  managed,
+}: {
+  department: Option
+  attached: boolean
+  managed: boolean
+}) {
+  const [checked, setChecked] = useState(attached)
+  const [leads, setLeads] = useState(managed)
+
+  return (
+    <div className="flex flex-wrap items-start gap-x-4 gap-y-2 rounded-control border border-line px-3.5 py-2.5 transition-colors has-checked:border-adikom-400 has-checked:bg-adikom-50">
+      <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2.5">
+        <input
+          type="checkbox"
+          name="departmentIds"
+          value={department.id}
+          checked={checked}
+          onChange={(event) => {
+            setChecked(event.target.checked)
+            // Un département qu'on quitte n'est plus un département qu'on dirige.
+            if (!event.target.checked) setLeads(false)
+          }}
+          className="mt-0.5 size-4 shrink-0 accent-adikom-500"
+        />
+        <span className="min-w-0">
+          <span className="block text-sm text-ink">{department.label}</span>
+          {department.description && (
+            <span className="block text-xs text-muted">{department.description}</span>
+          )}
+        </span>
+      </label>
+
+      <label
+        className={`flex shrink-0 items-center gap-2 text-xs ${
+          checked ? 'cursor-pointer text-ink' : 'cursor-not-allowed text-muted/60'
+        }`}
+      >
+        <input
+          type="checkbox"
+          name="managedDepartmentIds"
+          value={department.id}
+          checked={leads}
+          disabled={!checked}
+          onChange={(event) => setLeads(event.target.checked)}
+          className="size-4 shrink-0 accent-adikom-500"
+        />
+        Responsable
+      </label>
+    </div>
+  )
+}
+
 type UserFormProps = {
   mode: 'create' | 'edit'
   user?: UserDetail
@@ -312,20 +376,23 @@ export function UserForm({
 
       <FormSection
         title="Départements"
-        description="Une même personne peut être rattachée à plusieurs départements sans compte supplémentaire."
+        description="Une même personne peut être rattachée à plusieurs départements, et en diriger plusieurs, sans compte supplémentaire."
       >
         <div className="grid gap-2 sm:col-span-2">
           {departments.map((department) => (
-            <CheckboxOption
+            <DepartmentOption
               key={department.id}
-              name="departmentIds"
-              value={department.id}
-              label={department.label}
-              description={department.description}
-              defaultChecked={user?.departmentIds.includes(department.id)}
+              department={department}
+              attached={user?.departmentIds.includes(department.id) ?? false}
+              managed={user?.managedDepartmentIds.includes(department.id) ?? false}
             />
           ))}
         </div>
+        <p className="flex items-start gap-2 rounded-control bg-canvas px-3.5 py-2.5 text-xs text-muted sm:col-span-2">
+          <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          Un département est une information d’organisation : il n’accorde aucun droit. Les
+          permissions relèvent des groupes et des règles individuelles.
+        </p>
       </FormSection>
 
       <FormSection

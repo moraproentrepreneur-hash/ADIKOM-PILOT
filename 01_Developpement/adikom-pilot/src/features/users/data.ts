@@ -46,6 +46,10 @@ export type UserDetail = UserListItem & {
   managerId: string | null
   managerName: string | null
   departmentIds: string[]
+  /** Départements dont l'utilisateur est RESPONSABLE (Module 08 §36). */
+  managedDepartmentIds: string[]
+  /** Les mêmes, par leur nom : la fiche les affiche, elle ne les résout pas. */
+  managedDepartments: string[]
   groupIds: string[]
   deactivatedAt: string | null
 }
@@ -68,7 +72,9 @@ type RawUserRow = {
   is_super_admin: boolean
   last_login_at: string | null
   created_at: string
-  user_departments: { department_id: string; departments: { name: string } | null }[] | null
+  user_departments:
+    | { department_id: string; is_manager: boolean; departments: { name: string } | null }[]
+    | null
   user_groups: { group_id: string; groups: { name: string } | null }[] | null
 }
 
@@ -81,7 +87,7 @@ type RawUserRow = {
 const LIST_SELECT = `
   id, username, first_name, last_name, email, job_title, status,
   is_super_admin, last_login_at, created_at,
-  user_departments!user_id ( department_id, departments ( name ) ),
+  user_departments!user_id ( department_id, is_manager, departments ( name ) ),
   user_groups!user_id ( group_id, groups ( name ) )
 `
 
@@ -204,6 +210,13 @@ export async function getUserDetail(id: string): Promise<UserDetail | null> {
       ? `${row.manager.first_name} ${row.manager.last_name}`.trim()
       : null,
     departmentIds: (row.user_departments ?? []).map((link) => link.department_id),
+    managedDepartmentIds: (row.user_departments ?? [])
+      .filter((link) => link.is_manager)
+      .map((link) => link.department_id),
+    managedDepartments: (row.user_departments ?? [])
+      .filter((link) => link.is_manager)
+      .map((link) => link.departments?.name)
+      .filter((name): name is string => Boolean(name)),
     groupIds: (row.user_groups ?? []).map((link) => link.group_id),
     deactivatedAt: row.deactivated_at,
   }
@@ -333,7 +346,7 @@ export type PermissionOverview = {
 export async function getPermissionOverview(userId: string): Promise<PermissionOverview> {
   const supabase = await createSupabaseServerClient()
 
-  const [catalogResult, effectiveResult, individualResult, groupResult] = await Promise.all([
+  const [catalogResult, effectiveResult, individualResult] = await Promise.all([
     supabase
       .from('permissions')
       .select(
@@ -343,19 +356,22 @@ export async function getPermissionOverview(userId: string): Promise<PermissionO
       .order('menu_order')
       .order('submenu_order')
       .order('action_order'),
+    /*
+     * `effective_permissions` rend le verdict effectif ET celui des groupes
+     * seuls (`inherited_effect`, migration 063).
+     *
+     * L'héritage ne se lit PLUS par une requête directe sur
+     * `group_permissions` : cette table n'est ouverte qu'à `users.groups.view`,
+     * et RLS ne lève pas — elle masque. Un administrateur des permissions
+     * dépourvu de cette capacité lisait « non défini » sur un droit hérité,
+     * c'est-à-dire l'inverse de la vérité (Module 08 §48).
+     */
     supabase.rpc('effective_permissions', { p_user_id: userId }),
     // Règles individuelles réellement enregistrées : elles seules sont
     // modifiables ici, l'héritage relevant des groupes.
     supabase
       .from('user_permissions')
       .select('permission_id, effect')
-      .eq('user_id', userId),
-    // Règles héritées des groupes actifs. Lues séparément pour que l'interface
-    // puisse distinguer l'héritage de la décision individuelle, y compris
-    // lorsque celle-ci vient d'être modifiée et pas encore enregistrée.
-    supabase
-      .from('user_groups')
-      .select('groups!inner ( is_active, group_permissions ( permission_id, effect ) )')
       .eq('user_id', userId),
   ])
 
@@ -373,7 +389,12 @@ export async function getPermissionOverview(userId: string): Promise<PermissionO
   if (catalogResult.error) reportQueryFailure('catalogue des permissions', catalogResult.error)
   if (!catalogResult.data) return empty
 
-  type EffectiveRow = { permission_code: string; granted: boolean; source: PermissionSource }
+  type EffectiveRow = {
+    permission_code: string
+    granted: boolean
+    source: PermissionSource
+    inherited_effect: PermissionEffect | null
+  }
   const effective = new Map<string, EffectiveRow>(
     ((effectiveResult.data ?? []) as EffectiveRow[]).map((row) => [row.permission_code, row])
   )
@@ -386,25 +407,6 @@ export async function getPermissionOverview(userId: string): Promise<PermissionO
   const individual = new Map<string, PermissionEffect>(
     (individualResult.data ?? []).map((row) => [row.permission_id, row.effect as PermissionEffect])
   )
-
-  if (groupResult.error) reportQueryFailure('permissions héritées', groupResult.error)
-
-  /*
-   * Verdict des groupes seuls. Un refus hérité prime sur une autorisation
-   * héritée, conformément à `effective_permissions` : DENY l'emporte toujours.
-   */
-  type GroupRow = {
-    groups: { is_active: boolean; group_permissions: { permission_id: string; effect: string }[] }
-  }
-  const inherited = new Map<string, PermissionEffect>()
-  for (const row of (groupResult.data ?? []) as unknown as GroupRow[]) {
-    if (!row.groups?.is_active) continue
-    for (const rule of row.groups.group_permissions ?? []) {
-      if (rule.effect === 'DENY' || !inherited.has(rule.permission_id)) {
-        inherited.set(rule.permission_id, rule.effect as PermissionEffect)
-      }
-    }
-  }
 
   const modules = new Map<string, PermissionModuleTree>()
   let granted = 0
@@ -454,7 +456,7 @@ export async function getPermissionOverview(userId: string): Promise<PermissionO
       granted: isGranted,
       source,
       userEffect: individual.get(row.id) ?? null,
-      inheritedEffect: inherited.get(row.id) ?? null,
+      inheritedEffect: state?.inherited_effect ?? null,
     })
 
     moduleTree.total += 1
