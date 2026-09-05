@@ -372,12 +372,24 @@ export const NAVIGATION: NavEntry[] = [
       },
     ],
   },
+  /*
+   * Deux lectures ouvrent l'écran, et aucune n'implique l'autre.
+   *
+   * `settings.company.view` ouvre la fiche Entreprise (§30) ;
+   * `settings.numbering.view` ouvre les formats de référence (§15). Un compte
+   * chargé de la numérotation n'a aucune raison de lire les coordonnées
+   * bancaires d'ADIKOM, et réciproquement (DEC-024).
+   *
+   * Comme pour le calendrier (DEC-036 §d), l'entrée s'affiche dès qu'une seule
+   * est détenue, et la page n'ouvre que l'onglet correspondant.
+   */
   {
     label: 'Paramètres',
     href: '/parametres',
     icon: Settings,
     permission: PERMISSIONS.SETTINGS_COMPANY_VIEW,
-    status: 'planned',
+    alternatives: [PERMISSIONS.SETTINGS_NUMBERING_VIEW],
+    status: 'ready',
   },
 ]
 
