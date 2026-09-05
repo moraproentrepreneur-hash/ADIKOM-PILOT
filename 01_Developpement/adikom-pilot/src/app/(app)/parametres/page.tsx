@@ -55,17 +55,30 @@ export default async function SettingsPage(props: PageProps<'/parametres'>) {
   const canCompany = mayViewCompany || user.isSuperAdmin
   const canNumbering = mayViewNumbering || user.isSuperAdmin
 
-  // L'onglet par défaut est celui qu'on a le droit d'ouvrir.
-  const current =
-    asked === 'numerotation' && canNumbering
-      ? 'numerotation'
-      : canCompany
-        ? 'entreprise'
-        : 'numerotation'
+  /*
+   * L'ONGLET DEMANDÉ N'EST JAMAIS REMPLACÉ EN SILENCE.
+   *
+   * Le premier passage de la recette a montré le défaut : un compte doté de la
+   * seule lecture de la numérotation, demandant `?onglet=entreprise`, obtenait
+   * l'onglet Numérotation. La sécurité tenait — aucun champ de la fiche
+   * Entreprise n'était rendu — mais l'écran MENTAIT : rien ne disait qu'une
+   * autre section existait et qu'elle était fermée (DEC-017).
+   *
+   * L'onglet demandé est donc conservé, et le refus est nommé. Sans demande
+   * explicite, on ouvre le premier onglet lisible.
+   */
+  const requested = asked === 'entreprise' || asked === 'numerotation' ? asked : null
+  const current = requested ?? (canCompany ? 'entreprise' : 'numerotation')
 
+  // La barre d'onglets suit la même convention que la barre latérale : elle
+  // n'annonce pas ce qu'elle ne peut pas ouvrir (Module 08 §23).
   const tabs = [
-    { key: 'entreprise', label: 'Entreprise', href: '/parametres?onglet=entreprise' },
-    { key: 'numerotation', label: 'Numérotation', href: '/parametres?onglet=numerotation' },
+    ...(canCompany
+      ? [{ key: 'entreprise', label: 'Entreprise', href: '/parametres?onglet=entreprise' }]
+      : []),
+    ...(canNumbering
+      ? [{ key: 'numerotation', label: 'Numérotation', href: '/parametres?onglet=numerotation' }]
+      : []),
   ]
 
   return (

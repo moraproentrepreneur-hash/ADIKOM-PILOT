@@ -684,10 +684,19 @@ async function main() {
         format.error ? String(format.error.message).slice(0, 60) : ''
       )
 
-      // Le compteur, non — et c'est vrai même avec la capacité.
+      /*
+       * Le compteur, non — et c'est vrai même avec la capacité.
+       *
+       * LA VALEUR DOIT DIFFÉRER DE L'ACTUELLE. Le déclencheur compare
+       * `new.current_value is distinct from old.current_value` : réécrire la
+       * même valeur ne change rien, ne déclenche rien, et le contrôle aurait
+       * conclu « autorisé à tort » sur une écriture qui n'écrivait rien. Le
+       * premier passage de cette recette est tombé exactement là — la règle
+       * `transfer` porte un compteur à zéro, et le contrôle y écrivait zéro.
+       */
       const compteur = await numerotation
         .from('numbering_rules')
-        .update({ current_value: 0 }, { count: 'exact' })
+        .update({ current_value: ruleSnapshot.current_value + 1000 }, { count: 'exact' })
         .eq('entity_key', RULE)
       check(
         refused(compteur),
@@ -697,9 +706,23 @@ async function main() {
 
       const exercice = await numerotation
         .from('numbering_rules')
-        .update({ current_year: 1999 }, { count: 'exact' })
+        .update({ current_year: (ruleSnapshot.current_year ?? 0) + 1 }, { count: 'exact' })
         .eq('entity_key', RULE)
       check(refused(exercice), 'Ni l’exercice d’une numérotation', why(exercice))
+
+      // Et le compteur n'a effectivement pas bougé — un refus qui laisse la
+      // donnée modifiée n'est pas un refus.
+      const { data: apresRefus } = await admin
+        .from('numbering_rules')
+        .select('current_value, current_year')
+        .eq('entity_key', RULE)
+        .single()
+      check(
+        apresRefus?.current_value === ruleSnapshot.current_value &&
+          apresRefus?.current_year === ruleSnapshot.current_year,
+        'Le compteur et l’exercice sont restés intacts',
+        `${apresRefus?.current_value} · ${apresRefus?.current_year}`
+      )
 
       // Sans la capacité, rien.
       const sansDroit = await lecteur
@@ -888,7 +911,11 @@ async function main() {
     const leftovers = []
 
     if (snapshot) {
-      const { id: _ignored, ...columns } = snapshot
+      // La clé du singleton n'est pas restituée : elle ne bouge jamais, et le
+      // déclencheur la refuserait.
+      const columns = Object.fromEntries(
+        Object.entries(snapshot).filter(([column]) => column !== 'id')
+      )
       const { error } = await admin.from('company_settings').update(columns).eq('id', true)
       if (error) leftovers.push(`configuration non restituée : ${error.message}`)
       else {
@@ -906,12 +933,22 @@ async function main() {
     }
 
     if (ruleSnapshot) {
-      const { entity_key, current_value: _v, current_year: _y, ...format } = ruleSnapshot
+      // Seul le FORMAT est restitué. Le compteur ne se réécrit pas — ni ici,
+      // ni ailleurs (§16) —, et la recette n'a consommé aucun numéro.
+      const format = {
+        prefix: ruleSnapshot.prefix,
+        separator: ruleSnapshot.separator,
+        padding: ruleSnapshot.padding,
+        include_year: ruleSnapshot.include_year,
+        reset_yearly: ruleSnapshot.reset_yearly,
+      }
       const { error } = await admin
         .from('numbering_rules')
         .update(format)
-        .eq('entity_key', entity_key)
-      if (error) leftovers.push(`format ${entity_key} non restitué : ${error.message}`)
+        .eq('entity_key', ruleSnapshot.entity_key)
+      if (error) {
+        leftovers.push(`format ${ruleSnapshot.entity_key} non restitué : ${error.message}`)
+      }
     }
 
     for (const account of Object.values(accounts)) {
