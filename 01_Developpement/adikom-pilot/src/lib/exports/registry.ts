@@ -3,6 +3,7 @@ import 'server-only'
 import { PERMISSIONS, type PermissionCode } from '@/lib/auth/permissions'
 import { can } from '@/lib/auth/dal'
 import { dataset, toExcelDate, type ExportDataset } from './workbook'
+import { formatDateTime } from '@/lib/dates'
 
 import {
   listClients,
@@ -49,6 +50,14 @@ import {
   ENTRY_KIND_LABELS,
   ENTRY_STATUS_LABELS,
 } from '@/features/treasury/constants'
+import { EXPORT_LIMIT, listAuditEventsForExport } from '@/features/audit/data'
+import {
+  ACTION_LABELS as AUDIT_ACTION_LABELS,
+  RESULT_LABELS as AUDIT_RESULT_LABELS,
+  entityLabel as auditEntityLabel,
+  fieldLabel as auditFieldLabel,
+  moduleLabel as auditModuleLabel,
+} from '@/features/audit/constants'
 
 /**
  * Registre des exports.
@@ -628,6 +637,72 @@ export const EXPORTS: Record<string, ExportDefinition> = {
         mayReadClientPricing
           ? 'Tarifs standard et conditions préférentielles'
           : 'Tarifs standard'
+      )
+    },
+  },
+
+  /*
+   * JOURNAL D'ACTIVITÉ — Règles métier 06 (Audit) §64.
+   *
+   * L'export porte L'ÉVÉNEMENT, jamais la SITUATION AVANT / APRÈS.
+   *
+   * Ce n'est pas une facilité : un classeur circule, se transfère et se
+   * conserve hors du système, et la donnée métier d'un événement ne s'ouvre
+   * qu'à qui détient la lecture de l'objet concerné — objet par objet
+   * (DEC-038). Un fichier unique mêlant quarante-huit types d'objet ne saurait
+   * porter cet arbitrage : il l'annulerait.
+   *
+   * Ce qui sort est donc exactement ce que la LISTE montre, plus les champs
+   * modifiés — assez pour retracer qui a fait quoi, quand, sur quoi et avec
+   * quel résultat (§76), sans rien divulguer de plus que l'écran (§80).
+   */
+  journal: {
+    title: 'Journal d’activité',
+    viewPermission: PERMISSIONS.AUDIT_VIEW,
+    permission: PERMISSIONS.AUDIT_EXPORT,
+    entityType: 'audit_log',
+    moduleCode: 'users',
+    async build(filters) {
+      const { events, total, truncated } = await listAuditEventsForExport({
+        search: filters.q,
+        actorId: filters.auteur,
+        moduleCode: filters.module,
+        entityType: filters.objet,
+        action: filters.action,
+        result: filters.resultat,
+        from: filters.du,
+        to: filters.au,
+      })
+
+      return dataset(
+        events,
+        [
+          {
+            header: 'Date et heure',
+            width: 20,
+            // Texte plutôt que date Excel : l'heure est celle des Comores
+            // (DEC-025 §e), et un tableur la réinterpréterait sur le fuseau du
+            // poste qui l'ouvre.
+            value: (r) => formatDateTime(r.occurredAt),
+          },
+          { header: 'Auteur', width: 28, value: (r) => r.actorLabel },
+          { header: 'Action', width: 26, value: (r) => AUDIT_ACTION_LABELS[r.action] },
+          { header: 'Résultat', width: 12, value: (r) => AUDIT_RESULT_LABELS[r.result] },
+          { header: 'Module', width: 26, value: (r) => auditModuleLabel(r.moduleCode) },
+          { header: 'Type d’objet', width: 30, value: (r) => auditEntityLabel(r.entityType) },
+          { header: 'Objet', width: 34, value: (r) => r.entityLabel },
+          { header: 'Référence interne', width: 38, value: (r) => r.entityId },
+          {
+            header: 'Champs modifiés',
+            width: 44,
+            value: (r) => (r.changedFields ?? []).map(auditFieldLabel).join(', ') || null,
+          },
+          { header: 'Motif', width: 40, value: (r) => r.reason },
+          { header: 'Commentaire', width: 40, value: (r) => r.comment },
+        ],
+        truncated
+          ? `Les ${EXPORT_LIMIT.toLocaleString('fr-FR')} événements les plus récents sur ${total.toLocaleString('fr-FR')} — affinez les filtres pour couvrir le reste`
+          : 'Événements, sans la situation avant / après'
       )
     },
   },

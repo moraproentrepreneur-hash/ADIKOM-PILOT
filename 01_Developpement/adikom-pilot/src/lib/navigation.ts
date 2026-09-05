@@ -354,12 +354,21 @@ export const NAVIGATION: NavEntry[] = [
         permission: PERMISSIONS.HIERARCHY_VIEW,
         status: 'ready',
       },
+      /*
+       * Le journal porte SA capacité, et elle n'en implique aucune autre.
+       *
+       * `users.audit.view` ouvre l'ÉVÉNEMENT — qui, quoi, quand, sur quoi, avec
+       * quel résultat. Elle n'ouvre pas la donnée métier des autres modules :
+       * la situation avant / après reste derrière la lecture de l'objet
+       * concerné (DEC-038). Sans cette distinction, une seule capacité aurait
+       * rendu lisible tout le SaaS.
+       */
       {
         label: 'Journal d’activité',
         href: '/utilisateurs/journal',
         icon: History,
         permission: PERMISSIONS.AUDIT_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
     ],
   },
