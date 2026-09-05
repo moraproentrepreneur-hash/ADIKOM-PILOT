@@ -69,6 +69,10 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-033 | Centre de notifications — LOT 10 | Arbitrages et sécurité | Appliquée — **ouvre le module 2** | 2026-09-04 |
 | DEC-034 | Statistiques et rapports de facturation — LOT 11 | Arbitrages et sécurité | Appliquée — **achève la Phase 3** | 2026-09-04 |
 | DEC-035 | Projets & Tâches — LOT 12 | Arbitrages, capacités et sécurité | Appliquée — **ouvre la Phase 4** | 2026-09-04 |
+| DEC-036 | Calendrier, Réunions, Rendez-vous, Décisions, Actions — LOT 13 | Arbitrages, capacités et sécurité | Appliquée — **achève le Module 03** | 2026-09-05 |
+| DEC-037 | Groupes & Vue hiérarchique — LOT 14 | Arbitrages et sécurité | Appliquée | 2026-09-05 |
+| DEC-038 | Portée de la lecture du journal d'activité — LOT 15 | Ambiguïté tranchée et défaut de sécurité | Appliquée — **achève le Module 08** | 2026-09-05 |
+| DEC-039 | Paramètres — Entreprise & Numérotation — LOT 16 | Arbitrages et défauts de sécurité | Appliquée — **ouvre le Module 09** | 2026-09-05 |
 
 ---
 
@@ -3391,6 +3395,236 @@ droits d'une personne a le droit d'en connaître l'origine.**
 
 ---
 
+## DEC-038 — Portée de la lecture du journal d'activité (LOT 15)
+
+**Date :** 5 septembre 2026
+**Portée :** sécurité et confidentialité
+**Statut :** appliquée — **ambiguïté tranchée par les documents, sans arbitrage ADIKOM**
+
+### a. L'ambiguïté constatée
+
+`05_Regles_Metier/06_Audit.md` §41 énonce que « le Super Admin doit pouvoir
+consulter le journal d'audit » et que « selon les permissions définies par
+ADIKOM, certains responsables peuvent également disposer d'un **accès
+limité** ». La nature de cette limite n'est définie nulle part.
+
+Le catalogue ne porte qu'une seule capacité de lecture — `users.audit.view` —
+depuis la migration 007.
+
+### b. Ce que la question recouvrait réellement
+
+`audit_log.before_data` et `after_data` contiennent la **ligne entière** de la
+table auditée, redactée des seuls secrets techniques (mots de passe, jetons).
+Quarante-huit types d'objet y écrivent : l'email et le téléphone d'un
+collaborateur, le montant d'une facture, la coordonnée de règlement d'un
+fournisseur, le compte rendu d'une réunion, les permissions d'un utilisateur.
+
+Tant que `users.audit.view` ouvrait la table entière, elle ouvrait donc, d'un
+seul geste, **la donnée métier de tous les modules** — à un compte qui n'a le
+droit d'en lire aucun.
+
+### c. La décision
+
+```
+users.audit.view   ouvre L'ÉVÉNEMENT :
+                   qui · quoi · quand · sur quel objet · avec quel résultat
+                   · pour quel motif · et QUELS CHAMPS ont changé.
+
+Le DÉTAIL avant/après — la donnée métier elle-même — n'est rendu qu'à qui
+détient EN PLUS la lecture de l'objet concerné, ou au Super Admin.
+```
+
+`users.audit.export` suit la même logique : l'export porte l'événement, jamais
+la situation avant/après. Un classeur circule, se transfère et se conserve hors
+du système ; il ne saurait porter un arbitrage qui se fait objet par objet.
+
+### d. Pourquoi cette lecture, et pas une autre
+
+Elle n'est pas un choix parmi d'autres : c'est la seule compatible avec trois
+règles du socle, qu'aucun arbitrage d'ADIKOM ne peut assouplir.
+
+| Règle | Ce qu'elle impose |
+|---|---|
+| `06_Audit.md` §62 | « Les utilisateurs ne doivent pas pouvoir consulter **librement** les informations d'audit qui dépassent leurs responsabilités. » |
+| `06_Audit.md` §51 | L'audit dit ce que l'utilisateur **a fait** ; il ne décide jamais de ce qu'il **a le droit de voir**. Les deux mécanismes restent distincts. |
+| `Module 08` §46 | « Un utilisateur disposant uniquement d'un accès aux réservations ne doit pas pouvoir récupérer les données financières d'une facture simplement en modifiant une URL ou une requête. » |
+
+Elle satisfait par ailleurs §41 mot pour mot : le Super Admin voit tout, un
+responsable dispose d'un accès **limité** — limité à ce que ses propres
+capacités ouvrent déjà.
+
+Elle ne retire rien au contrôle interne : vérifier une séparation des
+responsabilités (§53) suppose de savoir **qui** a validé et **qui** a payé, non
+de lire les montants.
+
+**Aucune capacité n'est créée.** Le catalogue reste à 170 : la lecture du détail
+emprunte celle de l'objet, et une capacité `users.audit.detail.view` aurait été
+une capacité transversale à toutes les données du SaaS — exactement ce que
+DEC-024 interdit de créer d'office.
+
+### e. Comment elle est tenue
+
+Deux barrières, comme partout (DEC-011) :
+
+1. **Droits de colonne.** `authenticated` perd le `SELECT` de table sur
+   `audit_log` et le reçoit colonne par colonne, `before_data` et `after_data`
+   exclues. RLS ne filtre que des **lignes** ; seul le droit de colonne referme
+   cette porte, y compris pour un appel direct à l'API.
+2. **Une fonction qui arbitre.** `audit_entry_detail()` est le seul chemin vers
+   ces deux colonnes. Elle exige `users.audit.view`, puis la lecture de l'objet,
+   et **nomme la capacité manquante** plutôt que de rendre un détail vide qui se
+   lirait « rien n'a changé » (DEC-017).
+
+La correspondance objet → capacité vit **en base**
+(`audit_detail_permission`), et non dans l'application : une règle de sécurité
+écrite en TypeScript ne protège rien d'un appel direct. Un type d'objet non
+cartographié renvoie `NULL`, c'est-à-dire « Super Admin uniquement » : un oubli
+referme, il n'ouvre pas.
+
+### f. Défaut de performance découvert au passage
+
+Le plan d'exécution, relevé sous le rôle `authenticated` avec une session
+réelle, montrait `has_permission('users.audit.view', …)` dans le **filtre de
+ligne** de `audit_log` : 47 433 appels pour une seule recherche, 2 405 ms. Deux
+requêtes composant un écran, le délai maximal d'une requête était dépassé et
+l'écran affichait une panne là où il n'y avait qu'une recherche infructueuse.
+
+La condition est désormais enveloppée dans un sous-select : PostgreSQL
+l'évalue **une fois**, avant le parcours. 249 ms. La règle d'accès est
+identique ; seul le nombre d'appels change.
+
+> **Point signalé, non corrigé ailleurs.** Toutes les policies du SaaS écrivent
+> `has_permission(...)` de la même façon. C'est sans conséquence tant que la
+> table est petite ; `audit_log` est la seule dont le volume dépend de la
+> **durée** d'exploitation plutôt que de l'activité d'ADIKOM.
+
+### g. Enseignement
+
+Quatre index de trigramme avaient été ajoutés pour accélérer la recherche
+(migration 065), puis **retirés** (067) : une condition de RLS est une
+« security qual » évaluée avant toute condition non `leakproof`, et `ILIKE`
+n'en est pas — le planificateur ne peut donc jamais choisir un parcours par
+index pour cette recherche. Ils auraient alourdi l'écriture de la table la plus
+écrite du SaaS sans jamais servir une lecture.
+
+*Un index se justifie par un plan d'exécution mesuré, jamais par la forme de la
+requête.*
+
+---
+
+## DEC-039 — Paramètres : Entreprise & Numérotation (LOT 16)
+
+**Date :** 5 septembre 2026
+**Portée :** sécurité, cohérence financière et méthode
+**Statut :** appliquée — **ouvre le Module 09**
+
+### a. Une seule ligne, huit sections, quatre capacités
+
+`company_settings` est un **singleton** : toute la configuration d'ADIKOM tient
+sur une ligne. Or RLS est ROW-level.
+
+Une policy exigeant `settings.company.update` autorisait donc, du même geste, la
+modification du registre de commerce (§34) et des coordonnées bancaires (§37) —
+alors que le catalogue leur donne depuis toujours leurs propres capacités. Le
+même défaut valait en **lecture** : `settings.company.view` rendait la ligne
+entière, colonnes sensibles comprises, ce que §42 interdit mot pour mot.
+
+C'est la **troisième occurrence du même piège** dans ce projet, après les coûts
+de maintenance (migration 041, résolue par des tables séparées) et l'activation
+d'un groupe (migration 060, résolue par un déclencheur). Les colonnes ne pouvant
+pas déménager, la réponse est celle du journal d'activité : **droits de colonne**
+en lecture, **déclencheur** en écriture, et policy élargie aux quatre capacités
+selon la répartition de DEC-035 §b.
+
+```
+La POLICY dit qui peut écrire dans la table.
+Le DÉCLENCHEUR dit qui peut accomplir CET acte-là.
+```
+
+Sans l'élargissement, un compte doté de la seule capacité bancaire se serait vu
+refuser l'écriture **avant** d'atteindre le déclencheur — le défaut exact que la
+migration 061 avait corrigé pour les groupes.
+
+**Aucune capacité n'est créée.** Les neuf `settings.*` existent depuis la
+migration 007 ; le catalogue reste à 170.
+
+### b. Un compteur ne se règle pas à la main
+
+`Module 09` §16 exige que le système empêche « doublons, collisions,
+réutilisation accidentelle ». `numbering_rules.current_value` porte le dernier
+numéro émis : un compte doté de `settings.numbering.update` pouvait le ramener
+en arrière, et la facture suivante aurait repris un numéro déjà utilisé — sans
+qu'aucune erreur ne le signale.
+
+Le compteur n'appartient désormais qu'à `next_number`, qui lève un drapeau
+**local à sa transaction** avant d'écrire. La règle ne connaît aucune exception :
+ni pour un détenteur de la capacité, ni pour le rôle de service — un numéro
+réémis l'est pour tout le monde.
+
+L'écran n'en propose donc aucun champ, et le dit.
+
+### c. L'année d'un numéro est celle d'ADIKOM
+
+`next_number` lisait l'année sur **UTC**. Les Comores étant à UTC+3, le 1er
+janvier commence à Moroni trois heures avant qu'UTC ne change d'année : une
+facture émise le 1er janvier entre 00 h 00 et 03 h 00 aurait porté l'année
+**précédente**, et le compteur ne se serait pas remis à zéro.
+
+L'exercice se lit désormais sur `Indian/Comoro` (DEC-025 §e), conformément à
+§17.
+
+### d. Le logo est enregistré, il n'est pas encore employé par les documents
+
+`Module 09` §39 demande import, remplacement, aperçu et retrait. Le lot les
+livre, dans un bucket **privé** dont le contenu n'est atteignable que par une URL
+signée de courte durée.
+
+Les documents générés continuent d'employer le **fichier officiel embarqué**, et
+ce n'est pas un manque : §6 le prévoit explicitement — le logo « doit pouvoir
+être utilisé dans les documents **lorsque cette fonctionnalité sera
+développée** ». Le moteur documentaire lit par ailleurs ses ressources sur
+disque, délibérément, afin qu'un PDF ne dépende d'aucun service extérieur au
+moment où un utilisateur clique.
+
+**Le fichier est stocké tel quel** : ni redimensionné, ni recadré, ni recomposé.
+L'aperçu conserve ses proportions sur fond blanc, le conteneur s'adapte au logo
+et jamais l'inverse (CLAUDE.md §33 et §34).
+
+*Voir l'arbitrage ouvert n° 27.*
+
+### e. Changer la devise se confirme, côté serveur
+
+§45 et §57 exigent un avertissement explicite avant modification de la devise
+principale. L'afficher ne suffit pas : un formulaire renvoyé sans la
+confirmation — par un appel direct, ou par un navigateur qui n'aurait pas rendu
+la case — passerait outre. **La confirmation est exigée par l'action serveur.**
+
+L'avertissement n'apparaît que lorsque la valeur change réellement : le montrer
+en permanence l'aurait rendu invisible à force d'être là.
+
+### f. Ce que le lot ne fait pas, et pourquoi
+
+| Non livré | Pourquoi |
+|---|---|
+| **Snapshot de l'identité sur les documents émis** (§46, §47) | Les documents lisent aujourd'hui la configuration **vivante**. Figer l'identité au moment de l'émission suppose de décider **quels** champs sont figés et **sur quels documents** — voir l'arbitrage ouvert n° 26. |
+| **Paramètres de notification** (§27) | §27 les range parmi les évolutions possibles, et les délais de rappel relèvent de l'arbitrage ouvert n° 16. |
+| **Séries de références** (DEC-023 §3) | Implémentation explicitement reportée ; aucun document commercial n'en dépend encore. |
+| **Configuration initiale guidée** (§48) | La ligne de paramètres existe et est renseignée depuis la migration 027 ; un assistant de première installation n'a pas d'usage sur une instance en service. |
+| **Multi-devises, multi-sites, modèles de documents** (§53) | §53 les range explicitement hors MVP. |
+
+### g. TRUNCATE retiré sur les deux tables
+
+`TRUNCATE` ne déclenche **aucun trigger de ligne** : le garde-fou
+`company_settings_no_delete` de la migration 005 ne l'aurait pas vu passer. Le
+droit était un accord par défaut, sans usage. Il est retiré sur
+`company_settings` et `numbering_rules` (§44 — « empêcher la suppression
+accidentelle de paramètres essentiels »).
+
+*Le point vaut pour toutes les tables du SaaS ; il n'est corrigé ici que sur
+celles que le lot touche.*
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -3420,6 +3654,10 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 23. **DEC-037 §e** — L'organigramme doit-il pouvoir montrer les **comptes non actifs** ? Il porte aujourd'hui les seuls comptes ACTIFS, et **annonce** combien sont écartés : §35 demande de représenter « la structure interne d'ADIKOM », et une structure peuplée de personnes parties n'en est pas une. Si ADIKOM souhaite néanmoins consulter l'organisation telle qu'elle était — un employé suspendu quelques semaines, par exemple —, cela suppose de décider **quels** statuts figurent au dessin, et **comment** ils s'y distinguent d'un collaborateur en poste. C'est une décision d'organisation, ici **signalée et non appliquée**.
 24. **DEC-037 §a** — L'organigramme et la liste des groupes doivent-ils pouvoir être **exportés, téléchargés ou imprimés** ? Le lot ne produit aucun document, et le catalogue ne porte aucune capacité qui couvrirait ces actes pour le `Module 08`. Les livrer supposerait de créer `users.hierarchy.export` / `.download` / `.print` et leurs équivalents groupes — décision de capacité, à ne pas déduire de `.view` (**DEC-024**). *Se rattache à l'arbitrage 15 (**DEC-034 §h**), qui pose la même question pour les rapports de facturation.*
 25. **DEC-037 §h** — Un groupe doit-il pouvoir être **dupliqué** pour servir de point de départ à un autre ? La création part aujourd'hui d'un groupe vide, et l'administrateur recoche ce qu'il veut. Dupliquer suppose de décider si les **membres** suivent ou non, et sous quelle capacité l'acte se range — créer, ou une capacité propre. Aucun document ne l'énonce ; la question naît de l'usage.
+26. **DEC-039 §f** — Les documents émis doivent-ils **figer l'identité d'ADIKOM au moment de leur émission** (`Module 09` §46, §47) ? Une facture lit aujourd'hui la configuration **vivante** : si ADIKOM déménage, une facture de l'an dernier réimprimée portera la nouvelle adresse. §47 demande que « la facture historique conserve l'adresse applicable au moment de son émission **lorsque cette information fait partie du document ou de son historique** » — la réserve étant précisément ce qui reste à trancher. Décider suppose d'arrêter **quels** champs sont figés (raison sociale, adresse, mentions légales, coordonnées bancaires ?), **sur quels documents** (facture émise ? contrat de location ? devis ?), et **à quel moment** (à l'émission, à la validation ?). C'est une décision comptable autant que technique. *Se rattache à **DEC-023 §4**, la convention de référence des factures restant elle aussi à valider.*
+27. **DEC-039 §d** — Les documents générés doivent-ils employer le **logo téléversé** plutôt que le fichier officiel embarqué ? Le lot enregistre le logo (§39) et l'affiche en aperçu ; les factures et contrats continuent d'employer le fichier embarqué, comme §6 le prévoit. Basculer suppose d'accepter qu'un PDF dépende du stockage au moment où l'utilisateur clique — le moteur documentaire l'évite délibérément —, et de décider ce qu'il advient si le fichier est absent ou illisible : un document sans logo, ou un document refusé ? *La règle absolue n° 13 (CLAUDE.md §33) reste entière dans tous les cas : le fichier n'est jamais transformé.*
+28. **DEC-039 §f** — Le module Paramètres doit-il porter les **réglages de notification** (`Module 09` §27) — activation d'une famille d'alerte, seuils, préférences ? La question rejoint l'arbitrage n° 16 (délais de rappel configurables) et suppose de décider ce qui relève de la configuration générale et ce qui reste défini dans le module concerné, comme §27 le rappelle lui-même.
+29. **DEC-039 §g — défaut signalé** — Le droit `TRUNCATE` est accordé par défaut au rôle `authenticated` sur **toutes** les tables du SaaS. `TRUNCATE` ne déclenche aucun trigger de ligne : il contournerait les protections de suppression posées sur les tables métier. Le droit n'est atteignable par aucun chemin applicatif — PostgREST ne l'expose pas —, mais il n'a aucun usage et devrait être retiré partout. Il l'a été sur `company_settings` et `numbering_rules`. À faire table par table, plutôt qu'en une passe aveugle.
 
 ---
 

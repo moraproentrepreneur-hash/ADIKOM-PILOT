@@ -240,6 +240,30 @@ async function main() {
     if (snapError || !original) {
       throw new Error(`empreinte de la configuration : ${snapError?.message ?? 'introuvable'}`)
     }
+    /*
+     * UNE EMPREINTE PRISE SUR UNE DONNÉE DÉJÀ MARQUÉE PERPÉTUE LA MARQUE.
+     *
+     * Ce contrôle vient d'un incident réel. Un passage de cette recette a été
+     * interrompu — sa sortie était redirigée vers `head`, qui referme le tuyau
+     * et tue le processus avant son `finally`. La configuration est restée
+     * marquée. Le passage SUIVANT en a pris l'empreinte, l'a fidèlement
+     * restituée, et a conclu « restituée à l'identique » : la recette avait
+     * raison sur elle-même et tort sur la réalité.
+     *
+     * La recette refuse donc de démarrer sur une configuration déjà marquée.
+     * Il n'existe qu'une ligne de paramètres, et c'est celle d'ADIKOM.
+     */
+    const marque = Object.entries(original).find(
+      ([, value]) => typeof value === 'string' && value.includes('RECETTE PARAM')
+    )
+    if (marque) {
+      throw new Error(
+        `la configuration porte encore la marque d'une recette précédente ` +
+          `(${marque[0]} = « ${marque[1]} »). Restituez la valeur d'origine — ` +
+          `le journal d'activité la conserve — avant de relancer.`
+      )
+    }
+
     snapshot = original
     console.log(`  ${DIM}empreinte de la configuration prise (${Object.keys(original).length} colonnes)${RESET}`)
 
