@@ -663,7 +663,7 @@ export const EXPORTS: Record<string, ExportDefinition> = {
     entityType: 'audit_log',
     moduleCode: 'users',
     async build(filters) {
-      const { events, total, truncated } = await listAuditEventsForExport({
+      const { events, truncated } = await listAuditEventsForExport({
         search: filters.q,
         actorId: filters.auteur,
         moduleCode: filters.module,
@@ -701,7 +701,7 @@ export const EXPORTS: Record<string, ExportDefinition> = {
           { header: 'Commentaire', width: 40, value: (r) => r.comment },
         ],
         truncated
-          ? `Les ${EXPORT_LIMIT.toLocaleString('fr-FR')} événements les plus récents sur ${total.toLocaleString('fr-FR')} — affinez les filtres pour couvrir le reste`
+          ? `Les ${EXPORT_LIMIT.toLocaleString('fr-FR')} événements les plus récents — affinez les filtres pour couvrir le reste`
           : 'Événements, sans la situation avant / après'
       )
     },

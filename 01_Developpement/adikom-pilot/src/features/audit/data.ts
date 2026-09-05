@@ -148,45 +148,102 @@ export type AuditPage = {
  * veille : la journée demandée n'aurait ni le bon début ni la bonne fin
  * (DEC-025 §e).
  */
-export async function listAuditEvents(
-  filters: AuditFilters,
-  page = 1,
-  pageSize = PAGE_SIZE
-): Promise<AuditPage> {
-  const supabase = await createSupabaseServerClient()
-
-  let query = supabase.from('audit_log').select(SELECT, { count: 'exact' })
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * Applique les filtres à une requête, quelle qu'elle soit.
+ *
+ * Le décompte et la page interrogent la MÊME sélection : les écrire deux fois
+ * garantirait qu'elles divergent un jour, et une page 4 sur un total calculé
+ * autrement afficherait des lignes sans rapport avec le nombre annoncé.
+ */
+function applyFilters<T>(query: T, filters: AuditFilters): T {
+  let q = query as any
 
   const search = filters.search ? sanitizeSearch(filters.search) : ''
   if (search) {
-    // Objet (§47) et référence (§48) : le libellé figé, l'identifiant de la
-    // ligne concernée, et le motif — les trois façons de retrouver un fait.
-    query = query.or(
+    // Objet (§47), référence (§48) et motif : les façons de retrouver un fait.
+    q = q.or(
       `entity_label.ilike.%${search}%,entity_id.ilike.%${search}%,reason.ilike.%${search}%,comment.ilike.%${search}%`
     )
   }
 
-  if (filters.actorId) query = query.eq('actor_id', filters.actorId)
-  if (filters.moduleCode) query = query.eq('module_code', filters.moduleCode)
-  if (filters.entityType) query = query.eq('entity_type', filters.entityType)
-  if (filters.action) query = query.eq('action', filters.action)
-  if (filters.result) query = query.eq('result', filters.result)
+  if (filters.actorId) q = q.eq('actor_id', filters.actorId)
+  if (filters.moduleCode) q = q.eq('module_code', filters.moduleCode)
+  if (filters.entityType) q = q.eq('entity_type', filters.entityType)
+  if (filters.action) q = q.eq('action', filters.action)
+  if (filters.result) q = q.eq('result', filters.result)
 
   const from = filters.from ? fromLocalInput(`${filters.from}T00:00`) : null
-  if (from) query = query.gte('occurred_at', from)
+  if (from) q = q.gte('occurred_at', from)
 
   // Borne haute EXCLUSIVE au lendemain minuit : `<= 23:59` perdrait la dernière
   // minute de la journée, et un événement peut s'y produire.
   const to = filters.to ? fromLocalInput(`${nextDay(filters.to)}T00:00`) : null
-  if (to) query = query.lt('occurred_at', to)
+  if (to) q = q.lt('occurred_at', to)
 
-  const current = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1
-  const offset = (current - 1) * pageSize
+  return q as T
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
-  const { data, error, count } = await query
-    .order('occurred_at', { ascending: false })
-    .order('id', { ascending: false })
-    .range(offset, offset + pageSize - 1)
+/** Ordre de lecture : le plus récent d'abord, départage par identifiant. */
+type Sortable = {
+  order: (
+    column: string,
+    options: { ascending: boolean }
+  ) => Sortable
+}
+
+function newestFirst<T extends Sortable>(query: T): T {
+  return query.order('occurred_at', { ascending: false }).order('id', { ascending: false }) as T
+}
+
+export async function listAuditEvents(
+  filters: AuditFilters,
+  page = 1
+): Promise<AuditPage> {
+  const supabase = await createSupabaseServerClient()
+
+  /*
+   * COMBIEN, PUIS LESQUELS — deux requêtes, et ce n'est pas un gaspillage.
+   *
+   * Le défaut que cet ordre ferme : PostgREST refuse une plage dont le début
+   * dépasse le nombre de lignes (PGRST103, « Requested range not satisfiable »).
+   * Une page tapée à la main dans l'URL — `?page=999999` — ne rendait donc pas
+   * une liste vide mais une ERREUR, et l'écran affichait une panne là où il n'y
+   * avait qu'une page inexistante (DEC-017 : les deux ne se confondent pas).
+   *
+   * Connaître le total d'abord permet de RAMENER la page dans ses bornes, ce
+   * qu'une seule requête ne permet pas : le total n'arrive qu'avec les lignes.
+   */
+  const { count, error: countError } = await applyFilters(
+    supabase.from('audit_log').select('id', { count: 'exact', head: true }),
+    filters
+  )
+
+  if (countError) {
+    reportQueryFailure(
+      'journal d’activité',
+      countError,
+      'Le journal d’activité n’a pas pu être chargé.'
+    )
+  }
+
+  const total = count ?? 0
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  const asked = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1
+  const current = Math.min(asked, pageCount)
+
+  // Rien à lire : inutile de demander une plage dans le vide.
+  if (total === 0) {
+    return { events: [], total: 0, page: 1, pageCount: 1 }
+  }
+
+  const offset = (current - 1) * PAGE_SIZE
+
+  const { data, error } = await newestFirst(
+    applyFilters(supabase.from('audit_log').select(SELECT), filters)
+  ).range(offset, offset + PAGE_SIZE - 1)
 
   if (error) {
     reportQueryFailure(
@@ -196,13 +253,11 @@ export async function listAuditEvents(
     )
   }
 
-  const total = count ?? 0
-
   return {
     events: ((data ?? []) as unknown as RawEvent[]).map(toEvent),
     total,
     page: current,
-    pageCount: Math.max(1, Math.ceil(total / pageSize)),
+    pageCount,
   }
 }
 
@@ -217,29 +272,59 @@ export async function listAuditEvents(
  */
 export const EXPORT_LIMIT = 5000
 
-/** Taille des tranches d'un export — sous la fenêtre par défaut de PostgREST. */
+/**
+ * Taille d'une tranche d'export.
+ *
+ * PostgREST plafonne toute réponse à 1 000 lignes, silencieusement : une
+ * requête `limit(5000)` en rend mille et n'annonce rien. L'export lit donc par
+ * tranches de mille et s'arrête de lui-même — une tranche incomplète signifie
+ * qu'il n'y a plus rien à lire.
+ */
 const EXPORT_CHUNK = 1000
 
-/** Les événements d'un export, dans l'ordre de l'écran, plafonnés. */
+/**
+ * Les événements d'un export, dans l'ordre de l'écran, plafonnés.
+ *
+ * AUCUN DÉCOMPTE ICI, délibérément. Chaque `count: 'exact'` balaie la table
+ * entière ; en réclamer un par tranche multipliait le travail par deux pour
+ * afficher un nombre dont le classeur n'a pas besoin. La troncature se déduit
+ * de ce qui a été lu : cinq tranches pleines veulent dire qu'il en reste.
+ */
 export async function listAuditEventsForExport(
   filters: AuditFilters
-): Promise<{ events: AuditEvent[]; total: number; truncated: boolean }> {
+): Promise<{ events: AuditEvent[]; truncated: boolean }> {
+  const supabase = await createSupabaseServerClient()
   const collected: AuditEvent[] = []
-  let total = 0
 
   const maxChunks = Math.ceil(EXPORT_LIMIT / EXPORT_CHUNK)
+  let truncated = false
 
-  for (let chunk = 1; chunk <= maxChunks; chunk += 1) {
-    const result = await listAuditEvents(filters, chunk, EXPORT_CHUNK)
-    total = result.total
+  for (let chunk = 0; chunk < maxChunks; chunk += 1) {
+    const offset = chunk * EXPORT_CHUNK
 
-    collected.push(...result.events)
+    const { data, error } = await newestFirst(
+      applyFilters(supabase.from('audit_log').select(SELECT), filters)
+    ).range(offset, offset + EXPORT_CHUNK - 1)
 
-    if (result.events.length < EXPORT_CHUNK || chunk >= result.pageCount) break
+    if (error) {
+      // Une plage vide n'est pas une panne : PostgREST refuse la plage plutôt
+      // que de rendre zéro ligne quand le total est déjà dépassé.
+      if (error.code === 'PGRST103') break
+      reportQueryFailure(
+        'export du journal d’activité',
+        error,
+        'L’export du journal n’a pas pu être produit.'
+      )
+    }
+
+    const rows = (data ?? []) as unknown as RawEvent[]
+    collected.push(...rows.map(toEvent))
+
+    if (rows.length < EXPORT_CHUNK) break
+    if (chunk === maxChunks - 1) truncated = true
   }
 
-  const events = collected.slice(0, EXPORT_LIMIT)
-  return { events, total, truncated: total > events.length }
+  return { events: collected.slice(0, EXPORT_LIMIT), truncated }
 }
 
 /** Un événement précis, sans son détail avant/après. */

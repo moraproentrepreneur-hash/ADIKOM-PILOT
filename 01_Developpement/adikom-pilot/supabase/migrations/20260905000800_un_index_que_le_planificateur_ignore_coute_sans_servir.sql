@@ -1,0 +1,68 @@
+-- =============================================================================
+-- ADIKOM PILOT — 067 · Retrait des index de trigramme du journal
+-- Phase 4 — Organisation, LOT 15
+--
+-- CETTE MIGRATION DÉFAIT LA 065, ET C'EST DÉLIBÉRÉ.
+--
+-- La 065 avait ajouté quatre index GIN de trigramme pour servir la recherche du
+-- journal (`ilike '%terme%'` sur quatre colonnes). La mesure, faite après coup
+-- sous le rôle `authenticated` avec une session réelle, montre qu'ils ne sont
+-- JAMAIS employés :
+--
+--   Seq Scan on audit_log  (cost=0.00..4368.66)
+--     Filter: ((InitPlan 1).col1 AND (entity_label ~~* … OR …))
+--     Execution Time: 249 ms
+--
+-- Le même plan, RLS désactivée, choisit bien les index — pour un coût cent fois
+-- moindre (154 contre 4 368). La différence n'est pas une affaire de
+-- statistiques : elle est structurelle.
+--
+-- POURQUOI L'INDEX NE PEUT PAS ÊTRE UTILISÉ ICI
+--
+-- Une condition de RLS est une « security qual » : PostgreSQL doit l'évaluer
+-- AVANT toute condition ordinaire, sans quoi une fonction bavarde pourrait
+-- révéler par un message d'erreur le contenu d'une ligne qu'elle n'a pas le
+-- droit de lire. Seules les conditions déclarées `leakproof` échappent à cet
+-- ordre — et `ILIKE` n'en est pas.
+--
+-- Un parcours par index appliquerait le `ILIKE` en premier. Le planificateur
+-- s'y refuse donc, quelles que soient les statistiques et quels que soient les
+-- index disponibles. **Ces quatre index ne peuvent pas servir la recherche du
+-- journal telle que l'application la pose.**
+--
+-- CE QU'ILS COÛTAIENT, EN REVANCHE
+--
+-- `audit_log` est la table la plus écrite du SaaS : chaque création, chaque
+-- modification, chaque validation, chaque connexion y insère une ligne. Quatre
+-- index GIN — 9 Mo — auraient alourdi CETTE écriture-là, celle qui se trouve
+-- sur le chemin de toutes les opérations métier, pour une lecture qui ne les
+-- emploie jamais.
+--
+-- CE QUI RÉSOUT RÉELLEMENT LE PROBLÈME
+--
+-- La migration 066 : la garde de la policy passe de 47 433 évaluations à une
+-- seule. La recherche tombe de 2 405 ms à 249 ms — sans aucun index.
+--
+-- LIMITE CONNUE, ASSUMÉE
+--
+-- La recherche reste un parcours complet, donc proportionnelle au volume du
+-- journal : environ 250 ms pour 47 000 événements, et de l'ordre de 2,5 s pour
+-- 500 000. Le jour où ce seuil approchera, la réponse ne sera pas un index —
+-- il resterait inutilisable — mais une fonction de recherche en SECURITY
+-- DEFINER, vérifiant `users.audit.view` une fois puis interrogeant la table
+-- sans RLS, sur le modèle d'`audit_entry_detail`. Elle n'est pas écrite
+-- aujourd'hui : le besoin n'existe pas encore (CLAUDE.md §29 et §60).
+--
+-- ENSEIGNEMENT
+--
+-- Un index se justifie par un plan d'exécution mesuré, jamais par la forme de
+-- la requête. Celui-ci paraissait évident et ne servait à rien.
+-- =============================================================================
+
+drop index if exists public.audit_log_entity_label_trgm_idx;
+drop index if exists public.audit_log_entity_id_trgm_idx;
+drop index if exists public.audit_log_reason_trgm_idx;
+drop index if exists public.audit_log_comment_trgm_idx;
+
+-- `pg_trgm` reste installée : l'extension elle-même ne coûte rien, et la
+-- désinstaller n'apporterait qu'un risque si une autre migration s'y appuyait.

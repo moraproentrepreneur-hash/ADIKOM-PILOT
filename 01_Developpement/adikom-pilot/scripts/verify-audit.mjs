@@ -337,12 +337,26 @@ async function main() {
       check(premiere !== seconde, 'Elle montre d’autres événements que la première')
       check(seconde.includes('Précédent') && seconde.includes('Suivant'), 'Les deux sens sont offerts')
 
-      // Une page hors bornes ne doit pas casser l'écran : elle se vide et le dit.
+      /*
+       * UNE PAGE HORS BORNES N'EST PAS UNE PANNE.
+       *
+       * Le défaut que ce contrôle a révélé : PostgREST refuse une plage dont le
+       * début dépasse le nombre de lignes (PGRST103). Une page tapée à la main
+       * dans l'URL rendait donc « Cette page n'a pas pu être affichée » — une
+       * panne annoncée là où il n'y avait qu'une page inexistante. La lecture
+       * ramène désormais la page dans ses bornes.
+       */
       await page.goto(`${base}/utilisateurs/journal?page=999999`, { waitUntil: 'load' })
       const horsBornes = await mainText(page)
       check(
-        horsBornes.includes('Aucun événement') || horsBornes.includes('page 999999'),
-        'Une page hors bornes reste un écran lisible'
+        !horsBornes.includes('n’a pas pu être affichée'),
+        'Une page hors bornes n’affiche pas une panne'
+      )
+      const bornes = /page (\d+) sur (\d+)/.exec(horsBornes)
+      check(
+        Boolean(bornes) && bornes[1] === bornes[2],
+        'Elle est ramenée à la dernière page existante',
+        bornes ? `page ${bornes[1]} sur ${bornes[2]}` : 'aucune pagination affichée'
       )
 
       await context.close()
@@ -703,7 +717,23 @@ async function main() {
       await refusEcran('exportateur_seul', 'Exporter sans pouvoir consulter ne produit rien')
 
       const { context, page } = await signIn(browser, base, accounts.journal_export)
-      const reponse = await page.request.get(route)
+
+      /*
+       * Délai allongé, délibérément.
+       *
+       * Un export du journal lit jusqu'à cinq mille événements et compose un
+       * classeur : quelques secondes sont NORMALES. Le délai par défaut du
+       * navigateur — trente secondes — ferait échouer la recette pour une
+       * lenteur attendue, et non pour un défaut. Ce qu'on éprouve ici, c'est
+       * que l'export ABOUTIT, pas qu'il est instantané.
+       */
+      const debutExport = Date.now()
+      const reponse = await page.request.get(route, { timeout: 120000 })
+      check(
+        Date.now() - debutExport < 60000,
+        'L’export aboutit dans un délai exploitable',
+        `${Math.round((Date.now() - debutExport) / 100) / 10} s`
+      )
       check(reponse.status() === 200, 'Avec les deux capacités, l’export est produit',
         `HTTP ${reponse.status()}`)
       check(

@@ -301,6 +301,60 @@ begin
 end $$;
 
 
+-- --- 6 bis. LA GARDE S'ÉVALUE UNE FOIS, PAS PAR LIGNE (migration 066) --------
+--
+-- NON-RÉGRESSION D'UNE CORRECTION MESURÉE.
+--
+-- Écrite `using (has_permission(...))`, la garde figure dans le filtre de LIGNE
+-- et s'exécute une fois par ligne examinée : 47 433 appels pour une seule
+-- recherche, 2 405 ms, au-delà du délai maximal d'une requête. Enveloppée dans
+-- un sous-select, elle devient un InitPlan évalué une seule fois — 249 ms.
+--
+-- La règle d'accès est identique ; seul le nombre d'appels change. Réécrire un
+-- jour la policy sans le sous-select ramènerait la panne, et sur un journal
+-- plus volumineux encore.
+do $$
+declare
+  v_qual text;
+begin
+  select qual into v_qual
+  from pg_policies
+  where schemaname = 'public' and tablename = 'audit_log' and policyname = 'audit_log_select';
+
+  if v_qual is null or v_qual !~* 'select' then
+    raise exception 'La garde du journal est revenue à une évaluation par ligne : %', v_qual;
+  end if;
+
+  raise notice '[OK] 6 bis. La garde du journal s''évalue une fois par requête.';
+end $$;
+
+
+-- --- 6 ter. AUCUN INDEX INUTILISABLE SUR LA TABLE LA PLUS ÉCRITE -------------
+--
+-- Les index de trigramme de la migration 065 ont été retirés par la 067 : une
+-- condition de RLS est une « security qual » évaluée avant toute condition
+-- ordinaire non `leakproof`, et `ILIKE` n'en est pas — le planificateur ne peut
+-- donc jamais choisir un parcours par index pour cette recherche.
+--
+-- `audit_log` reçoit une ligne à chaque opération du SaaS : un index qui ne
+-- sert aucune lecture y ralentit toutes les écritures.
+do $$
+declare
+  v_dead text;
+begin
+  select string_agg(indexname, ', ')
+    into v_dead
+  from pg_indexes
+  where schemaname = 'public' and tablename = 'audit_log' and indexdef ilike '%gin_trgm_ops%';
+
+  if v_dead is not null then
+    raise exception 'Index inutilisables sur le journal : %', v_dead;
+  end if;
+
+  raise notice '[OK] 6 ter. Aucun index de trigramme ne pèse sur l''écriture du journal.';
+end $$;
+
+
 -- --- 7. LES TROIS FONCTIONS SONT CE QU'ELLES DOIVENT ÊTRE --------------------
 --
 -- `audit_entry_detail` DOIT être SECURITY DEFINER : elle lit deux colonnes que
