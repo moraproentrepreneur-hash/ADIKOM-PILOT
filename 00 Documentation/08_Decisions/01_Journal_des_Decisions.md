@@ -3150,6 +3150,247 @@ de bornes vertes serait plus risqué que le défaut lui-même.
 
 ---
 
+## DEC-037 — Groupes & Vue hiérarchique (LOT 14)
+
+**Date :** 5 septembre 2026
+**Portée :** métier, technique et sécurité
+**Statut :** appliquée · **ouvre le Module 08**
+
+### Contexte — un module dont la moitié dormait
+
+Le `Module 08` a été ouvert dès la Phase 1 : la migration 002 a créé
+`app_users`, `departments`, `user_departments`, `groups` et `user_groups` ; la
+003 y a ajouté `permissions`, `group_permissions` et `user_permissions` ; la 007
+a inscrit au catalogue les **six capacités** du présent lot ; la 008 a peuplé
+cinq départements et six groupes de départ.
+
+Ce que la Phase 1 n'a pas livré, ce sont les **écrans** : la barre latérale
+annonçait « Groupes » et « Vue hiérarchique » comme *à venir*, et le §3 du
+module les nomme depuis l'origine. Le LOT 14 les livre, et **rien d'autre**.
+
+Les critères d'acceptation du §61 couverts sont **9, 10, 11, 25 et 26**. Les
+critères 1 à 8, 12 à 24, 27 et 28 étaient déjà tenus par la Phase 1.
+
+### a. Aucune capacité n'est créée, et c'est la seule bonne réponse
+
+`CLAUDE.md` §19 bis impose de se demander, avant toute fonctionnalité : *cette
+fonctionnalité doit-elle pouvoir être attribuée séparément ?* Puis d'identifier
+**d'abord** la permission existante qui la couvre.
+
+Les six existent, mot pour mot :
+
+| Acte livré | Capacité |
+| --- | --- |
+| Consulter les groupes, leur décompte de membres | `users.groups.view` |
+| Créer un groupe | `users.groups.create` |
+| Renommer, décrire, ordonner | `users.groups.update` |
+| Activer, désactiver, supprimer | `users.groups.archive` |
+| Changer ce qu'un groupe accorde ou refuse | `users.groups.permissions.update` |
+| Consulter l'organigramme | `users.hierarchy.view` |
+
+**Catalogue : 170 → 170.**
+
+L'affectation des **membres** n'en reçoit pas une septième. Cocher quelqu'un
+dans un groupe change **ses** droits : c'est
+`users.users.permissions.update` — la capacité que la policy `user_groups_write`
+réclame depuis la migration 006. En créer une de plus serait la créer d'office,
+ce que DEC-024 interdit.
+
+Ce qui n'est **pas** créé, et pourquoi : `.export`, `.download`, `.print` — le
+lot ne produit **aucun document ni aucun état**.
+
+### b. Désactiver n'est pas modifier
+
+Le point de sécurité du lot, et il a trois précédents : la migration 041 pour
+`rental.maintenance.close`, la 058 pour `projects.archive`, la 059 pour
+`projects.meetings.report`.
+
+`groups.is_active` vit sur la table que la policy d'`UPDATE` gouverne. Une
+policy dit **qui peut écrire** ; elle ne sait pas distinguer deux actes portés
+par des colonnes voisines. Sans garde, un compte de `users.groups.update`
+pouvait désactiver un groupe — donc retirer d'un coup leurs droits hérités à
+tous ses membres — sans jamais détenir `users.groups.archive`.
+
+`fn_group_write_guard` s'en charge :
+
+| Acte | Capacité exigée |
+| --- | --- |
+| Activer ou désactiver un groupe | `users.groups.archive` |
+| Tout autre changement d'un groupe | `users.groups.update` |
+
+Deux colonnes sont en outre **gelées** pour un acteur applicatif : `code`, qui
+identifie le groupe dans les exports et le journal d'audit, et `is_system`, qui
+rendrait un groupe indestructible. Ce gel est une règle d'**application**, non
+une invariance absolue : une migration future peut légitimement corriger un
+code, et elle n'a pas d'acteur.
+
+La barrière est au **déclencheur** : `groups` se modifie directement par
+PostgREST, et une garde placée ailleurs ne se trouve pas sur ce chemin-là. La
+recette éprouve les deux frontières par `PATCH` direct, dans les deux sens.
+
+### c. Nul ne s'accorde un droit par son propre groupe
+
+**Un défaut existant, découvert en préparant l'écran.**
+
+La migration 003 avait posé `fn_prevent_self_privilege_change` sur
+`user_permissions` et `user_groups`. `group_permissions` était restée hors du
+dispositif — parce qu'aucun écran ne l'écrivait encore.
+
+Le chemin était pourtant ouvert : un utilisateur détenant
+`users.groups.permissions.update` et **membre** d'un groupe pouvait ajouter à
+CE groupe n'importe quelle capacité du catalogue et la recevoir aussitôt par
+héritage. Deux appels PostgREST suffisaient, sans passer par aucun écran.
+
+C'est exactement ce que `CLAUDE.md` §18 interdit — « un utilisateur ne doit
+jamais pouvoir s'attribuer lui-même des permissions supplémentaires » — et ce
+que `05_Regles_Metier/05_Permissions.md` §42 et §90.3 énoncent.
+
+**Retenu :** on ne touche pas aux droits dont on dépend. Aucune exception pour
+le Super Admin : il ne tient pas ses droits d'un groupe, la règle ne lui retire
+rien. Ce qui reste possible, et qui est le fonctionnement documenté, c'est de
+configurer un groupe **auquel on n'appartient pas** — la recette le vérifie dans
+les deux sens, pour que la règle ne ferme pas le métier en fermant l'escalade.
+
+### d. `users.hierarchy.view` est autonome, et le seed le prouve
+
+La question se posait : l'organigramme doit-il exiger aussi `users.users.view` ?
+
+La réponse était **écrite depuis la migration 008**, qui accorde
+`users.hierarchy.view` aux groupes « Direction » et « Assistant(e) de
+direction » **sans** leur donner la lecture des utilisateurs. Si le dessin
+dépendait de la liste, ces deux groupes verraient un organigramme vide : le
+seed serait faux depuis l'origine.
+
+`organisation_chart()` est donc en `SECURITY DEFINER` et **exige** sa capacité
+— elle refuse plutôt que de rendre un vide (DEC-034 §c). Elle ne rend que la
+**structure** : identité d'affichage, fonction, responsable, départements. Ni
+email, ni téléphone, ni dernière connexion, ni notes — ceux-là relèvent de la
+fiche, et la fiche a sa propre capacité (DEC-024). La recette contrôle la
+signature de la fonction, et pas seulement son comportement.
+
+### e. Un organigramme dit qui est là, pas qui est passé
+
+Le dessin porte les comptes **actifs**. §35 demande de « représenter la
+structure interne d'ADIKOM » : un organigramme peuplé de personnes parties n'est
+pas la structure d'ADIKOM, c'est son histoire — et §13 conserve celle-ci dans la
+fiche.
+
+Trois silences sont **nommés** plutôt que subis (DEC-017) :
+
+- les comptes non actifs écartés sont **comptés**, et l'écran l'annonce ;
+- un collaborateur dont le responsable n'est plus actif **remonte à la racine**,
+  marqué, avec l'invitation à lui en désigner un — le faire disparaître avec son
+  responsable serait la seule vraie erreur ;
+- sans capacité, l'écran dit laquelle manque.
+
+**Rien n'est stocké** : ni profondeur, ni effectif, ni chemin. Tout se recalcule
+à chaque lecture (DEC-035 §f).
+
+### f. La hiérarchie ne boucle pas
+
+La migration 002 interdisait qu'un utilisateur soit son propre responsable :
+c'est le cycle de longueur 1. Rien n'interdisait celui de longueur 2.
+
+Un organigramme sans racine ne se dessine pas, et sa lecture récursive tourne
+indéfiniment. Ce n'est pas une question de droit, c'est une **impossibilité** :
+la règle vaut donc aussi pour une migration et pour la clé de service — la base
+ne doit pas accepter d'un script ce qu'elle refuse à un humain (DEC-036 §c).
+
+### g. Appartenir n'est pas diriger
+
+§36 exige qu'une personne puisse répondre de **plusieurs départements** sans
+qu'un second compte soit créé. La colonne `user_departments.is_manager` existait
+depuis la migration 002 ; **aucun écran ne la renseignait**, et le critère §61.26
+n'était donc pas réellement tenu.
+
+Le formulaire utilisateur porte désormais deux cases par département :
+rattachement, et responsabilité. La seconde ne s'active qu'avec la première —
+diriger un département auquel on n'appartient pas n'aurait aucun sens. Aucune
+capacité de plus : cela relève de `users.users.update`, comme le reste de la
+fiche.
+
+### h. Un décompte, jamais un nom
+
+§29 veut, dans la liste des groupes, le **nombre d'utilisateurs**. Or
+`user_groups` n'est ouverte qu'à `users.users.view` : un administrateur des
+groupes dépourvu de cette capacité aurait lu « 0 membre » partout — un chiffre
+**faux**, et un total faux fait autorité plus longtemps qu'un total absent
+(DEC-034 §a).
+
+`groups_member_counts()` exige `users.groups.view`, c'est-à-dire la capacité qui
+ouvre précisément cette liste, et rend un **nombre**. L'identité des membres
+reste derrière `users.users.view`, et la fiche **nomme** cette absence au lieu
+d'afficher un groupe vide.
+
+### i. Une seule arborescence pour deux fiches
+
+L'onglet « Permissions » de la fiche utilisateur et celui de la fiche groupe
+présentent la même chose — Module → Menu → Sous-menu → Action, le même sélecteur
+à trois positions, le même décompte. Seule leur **sémantique** diffère :
+côté utilisateur, « non défini » laisse l'héritage des groupes s'appliquer ;
+côté groupe, il n'y a rien à hériter, la règle est simplement absente.
+
+Cette différence vit dans une fonction passée au composant, jamais dans deux
+composants presque identiques (`CLAUDE.md` §37). La recette éprouve la
+non-régression de l'onglet réécrit : ce qu'il montre, et ce qu'il enregistre.
+
+### Trois défauts découverts par la recette, et corrigés
+
+**1. Personne ne pouvait plus désactiver un groupe** (migration **061**).
+La garde de §b posée, la recette a montré que `users.groups.archive` se voyait
+refuser l'écriture par la **policy** `groups_update` — qui n'admettait que
+`.update` — avant même d'atteindre le déclencheur. La répartition correcte est
+celle de DEC-035 §b : *la policy dit qui peut écrire, le déclencheur dit qui
+peut accomplir cet acte-là*. La policy admet désormais les deux capacités.
+
+**2. Une garde comptait ce qu'elle voyait, pas ce qui est** (migration **062**).
+Un compte de `users.groups.archive` sans `users.users.view` a supprimé un groupe
+peuplé : `fn_protect_group_deletion` comptait les membres **à travers RLS**,
+lisait zéro et laissait passer. La **clé étrangère** a refusé à sa place — avec
+un message de base de données, là où `CLAUDE.md` §43 exige un message métier.
+
+La même cécité dormait dans `fn_protect_last_super_admin`, qui compte les
+**autres** Super Admins actifs : invisibles, ils auraient été comptés pour zéro,
+et la garde aurait **refusé une opération légitime**. Un faux refus n'est pas
+moins un défaut qu'une fausse autorisation.
+
+> **Règle qui en découle :** une garde qui compte doit compter la vérité, pas ce
+> que l'appelant a le droit de voir. Ces fonctions ne renvoient aucune ligne.
+
+**3. L'héritage se lisait par une porte fermée** (migration **063**).
+L'onglet « Permissions » lisait l'héritage par une requête **directe** sur
+`group_permissions`, dont la policy exige `users.groups.view`. RLS ne lève pas,
+elle masque : un administrateur des permissions dépourvu de cette capacité lisait
+« non défini » sur un droit qu'un groupe **refusait** — et aurait lu la même
+chose sur un droit qu'un groupe **accorde**, c'est-à-dire l'inverse de la vérité.
+
+Le `Module 08` §48 exige que quatre états restent distinguables : accordé,
+refusé, **hérité**, non défini. `effective_permissions()` rend désormais une
+colonne `inherited_effect` — le verdict des groupes seuls, y compris lorsqu'une
+règle individuelle le masque. Elle est en `SECURITY DEFINER` et vérifie déjà sa
+propre autorisation depuis la migration 011 : **qui a le droit de voir les
+droits d'une personne a le droit d'en connaître l'origine.**
+
+### Conséquences
+
+- Migration **060** : trois déclencheurs de règle, deux fonctions de lecture —
+  `organisation_chart()` et `groups_member_counts()` —, **aucune table**,
+  **aucune capacité**.
+- Migrations **061**, **062**, **063** : trois correctifs, chacun né d'un
+  contrôle rouge.
+- Écrans : liste des groupes, fiche à deux onglets (Groupe · Permissions),
+  création, membres, cycle de vie, vue hiérarchique. La barre latérale ouvre
+  « Groupes » et « Vue hiérarchique », jusque-là annoncées *à venir*.
+- `notifications_watch()` reste à **quinze familles** : les notifications de
+  gouvernance du §53 — utilisateur créé, permission modifiée — sont des
+  **événements de création**, et relèvent de l'arbitrage ouvert de DEC-033 §h.
+- Recettes : `db:verify:groups` (19 contrôles), `verify:groups` (73 contrôles,
+  dont 14 de **responsive** — §55 — et la non-régression de l'onglet réécrit).
+- Les modules **Location**, **Facturation**, **Trésorerie** et **Projets** ne
+  sont pas modifiés. La recette le vérifie.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -3176,6 +3417,9 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 20. **DEC-036 §a** — Les **commentaires** sur un projet ou une tâche (`Module 03` §30) doivent-ils être livrés ? La question était déjà ouverte au LOT 12 ; elle suppose sa propre capacité, et de décider si un commentaire se modifie, se supprime, et qui peut le faire.
 21. **DEC-036 §g** — Une réunion **passée mais jamais déclarée tenue** doit-elle être notifiée ? §38 ne nomme que « réunion à venir » : la fiche le signale aujourd'hui à qui l'ouvre, mais la veille se tait. En faire une famille supposerait un **seuil** — au bout de combien de temps une réunion sans compte rendu appelle-t-elle un rappel ? — qui est une règle de gestion, pas une déduction.
 22. **DEC-036 — défaut signalé** — Dix recettes SQL (`customer_invoices`, `customer_payments`, `dashboard`, `notifications`, `treasury`, `supplier_invoices`, `location`, `rental_cycle`, `imputations`, `maintenance_costs`) bornent encore leurs périodes sur `current_date`, c'est-à-dire le jour **UTC**, alors que le système compte ses journées sur `Indian/Comoro`. Elles passent aujourd'hui — elles comparent des valeurs qu'un décalage d'un jour ne déplace pas —, mais la même fragilité y dort. Le remède est connu et déjà appliqué à `analytics.sql` : remplacer `current_date` par `(now() at time zone 'Indian/Comoro')::date`. À faire lot par lot, en vérifiant chaque recette, plutôt qu'en une passe aveugle.
+23. **DEC-037 §e** — L'organigramme doit-il pouvoir montrer les **comptes non actifs** ? Il porte aujourd'hui les seuls comptes ACTIFS, et **annonce** combien sont écartés : §35 demande de représenter « la structure interne d'ADIKOM », et une structure peuplée de personnes parties n'en est pas une. Si ADIKOM souhaite néanmoins consulter l'organisation telle qu'elle était — un employé suspendu quelques semaines, par exemple —, cela suppose de décider **quels** statuts figurent au dessin, et **comment** ils s'y distinguent d'un collaborateur en poste. C'est une décision d'organisation, ici **signalée et non appliquée**.
+24. **DEC-037 §a** — L'organigramme et la liste des groupes doivent-ils pouvoir être **exportés, téléchargés ou imprimés** ? Le lot ne produit aucun document, et le catalogue ne porte aucune capacité qui couvrirait ces actes pour le `Module 08`. Les livrer supposerait de créer `users.hierarchy.export` / `.download` / `.print` et leurs équivalents groupes — décision de capacité, à ne pas déduire de `.view` (**DEC-024**). *Se rattache à l'arbitrage 15 (**DEC-034 §h**), qui pose la même question pour les rapports de facturation.*
+25. **DEC-037 §h** — Un groupe doit-il pouvoir être **dupliqué** pour servir de point de départ à un autre ? La création part aujourd'hui d'un groupe vide, et l'administrateur recoche ce qu'il veut. Dupliquer suppose de décider si les **membres** suivent ou non, et sous quelle capacité l'acte se range — créer, ou une capacité propre. Aucun document ne l'énonce ; la question naît de l'usage.
 
 ---
 

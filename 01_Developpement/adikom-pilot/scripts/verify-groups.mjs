@@ -924,6 +924,73 @@ async function main() {
 
       await context.close()
     }
+    /* ------------------------------------------------------------------ */
+    console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('10 — RESPONSIVE (§55, CLAUDE.md §35)\n')
+    {
+      /*
+       * Une page peut être juste et illisible.
+       *
+       * Le contrôle porte sur le débordement HORIZONTAL du corps : un écran
+       * qu'il faut faire glisser latéralement pour lire n'est pas responsive,
+       * il est réduit. Les débordements INTERNES — un tableau dans son propre
+       * conteneur `overflow-x-auto` — sont légitimes et ne sont pas comptés.
+       */
+      const ecrans = [
+        ['/utilisateurs/groupes', 'Liste des groupes', 'lecteur'],
+        [`/utilisateurs/groupes/${cible.id}`, 'Fiche groupe', 'lecteur'],
+        [`/utilisateurs/groupes/${cible.id}?onglet=permissions`, 'Permissions du groupe', 'lecteur'],
+        ['/utilisateurs/hierarchie', 'Vue hiérarchique', 'organigramme'],
+      ]
+
+      const formats = [
+        [390, 844, 'mobile'],
+        [820, 1180, 'tablette'],
+        [1440, 900, 'desktop'],
+      ]
+
+      for (const [profil, comptes] of [
+        ['lecteur', accounts.lecteur],
+        ['organigramme', accounts.organigramme],
+      ]) {
+        const { context, page } = await signIn(browser, base, comptes)
+
+        for (const [route, libelle, requis] of ecrans) {
+          if (requis !== profil) continue
+
+          for (const [width, height, format] of formats) {
+            await page.setViewportSize({ width, height })
+            await page.goto(`${base}${route}`, { waitUntil: 'load' })
+
+            const debordement = await page.evaluate(
+              () =>
+                document.documentElement.scrollWidth - document.documentElement.clientWidth
+            )
+            check(
+              debordement <= 1,
+              `${libelle} · ${format} : aucun défilement horizontal`,
+              `${width} px · débordement ${debordement} px`
+            )
+          }
+        }
+
+        // Le tableau cède la place à des cartes : l'interface est réorganisée,
+        // pas rétrécie (Design System §53).
+        if (profil === 'lecteur') {
+          await page.setViewportSize({ width: 390, height: 844 })
+          await page.goto(`${base}/utilisateurs/groupes`, { waitUntil: 'load' })
+          const tableau = await page.locator('main table').count()
+          const visible = tableau > 0 ? await page.locator('main table').first().isVisible() : false
+          check(!visible, 'Liste des groupes · mobile : le tableau cède la place aux cartes')
+          check(
+            (await mainText(page)).includes(`${MARK} — Groupe cible`),
+            'Liste des groupes · mobile : le groupe reste lisible'
+          )
+        }
+
+        await context.close()
+      }
+    }
   } finally {
     await browser.close()
     for (const client of Object.values(sessions)) await client.auth.signOut()
