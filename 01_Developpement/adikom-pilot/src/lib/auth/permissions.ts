@@ -38,6 +38,39 @@ export const PERMISSIONS = {
   TASKS_CREATE: 'projects.tasks.create',
   TASKS_UPDATE: 'projects.tasks.update',
   TASKS_CLOSE: 'projects.tasks.close',
+  /*
+   * Le second volet du module (LOT 13, migration 059).
+   *
+   * §42 les nomme par leur verbe — « gérer les réunions ; gérer les rendez-vous ;
+   * enregistrer des décisions » —, et « gérer » se décompose ici comme partout
+   * ailleurs dans le catalogue : consulter, créer, modifier.
+   *
+   * `MEETINGS_REPORT` n'est pas un confort : §23 exige « l'utilisateur
+   * autorisé » pour le compte rendu, et §43 liste « préparer les comptes
+   * rendus » À CÔTÉ de « organiser les réunions ». Consigner ce qui s'est dit
+   * n'est pas convoquer — `fn_meeting_write_guard` l'exige en base, y compris
+   * en appel direct (DEC-036 §b).
+   *
+   * AUCUNE CAPACITÉ DE CALENDRIER : l'écran ne montre rien que ces lectures
+   * n'ouvrent déjà, et une permission qui masquerait seulement une page n'en
+   * serait pas une (DEC-036 §d).
+   */
+  MEETINGS_VIEW: 'projects.meetings.view',
+  MEETINGS_CREATE: 'projects.meetings.create',
+  MEETINGS_UPDATE: 'projects.meetings.update',
+  MEETINGS_REPORT: 'projects.meetings.report',
+
+  APPOINTMENTS_VIEW: 'projects.appointments.view',
+  APPOINTMENTS_CREATE: 'projects.appointments.create',
+  APPOINTMENTS_UPDATE: 'projects.appointments.update',
+
+  ACTIONS_VIEW: 'projects.actions.view',
+  ACTIONS_CREATE: 'projects.actions.create',
+  ACTIONS_UPDATE: 'projects.actions.update',
+
+  DECISIONS_VIEW: 'projects.decisions.view',
+  DECISIONS_CREATE: 'projects.decisions.create',
+  DECISIONS_UPDATE: 'projects.decisions.update',
 
   // --- Tiers · Clients -------------------------------------------------------
   CLIENTS_VIEW: 'parties.clients.view',

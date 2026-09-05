@@ -34,6 +34,12 @@ import {
 import { ProjectForm } from '@/features/projects/project-form'
 import { Progress } from '@/features/projects/progress'
 import { ArchiveProjectForm, MembersPanel, ProjectStatusForm } from '@/features/projects/panels'
+import {
+  MEETING_STATUS_LABELS,
+  PLANNING_STATUS_TONES,
+  listDecisions,
+  listMeetings,
+} from '@/features/planning/data'
 import { listClientOptions } from '@/features/clients/data'
 import { listSupplierOptions } from '@/features/suppliers/data'
 import { listPartnerOptions } from '@/features/partners/data'
@@ -67,11 +73,20 @@ export default async function ProjectDetailPage(props: PageProps<'/projets/[id]'
   const justSaved = searchParams.enregistre === '1'
   const taskAdded = searchParams.tache === '1'
 
-  const [canUpdate, canArchive, canReadTasks, canCreateTask] = await Promise.all([
+  const [
+    canUpdate,
+    canArchive,
+    canReadTasks,
+    canCreateTask,
+    canReadMeetings,
+    canReadDecisions,
+  ] = await Promise.all([
     can(PERMISSIONS.PROJECTS_UPDATE),
     can(PERMISSIONS.PROJECTS_ARCHIVE),
     can(PERMISSIONS.TASKS_VIEW),
     can(PERMISSIONS.TASKS_CREATE),
+    can(PERMISSIONS.MEETINGS_VIEW),
+    can(PERMISSIONS.DECISIONS_VIEW),
   ])
 
   const counts: Figure<TaskCounts | undefined> = await gated(
@@ -80,7 +95,19 @@ export default async function ProjectDetailPage(props: PageProps<'/projets/[id]'
     async () => (await getTaskCounts(project.id)).get(project.id)
   )
 
-  const tasks = canReadTasks ? await listTasks({ projectId: project.id }) : []
+  /*
+   * §6 — LA FICHE PROJET CITE AUSSI SES RÉUNIONS ET SES DÉCISIONS.
+   *
+   * Chacune dépend de SA capacité : lire un projet n'ouvre ni l'une ni l'autre,
+   * et l'écran le DIT plutôt que d'afficher une section vide (DEC-017,
+   * DEC-024). Rien n'est dupliqué — ce sont les mêmes lignes que leurs listes,
+   * filtrées sur ce projet (§53.20).
+   */
+  const [tasks, meetings, decisions] = await Promise.all([
+    canReadTasks ? listTasks({ projectId: project.id }) : Promise.resolve([]),
+    canReadMeetings ? listMeetings({ projectId: project.id }) : Promise.resolve([]),
+    canReadDecisions ? listDecisions({ projectId: project.id }) : Promise.resolve([]),
+  ])
 
   if (editing) {
     const [canReadClients, canReadSuppliers, canReadPartners] = await Promise.all([
@@ -274,6 +301,73 @@ export default async function ProjectDetailPage(props: PageProps<'/projets/[id]'
                         <Badge tone={TASK_STATUS_TONES[task.status]}>
                           {TASK_STATUS_LABELS[task.status]}
                         </Badge>
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card
+            title="Réunions du projet"
+            description="Ce qui se planifie autour de lui (§6, §21)."
+          >
+            {!canReadMeetings ? (
+              <Notice tone="info">
+                Les réunions de ce projet ne vous sont pas accessibles — permission{' '}
+                <code className="tabular">projects.meetings.view</code>. Ce projet peut en porter.
+              </Notice>
+            ) : meetings.length === 0 ? (
+              <p className="text-sm text-muted">Aucune réunion rattachée à ce projet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {meetings.map((meeting) => (
+                  <li key={meeting.id}>
+                    <Link
+                      href={`/projets/reunions/${meeting.id}`}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-line px-3.5 py-2.5 transition-colors hover:border-adikom-300"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm text-ink">{meeting.title}</p>
+                        <p className="text-xs text-muted tabular">
+                          {formatDateTime(meeting.startsAt)}
+                        </p>
+                      </div>
+                      <Badge tone={PLANNING_STATUS_TONES[meeting.status]}>
+                        {MEETING_STATUS_LABELS[meeting.status]}
+                      </Badge>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card
+            title="Décisions du projet"
+            description="Ce qui a été arrêté, et qui reste retrouvable (§6, §24)."
+          >
+            {!canReadDecisions ? (
+              <Notice tone="info">
+                Les décisions de ce projet ne vous sont pas accessibles — permission{' '}
+                <code className="tabular">projects.decisions.view</code>.
+              </Notice>
+            ) : decisions.length === 0 ? (
+              <p className="text-sm text-muted">Aucune décision rattachée à ce projet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {decisions.map((decision) => (
+                  <li key={decision.id}>
+                    <Link
+                      href={`/projets/decisions/${decision.id}`}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-line px-3.5 py-2.5 transition-colors hover:border-adikom-300"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm text-ink">{decision.title}</p>
+                        <p className="text-xs text-muted tabular">
+                          {formatDate(decision.decidedOn)}
+                        </p>
                       </div>
                     </Link>
                   </li>

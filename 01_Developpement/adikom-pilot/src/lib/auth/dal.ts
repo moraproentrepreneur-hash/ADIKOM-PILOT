@@ -183,3 +183,31 @@ export async function requirePermissionOrRedirect(code: PermissionCode): Promise
 
   return user
 }
+
+/**
+ * Exige AU MOINS UNE des permissions citées.
+ *
+ * Réservée aux écrans qui rassemblent plusieurs sources sans rien montrer de
+ * plus qu'elles : le calendrier (Module 03 §19) superpose échéances de tâches,
+ * réunions et rendez-vous, et chaque couche exige ensuite SA lecture.
+ *
+ * CE N'EST PAS UN ASSOUPLISSEMENT. Aucune capacité n'en ouvre une autre : la
+ * page s'ouvre à qui détient l'une d'elles, et n'affiche que la couche
+ * correspondante — les autres sont NOMMÉES comme fermées (DEC-017, DEC-024).
+ *
+ * Le code cité en premier est celui que l'écran d'accès refusé annonce : c'est
+ * la lecture la plus courante, donc la plus utile à demander.
+ */
+export async function requireAnyPermissionOrRedirect(
+  codes: readonly PermissionCode[]
+): Promise<SessionUser> {
+  const user = await requireUser()
+  if (user.isSuperAdmin) return user
+
+  const granted = await getPermissionCodes()
+  if (!codes.some((code) => granted.has(code))) {
+    redirect(`/acces-refuse?requis=${encodeURIComponent(codes[0])}`)
+  }
+
+  return user
+}

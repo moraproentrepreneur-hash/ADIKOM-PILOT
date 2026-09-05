@@ -28,6 +28,23 @@
 --   3. un ÉTAT dont les lignes ne font pas son total est faux : le rapport par
 --      tiers doit se recouper avec la statistique.
 --
+-- AUCUN `current_date` — LE JOUR EST CELUI D'ADIKOM, PAS CELUI DU SERVEUR
+--
+-- `current_date` rend le jour de la SESSION, donc UTC sur Supabase. Or les
+-- fonctions éprouvées ici datent leurs flux sur `Indian/Comoro` (DEC-025 §e) :
+-- `billing_supplier_stats` compte une imputation au jour de
+-- `(imputed_at at time zone 'Indian/Comoro')`.
+--
+-- Entre 21 h et minuit UTC, les Comores sont DÉJÀ le lendemain. Une imputation
+-- créée à cet instant tombait alors hors de la fenêtre bornée par
+-- `current_date`, et la recette échouait — sans qu'aucune régression n'ait eu
+-- lieu. Défaut découvert le 5 septembre 2026, pendant les non-régressions du
+-- LOT 13 : le code de production était juste, c'est l'horloge de la recette qui
+-- ne l'était pas.
+--
+-- Toutes les bornes se posent donc sur le jour civil des Comores, exactement
+-- comme les fonctions qu'elles interrogent.
+--
 -- Exécution :
 --   npm run db:verify:analytics
 --
@@ -204,8 +221,8 @@ do $$
 declare v_total int;
 begin
   select count(*) into v_total from public.permissions;
-  if v_total <> 157 then
-    raise exception 'Catalogue attendu à 157 permissions, obtenu %.', v_total;
+  if v_total <> 170 then
+    raise exception 'Catalogue attendu à 170 permissions, obtenu %.', v_total;
   end if;
 
   if not exists (
@@ -217,7 +234,7 @@ begin
     raise exception 'Les quatre capacités de statistiques et rapports ne sont pas au catalogue.';
   end if;
 
-  raise notice '[OK] 4. Catalogue à 157 : le LOT 11 ne crée aucune permission.';
+  raise notice '[OK] 4. Catalogue à 170 : le LOT 11 ne crée aucune permission.';
 end $$;
 
 
@@ -230,25 +247,25 @@ do $$
 declare v_ok boolean;
 begin
   begin
-    perform public.billing_customer_stats(null, current_date);
+    perform public.billing_customer_stats(null, (now() at time zone 'Indian/Comoro')::date);
     raise exception 'Une période incomplète a été acceptée.';
   exception when invalid_parameter_value then null;
   end;
 
   begin
-    perform public.billing_customer_stats(current_date, current_date - 1);
+    perform public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date, (now() at time zone 'Indian/Comoro')::date - 1);
     raise exception 'Une période inversée a été acceptée.';
   exception when invalid_parameter_value then null;
   end;
 
   begin
-    perform public.billing_customer_series(current_date - 7, current_date, 'decennie');
+    perform public.billing_customer_series((now() at time zone 'Indian/Comoro')::date - 7, (now() at time zone 'Indian/Comoro')::date, 'decennie');
     raise exception 'Un grain inconnu a été accepté.';
   exception when invalid_parameter_value then null;
   end;
 
   begin
-    perform public.billing_supplier_series(current_date - 7, current_date, null);
+    perform public.billing_supplier_series((now() at time zone 'Indian/Comoro')::date - 7, (now() at time zone 'Indian/Comoro')::date, null);
     raise exception 'Un grain absent a été accepté.';
   exception when invalid_parameter_value then null;
   end;
@@ -290,13 +307,13 @@ begin
   -- Facture datée d'il y a vingt jours, échéance dépassée de cinq : elle doit
   -- ressortir dans la part échue, et sa période est distincte de celle du
   -- règlement, qui sera du jour.
-  v_inv := public.create_customer_invoice(v_cli, current_date - 20, current_date - 5, null,
+  v_inv := public.create_customer_invoice(v_cli, (now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date - 5, null,
                                           'Recette LOT 11');
   perform public.add_customer_invoice_line(v_inv, 'RENTAL', 'Location 3 jours', 3, 150000, null);
   perform public.issue_customer_invoice(v_inv, 'Recette LOT 11');
 
   v_acc := public.create_financial_account('BANK', 'Banque de recette STATS', 'BIC ADIKOM',
-                                           'CPT-STATS-1', 0, current_date - 30, null);
+                                           'CPT-STATS-1', 0, (now() at time zone 'Indian/Comoro')::date - 30, null);
 
   update recette_stats set
     category_id = v_cat, client = v_cli, vehicle = v_veh, invoice = v_inv, account = v_acc;
@@ -318,7 +335,7 @@ declare
   s       record;
   v_ref   bigint;
 begin
-  select * into s from public.billing_customer_stats(current_date - 20, current_date - 20);
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date - 20);
   v_ref := s.invoiced_amount;
 
   if v_ref < 450000 then
@@ -326,37 +343,37 @@ begin
   end if;
 
   -- Un BROUILLON ne reconnaît aucune créance (Workflow 07 §25).
-  v_draft := public.create_customer_invoice(v_cli, current_date - 20, null, null, 'Brouillon');
+  v_draft := public.create_customer_invoice(v_cli, (now() at time zone 'Indian/Comoro')::date - 20, null, null, 'Brouillon');
   perform public.add_customer_invoice_line(v_draft, 'SERVICE', 'Non émise', 1, 999000, null);
 
-  select * into s from public.billing_customer_stats(current_date - 20, current_date - 20);
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date - 20);
   if s.invoiced_amount <> v_ref then
     raise exception 'Un brouillon est compté dans le facturé.';
   end if;
 
   -- Une ANNULÉE n'a jamais produit de chiffre d'affaires.
-  v_out := public.create_customer_invoice(v_cli, current_date - 20, null, null, 'À annuler');
+  v_out := public.create_customer_invoice(v_cli, (now() at time zone 'Indian/Comoro')::date - 20, null, null, 'À annuler');
   perform public.add_customer_invoice_line(v_out, 'SERVICE', 'Annulée', 1, 777000, null);
   perform public.issue_customer_invoice(v_out, 'Recette');
   perform public.cancel_customer_invoice(v_out, 'Recette LOT 11');
 
-  select * into s from public.billing_customer_stats(current_date - 20, current_date - 20);
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date - 20);
   if s.invoiced_amount <> v_ref then
     raise exception 'Une facture annulée est comptée dans le facturé.';
   end if;
 
   -- Hors période : une facture d'il y a vingt jours n'est pas d'hier.
-  select * into s from public.billing_customer_stats(current_date - 19, current_date);
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 19, (now() at time zone 'Indian/Comoro')::date);
   if s.invoiced_amount <> 0 then
     raise exception 'Une facture est comptée hors de sa période.';
   end if;
 
   -- Bornes INCLUSES aux deux extrémités.
-  select * into s from public.billing_customer_stats(current_date - 20, current_date);
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date);
   if s.invoiced_amount < 450000 then
     raise exception 'La borne basse n''est pas incluse.';
   end if;
-  select * into s from public.billing_customer_stats(current_date - 30, current_date - 20);
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 30, (now() at time zone 'Indian/Comoro')::date - 20);
   if s.invoiced_amount < 450000 then
     raise exception 'La borne haute n''est pas incluse.';
   end if;
@@ -378,15 +395,15 @@ declare
   v_pay uuid;
   s     record;
 begin
-  select * into s from public.billing_customer_stats(current_date, current_date);
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date, (now() at time zone 'Indian/Comoro')::date);
   if s.collected_amount <> 0 then
     raise exception 'Un encaissement est présumé avant tout règlement.';
   end if;
 
-  v_pay := public.record_customer_payment(v_inv, v_acc, 200000, current_date, 'BANK_TRANSFER',
+  v_pay := public.record_customer_payment(v_inv, v_acc, 200000, (now() at time zone 'Indian/Comoro')::date, 'BANK_TRANSFER',
                                           'VIR-STATS-1', null);
 
-  select * into s from public.billing_customer_stats(current_date, current_date);
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date, (now() at time zone 'Indian/Comoro')::date);
   if s.collected_amount <> 200000 or s.collected_count <> 1 then
     raise exception 'Encaissé attendu 1 / 200 000, obtenu % / %.',
       s.collected_count, s.collected_amount;
@@ -408,7 +425,7 @@ begin
   end if;
 
   -- Sur la période de la FACTURE, elle est non soldée et en retard.
-  select * into s from public.billing_customer_stats(current_date - 20, current_date - 20);
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date - 20);
   if s.settled_count <> 0 or s.unsettled_count <> 1 or s.period_overdue_count <> 1 then
     raise exception 'États attendus 0 soldée / 1 non soldée / 1 en retard, obtenus % / % / %.',
       s.settled_count, s.unsettled_count, s.period_overdue_count;
@@ -416,14 +433,14 @@ begin
 
   -- ANNULER le règlement rétablit la créance ENTIÈRE (Workflow 08 §28).
   perform public.cancel_customer_payment(v_pay, 'Recette LOT 11');
-  select * into s from public.billing_customer_stats(current_date, current_date);
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date, (now() at time zone 'Indian/Comoro')::date);
   if s.outstanding_amount <> 450000 or s.collected_amount <> 0 then
     raise exception 'Un règlement annulé compte encore : créance %, encaissé %.',
       s.outstanding_amount, s.collected_amount;
   end if;
 
   -- Puis on le rejoue, pour la suite de la recette.
-  perform public.record_customer_payment(v_inv, v_acc, 200000, current_date, 'CASH', null, null);
+  perform public.record_customer_payment(v_inv, v_acc, 200000, (now() at time zone 'Indian/Comoro')::date, 'CASH', null, null);
 
   raise notice '[OK] 8. Encaissé compté à SA date ; créance 250 000, échue ; annulation rendue.';
 end $$;
@@ -439,9 +456,9 @@ declare
   v_acc uuid := (select account from recette_stats);
   s     record;
 begin
-  perform public.record_customer_payment(v_inv, v_acc, 250000, current_date, 'CASH', null, null);
+  perform public.record_customer_payment(v_inv, v_acc, 250000, (now() at time zone 'Indian/Comoro')::date, 'CASH', null, null);
 
-  select * into s from public.billing_customer_stats(current_date - 20, current_date);
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date);
   if s.outstanding_amount <> 0 or s.outstanding_count <> 0 then
     raise exception 'Une facture soldée reste comptée : % / %.',
       s.outstanding_count, s.outstanding_amount;
@@ -474,18 +491,18 @@ declare
   v_points int := 0;
   p        record;
 begin
-  select * into s from public.billing_customer_stats(current_date - 20, current_date);
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date);
 
-  for p in select * from public.billing_customer_series(current_date - 20, current_date, 'day') loop
+  for p in select * from public.billing_customer_series((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date, 'day') loop
     v_sum_i := v_sum_i + p.invoiced_amount;
     v_sum_c := v_sum_c + p.collected_amount;
     v_points := v_points + 1;
 
     -- Le jour de la facture ne porte aucun encaissement, et réciproquement.
-    if p.bucket = current_date - 20 and p.collected_amount <> 0 then
+    if p.bucket = (now() at time zone 'Indian/Comoro')::date - 20 and p.collected_amount <> 0 then
       raise exception 'Un encaissement est daté du jour de la facture.';
     end if;
-    if p.bucket = current_date and p.invoiced_amount <> 0 then
+    if p.bucket = (now() at time zone 'Indian/Comoro')::date and p.invoiced_amount <> 0 then
       raise exception 'Une facture est datée du jour de son règlement.';
     end if;
   end loop;
@@ -503,7 +520,7 @@ begin
   -- Au grain « mois », les deux jours peuvent se rejoindre ou non selon la
   -- date d'exécution — mais la somme, elle, ne change jamais.
   v_sum_i := 0;
-  for p in select * from public.billing_customer_series(current_date - 20, current_date, 'month') loop
+  for p in select * from public.billing_customer_series((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date, 'month') loop
     v_sum_i := v_sum_i + p.invoiced_amount;
   end loop;
   if v_sum_i <> s.invoiced_amount then
@@ -526,9 +543,9 @@ declare
   v_cli   uuid := (select client from recette_stats);
   v_seen  boolean := false;
 begin
-  select * into s from public.billing_customer_stats(current_date - 20, current_date);
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date);
 
-  for r in select * from public.billing_customer_report(current_date - 20, current_date) loop
+  for r in select * from public.billing_customer_report((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date) loop
     v_inv := v_inv + r.invoiced_amount;
     v_col := v_col + r.collected_amount;
     v_out := v_out + r.outstanding_amount;
@@ -606,7 +623,7 @@ begin
   perform public.submit_imputation(v_imp);
   perform public.validate_imputation(v_imp, 'Recette LOT 11');
 
-  v_inv := public.create_supplier_invoice(v_sup, current_date - 10, current_date - 3,
+  v_inv := public.create_supplier_invoice(v_sup, (now() at time zone 'Indian/Comoro')::date - 10, (now() at time zone 'Indian/Comoro')::date - 3,
                                           'FRN-STATS-1', 'Recette LOT 11');
   perform public.add_supplier_invoice_line(v_inv, 'Mise à disposition', 1000000, v_veh);
   perform public.submit_supplier_invoice(v_inv);
@@ -618,7 +635,7 @@ begin
     imputation = v_imp, sup_invoice = v_inv;
 
   -- AVANT tout règlement : la dette vaut le NET, jamais le brut.
-  select * into s from public.billing_supplier_stats(current_date - 10, current_date);
+  select * into s from public.billing_supplier_stats((now() at time zone 'Indian/Comoro')::date - 10, (now() at time zone 'Indian/Comoro')::date);
   if s.gross_amount <> 1000000 then
     raise exception 'Brut attendu 1 000 000, obtenu %.', s.gross_amount;
   end if;
@@ -635,10 +652,10 @@ begin
       s.payment_count, s.paid_amount;
   end if;
 
-  perform public.record_supplier_payment(v_inv, v_acc, 200000, current_date, 'BANK_TRANSFER',
+  perform public.record_supplier_payment(v_inv, v_acc, 200000, (now() at time zone 'Indian/Comoro')::date, 'BANK_TRANSFER',
                                          'VIR-STATS-F', null);
 
-  select * into s from public.billing_supplier_stats(current_date - 10, current_date);
+  select * into s from public.billing_supplier_stats((now() at time zone 'Indian/Comoro')::date - 10, (now() at time zone 'Indian/Comoro')::date);
   if s.paid_amount <> 200000 or s.payment_count <> 1 then
     raise exception 'Réglé attendu 1 / 200 000, obtenu % / %.', s.payment_count, s.paid_amount;
   end if;
@@ -665,12 +682,12 @@ declare
   v_ref bigint;
 begin
   select payable_amount into v_ref
-  from public.billing_supplier_stats(current_date - 10, current_date);
+  from public.billing_supplier_stats((now() at time zone 'Indian/Comoro')::date - 10, (now() at time zone 'Indian/Comoro')::date);
 
-  v_new := public.create_supplier_invoice(v_sup, current_date, null, 'FRN-STATS-2', 'En saisie');
+  v_new := public.create_supplier_invoice(v_sup, (now() at time zone 'Indian/Comoro')::date, null, 'FRN-STATS-2', 'En saisie');
   perform public.add_supplier_invoice_line(v_new, 'Ligne en saisie', 888000, null);
 
-  select * into s from public.billing_supplier_stats(current_date - 10, current_date);
+  select * into s from public.billing_supplier_stats((now() at time zone 'Indian/Comoro')::date - 10, (now() at time zone 'Indian/Comoro')::date);
   if s.payable_amount <> v_ref then
     raise exception 'Une facture non validée est comptée comme dette : % contre %.',
       s.payable_amount, v_ref;
@@ -695,9 +712,9 @@ declare
   v_pa   bigint := 0;
   v_seen boolean := false;
 begin
-  select * into s from public.billing_supplier_stats(current_date - 10, current_date);
+  select * into s from public.billing_supplier_stats((now() at time zone 'Indian/Comoro')::date - 10, (now() at time zone 'Indian/Comoro')::date);
 
-  for r in select * from public.billing_supplier_report(current_date - 10, current_date) loop
+  for r in select * from public.billing_supplier_report((now() at time zone 'Indian/Comoro')::date - 10, (now() at time zone 'Indian/Comoro')::date) loop
     v_gr := v_gr + r.gross_amount;
     v_im := v_im + r.imputed_amount;
     v_pd := v_pd + r.paid_amount;
@@ -745,12 +762,12 @@ declare
 begin
   select count(*) into v_before from public.audit_log;
 
-  perform public.billing_customer_stats(current_date - 30, current_date);
-  perform public.billing_customer_series(current_date - 30, current_date, 'week');
-  perform count(*) from public.billing_customer_report(current_date - 30, current_date);
-  perform public.billing_supplier_stats(current_date - 30, current_date);
-  perform public.billing_supplier_series(current_date - 30, current_date, 'week');
-  perform count(*) from public.billing_supplier_report(current_date - 30, current_date);
+  perform public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 30, (now() at time zone 'Indian/Comoro')::date);
+  perform public.billing_customer_series((now() at time zone 'Indian/Comoro')::date - 30, (now() at time zone 'Indian/Comoro')::date, 'week');
+  perform count(*) from public.billing_customer_report((now() at time zone 'Indian/Comoro')::date - 30, (now() at time zone 'Indian/Comoro')::date);
+  perform public.billing_supplier_stats((now() at time zone 'Indian/Comoro')::date - 30, (now() at time zone 'Indian/Comoro')::date);
+  perform public.billing_supplier_series((now() at time zone 'Indian/Comoro')::date - 30, (now() at time zone 'Indian/Comoro')::date, 'week');
+  perform count(*) from public.billing_supplier_report((now() at time zone 'Indian/Comoro')::date - 30, (now() at time zone 'Indian/Comoro')::date);
 
   select count(*) into v_after from public.audit_log;
   if v_after <> v_before then

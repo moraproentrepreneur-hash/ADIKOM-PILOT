@@ -63,7 +63,9 @@
     "db:verify:analytics": "node scripts/run-sql.mjs supabase/tests/analytics.sql",
     "verify:analytics": "node scripts/verify-analytics.mjs",
     "db:verify:projects": "node scripts/run-sql.mjs supabase/tests/projects.sql",
-    "verify:projects": "node scripts/verify-projects.mjs"
+    "verify:projects": "node scripts/verify-projects.mjs",
+    "db:verify:planning": "node scripts/run-sql.mjs supabase/tests/planning.sql",
+    "verify:planning": "node scripts/verify-planning.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",

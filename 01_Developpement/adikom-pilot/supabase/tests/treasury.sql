@@ -620,11 +620,11 @@ begin
   end if;
 
   select count(*) into v_total from public.permissions;
-  if v_total <> 157 then
-    raise exception 'Catalogue attendu à 157 permissions, obtenu %.', v_total;
+  if v_total <> 170 then
+    raise exception 'Catalogue attendu à 170 permissions, obtenu %.', v_total;
   end if;
 
-  raise notice '[OK] 19. Trésorerie journalisée (% entrées) ; catalogue à 157.', v_count;
+  raise notice '[OK] 19. Trésorerie journalisée (% entrées) ; catalogue à 170.', v_count;
 end $$;
 
 

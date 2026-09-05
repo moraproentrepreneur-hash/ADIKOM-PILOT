@@ -66,3 +66,39 @@ export function dayOffset(days = 0) {
   const now = new Date(Date.now() + days * 86400_000)
   return now.toLocaleDateString('en-CA', { timeZone: 'Indian/Comoro' })
 }
+
+/** Instant décalé de `hours` heures, au format ISO — pour un `timestamptz`. */
+export function instantOffset(hours = 0) {
+  return new Date(Date.now() + hours * 3600_000).toISOString()
+}
+
+/**
+ * Le même instant, tel qu'un `<input type="datetime-local">` l'affiche AUX
+ * COMORES — `AAAA-MM-JJTHH:MM`.
+ *
+ * C'EST LE PIÈGE QUE CETTE FONCTION SERT À ÉPROUVER.
+ *
+ * Un champ `datetime-local` produit une heure NUE. Une recette qui saisirait
+ * l'heure UTC ne verrait jamais l'erreur de fuseau : elle passerait aussi bien
+ * avec une conversion correcte qu'avec aucune conversion. En saisissant l'heure
+ * DES COMORES et en vérifiant l'instant stocké, elle éprouve réellement
+ * `fromLocalInput` (DEC-025 §e).
+ */
+export function localInput(hoursFromNow = 0) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Indian/Comoro',
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+      .formatToParts(new Date(Date.now() + hoursFromNow * 3600_000))
+      .map((part) => [part.type, part.value])
+  )
+
+  const hour = String(Number(parts.hour) % 24).padStart(2, '0')
+  return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}`
+}

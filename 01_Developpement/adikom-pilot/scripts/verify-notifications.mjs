@@ -79,13 +79,20 @@ const FINANCE = [
 ]
 
 /*
- * La veille du LOT 12 : échéances et retards de tâches (Module 03 §38).
+ * La veille de Projets & Planification (Module 03 §38).
  *
- * Elle n'appartient pas aux lectures d'exploitation — les tâches ne sont pas un
- * objet de la location —, mais un veilleur COMPLET la détient : sans elle,
- * l'écran lui annoncerait à juste titre une source non surveillée.
+ * Échéances et retards de tâches (LOT 12), réunions et rendez-vous à venir
+ * (LOT 13). Ces lectures n'appartiennent pas à l'exploitation — une réunion
+ * n'est pas un objet de la location —, mais un veilleur COMPLET les détient :
+ * sans elles, l'écran lui annoncerait à juste titre des sources non
+ * surveillées, et l'affirmation « aucune source n'est fermée » deviendrait
+ * fausse.
  */
-const PLANIFICATION = ['projects.tasks.view']
+const PLANIFICATION = [
+  'projects.tasks.view',
+  'projects.meetings.view',
+  'projects.appointments.view',
+]
 
 const PROFILES = {
   /* Le veilleur complet : toutes les sources lui sont ouvertes. */
@@ -1145,7 +1152,7 @@ async function main() {
       const { count: total } = await admin
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-      check(total === 157, 'Catalogue conforme', `${total} permissions`)
+      check(total === 170, 'Catalogue conforme', `${total} permissions`)
     }
 
     await veilleurContext.close()

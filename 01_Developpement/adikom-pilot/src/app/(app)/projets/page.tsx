@@ -21,6 +21,7 @@ import {
   type TaskCounts,
 } from '@/features/projects/data'
 import { Progress } from '@/features/projects/progress'
+import { moduleAccess } from '@/features/projects/access'
 import { moduleTabs } from '@/features/projects/tabs'
 
 export const metadata: Metadata = { title: 'Projets' }
@@ -54,10 +55,10 @@ export default async function ProjectsPage(props: PageProps<'/projets'>) {
     archived,
   }
 
-  const [projects, canCreate, canReadTasks] = await Promise.all([
+  const [projects, canCreate, access] = await Promise.all([
     listProjects(filters),
     can(PERMISSIONS.PROJECTS_CREATE),
-    can(PERMISSIONS.TASKS_VIEW),
+    moduleAccess(),
   ])
 
   // Un seul appel pour toute la liste : l'avancement de chaque projet en est
@@ -87,7 +88,7 @@ export default async function ProjectsPage(props: PageProps<'/projets'>) {
         }
       />
 
-      <Tabs items={moduleTabs('projets', { projects: true, tasks: canReadTasks })} current="projets" />
+      <Tabs items={moduleTabs('projets', { ...access, projects: true })} current="projets" />
 
       <form method="get" className="mb-5">
         {archived && <input type="hidden" name="archives" value="1" />}

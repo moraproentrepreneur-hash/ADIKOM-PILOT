@@ -2950,6 +2950,206 @@ cesser de suivre — ce n'est pas effacer.
 
 ---
 
+## DEC-036 — Calendrier, Réunions, Rendez-vous, Décisions, Actions (LOT 13)
+
+**Date :** 5 septembre 2026
+**Portée :** métier, technique et sécurité
+**Statut :** appliquée · **achève le Module 03**
+
+### Contexte — le second volet
+
+DEC-035 avait coupé le `Module 03` en deux sur une frontière réelle : le LOT 12
+livrait ce qui **fait travailler** — projets, tâches, responsables, échéances ;
+le LOT 13 livre ce qui se **planifie dans le temps** et ce qui en **découle**.
+
+Les critères d'acceptation du §53 se répartissaient sans reste. Le LOT 12 a
+couvert 1 à 8, 14 à 18 et 20 ; celui-ci couvre **9 à 13**.
+
+### a. Treize capacités, et la quatorzième qui n'existe pas
+
+`Module 03` §42 nomme les capacités par leur verbe — « gérer les réunions ;
+gérer les rendez-vous ; enregistrer des décisions ». « Gérer » se décompose ici
+comme partout ailleurs dans le catalogue depuis la migration 007 : **consulter,
+créer, modifier**. Cette décomposition n'est pas une invention, c'est la
+convention du SaaS.
+
+**Catalogue : 157 → 170.**
+
+| Menu | Capacités |
+| --- | --- |
+| Réunions | `.view` · `.create` · `.update` · **`.report`** |
+| Rendez-vous | `.view` · `.create` · `.update` |
+| Actions | `.view` · `.create` · `.update` |
+| Décisions | `.view` · `.create` · `.update` |
+
+`projects.meetings.report` n'est pas une capacité de confort. §23 exige
+« l'utilisateur autorisé » pour le compte rendu, et §43 liste « préparer les
+comptes rendus » **à côté de** « organiser les réunions » : deux signaux
+textuels indépendants, pour deux actes réellement distincts.
+
+Ce qui n'est **pas** créé, et pourquoi :
+
+- **`projects.calendar.view`** — voir §d ;
+- `projects.actions.close` — clôturer une action, c'est la modifier. §42 nomme
+  « clôturer une **tâche** » et rien pour les actions ; une action ne fait
+  avancer aucun pourcentage et ne fait taire aucune veille. La déduire par
+  analogie serait le « modèle général » que DEC-024 écarte ;
+- `projects.meetings.cancel` — annuler une réunion, c'est la modifier ;
+- `projects.decisions.archive` — une décision ne se range pas : elle est
+  conservée pour être retrouvée (§24) ;
+- `.export`, `.download`, `.print` — le lot ne produit **aucun document**. Le
+  compte rendu vit dans la fiche, il n'en sort pas.
+
+### b. Consigner n'est pas organiser
+
+Le point de sécurité du lot, et il a le même précédent que DEC-035 §b : la
+migration 041 avait découvert que `rental.maintenance.close` était **impliquée**
+par `.update`, faute de garde sur le chemin d'un appel direct.
+
+Une policy d'`UPDATE` ne sait pas distinguer deux actes portés par les mêmes
+colonnes. `fn_meeting_write_guard` s'en charge :
+
+| Acte | Capacité exigée |
+| --- | --- |
+| Écrire un compte rendu **ou** déclarer la réunion tenue | `projects.meetings.report` |
+| Tout autre changement d'une réunion | `projects.meetings.update` |
+
+**Les deux gestes du compte rendu forment un seul acte.** Les séparer aurait
+obligé à détenir aussi `.update` pour poser l'état, ce qui rendait
+`projects.meetings.report` inutilisable seule.
+
+La barrière est au **déclencheur**, et non dans une fonction : ces tables se
+modifient directement par PostgREST. La recette éprouve les deux frontières par
+`PATCH` direct, sans passer par aucun écran.
+
+### c. Une action n'est pas une tâche, et peut le devenir
+
+§25 : « Une action représente une opération à réaliser **à la suite** d'une
+réunion, d'une décision ou d'un événement », et « une action peut être
+**transformée en tâche** lorsqu'un suivi détaillé est nécessaire ».
+
+La seconde phrase n'aurait aucun sens si les deux objets étaient le même. Trois
+règles en découlent :
+
+1. **Une action sans origine n'existe pas** — la contrainte `actions_has_origin`
+   l'impose. Sans réunion ni décision, ce serait une tâche, et c'est ce qui
+   justifie une table distincte plutôt qu'une colonne de plus sur
+   `project_tasks`.
+2. **Transformer, c'est créer une tâche** — l'acte exige donc
+   `projects.tasks.create`, en plus de la lecture et de la modification des
+   actions. Les deux écritures vivent dans `transform_action_to_task()`, dans
+   **une seule transaction** : un échec entre les deux laisserait une tâche
+   orpheline, que la base refuserait ensuite de supprimer (§48).
+3. **Une action transformée n'a plus d'état propre** — le suivi appartient à la
+   tâche, et la base **gèle** la colonne. Deux états pour un même travail
+   feraient deux vérités, dont l'une finirait par mentir. L'écran lit alors
+   l'état de la tâche, ou **dit** qu'il ne peut pas la lire.
+
+Le gel est une règle de **cohérence**, pas de droit : contrairement aux gardes
+de capacité, il ne s'efface pas pour une migration ni pour la clé de service. La
+base ne doit pas accepter d'un script ce qu'elle refuse à un humain.
+
+### d. Le calendrier n'a pas de permission, et c'est un choix
+
+§19 : le calendrier affiche « tâches, échéances, réunions, rendez-vous ». Il ne
+montre **rien** que `projects.tasks.view`, `projects.meetings.view` ou
+`projects.appointments.view` n'ouvrent déjà.
+
+Créer `projects.calendar.view` aurait donné l'**illusion d'un contrôle** : un
+droit qu'on retire sans rien fermer, puisque les mêmes éléments restent lisibles
+dans leurs listes. Une capacité qui ne fait que masquer un écran n'en est pas
+une.
+
+**Retenu :** la page s'ouvre à qui détient **au moins une** des trois lectures,
+n'affiche que les couches correspondantes, et **NOMME les couches fermées**
+(DEC-017). Un calendrier vide et un calendrier amputé ne sont pas la même chose
+— et confondre les deux ferait manquer une réunion.
+
+### e. Ce qui est annulé n'occupe plus la journée
+
+Le calendrier montre ce qui est **prévu** : une réunion annulée, un rendez-vous
+annulé, une tâche annulée n'y figurent plus. Ils restent consultables depuis
+leur fiche et leur liste — c'est la doctrine du LOT 12, *ranger n'est pas
+effacer*, appliquée à l'annulation.
+
+Une réunion **tenue**, en revanche, reste au calendrier : elle a bien occupé
+cette journée-là.
+
+### f. Aucune table de participants pour les décisions
+
+§24 cite les « participants concernés » d'une décision. Ce sont ceux de la
+**réunion** dont elle est issue, plus son responsable : une troisième table les
+recopierait, et §53.20 refuse la duplication inutile. Une décision hors réunion
+nomme, elle, ses destinataires par les **actions** qu'elle produit.
+
+### g. La veille apprend deux situations, pas trois
+
+`Module 03` §38 nomme « réunion à venir » et « rendez-vous à venir » : deux
+**situations**, donc dérivables comme les treize familles existantes.
+
+| Situation | Niveau | Fenêtre |
+| --- | --- | --- |
+| Réunion aujourd'hui ou demain | **Rappel** — `Module 02` §4.2 | jours civils des Comores |
+| Rendez-vous aujourd'hui ou demain | **Rappel** — `Module 02` §4.2 | jours civils des Comores |
+
+La fenêtre est celle des départs de réservation et des échéances de tâche : le
+système n'a pas deux définitions de « bientôt ».
+
+« **Décision enregistrée** » (§38) reste hors de la veille : c'est un
+**événement de création**, et il relève de l'arbitrage ouvert par DEC-033 §h,
+avec l'activité récente.
+
+`notifications_watch()` passe de **treize à quinze familles**.
+
+### h. Le fuseau, et le piège qu'il tend
+
+Une réunion a une **date et une heure** (§21) : `starts_at` est un **instant**,
+contrairement à l'échéance d'une tâche qui est un **jour**. La saisie passe donc
+par `fromLocalInput` (DEC-025 §e) — sans quoi une réunion à 08:00 aux Comores
+serait enregistrée à 08:00 UTC et relue à 11:00.
+
+La recette de production éprouve réellement cette conversion : elle saisit
+l'heure **des Comores** et vérifie l'instant stocké. Une recette qui saisirait
+l'heure UTC passerait aussi bien avec une conversion correcte qu'avec aucune.
+
+### Conséquences
+
+- Migration **059** : six tables (`project_meetings`,
+  `project_meeting_participants`, `project_appointments`,
+  `project_appointment_participants`, `project_decisions`, `project_actions`),
+  quatre déclencheurs de règle, deux fonctions — `planning_calendar()` et
+  `transform_action_to_task()` —, **treize capacités**.
+- `notifications_watch()` passe de treize à **quinze familles**.
+- Écrans : calendrier (quatre vues du §20), listes et fiches de réunions, de
+  rendez-vous, de décisions et d'actions ; la **vue personnelle** du §36 gagne
+  ses réunions, ses rendez-vous et ses actions ; la **fiche projet** cite ses
+  réunions et ses décisions (§6).
+- La barre latérale reprend la structure du §4 : Projets, Tâches, Calendrier,
+  Réunions, Rendez-vous, Actions, Décisions.
+- Recettes : `db:verify:planning` (23 contrôles), `verify:planning`.
+- Les modules **Location**, **Facturation** et **Trésorerie** ne sont pas
+  modifiés. La **seule** écriture hors du module est la **tâche née d'une
+  action**, et le `Module 03` §25 la demande explicitement.
+
+### Défaut découvert hors périmètre, et corrigé
+
+La recette `db:verify:analytics` (LOT 11) bornait ses périodes sur
+`current_date`, c'est-à-dire le jour **UTC** de la session, alors que les
+fonctions qu'elle éprouve datent leurs flux sur `Indian/Comoro` (DEC-025 §e).
+Entre 21 h et minuit UTC, les Comores sont déjà le lendemain : une imputation
+créée à cet instant tombait hors de la fenêtre, et la recette échouait — trois
+heures par jour, sans qu'aucune régression n'ait eu lieu.
+
+**Le code de production était juste ; c'est l'horloge de la recette qui ne
+l'était pas.** Les 44 bornes ont été reposées sur le jour civil des Comores.
+
+Dix autres recettes emploient encore `current_date` et passent aujourd'hui :
+elles comparent des valeurs qu'un décalage d'un jour ne déplace pas. Le risque
+est **signalé** ci-dessous plutôt que corrigé en aveugle — modifier une centaine
+de bornes vertes serait plus risqué que le défaut lui-même.
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -2972,6 +3172,10 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 16. **DEC-033 §h** — Les notifications doivent-elles être **routées par responsabilité** (`Module 02` §11, §24) ? L'audience est aujourd'hui la **capacité de lecture** dont la notification dépend. Une diffusion « au responsable location, au Support & Logistique et à la Direction » suppose de désigner ces destinataires et la règle qui les choisit. *S'y rattachent les **notifications personnelles** du §23, et les **délais de rappel configurables** du §28, qui supposent le module Paramètres.*
 17. **DEC-035 §c** — Un projet peut-il être **confidentiel**, c'est-à-dire visible des seuls membres désignés (`Module 03` §51) ? Aujourd'hui, la visibilité suit la capacité — `projects.view` ouvre tous les projets —, comme partout ailleurs dans le SaaS. Une confidentialité par projet suppose d'arrêter trois règles : **qui** décide qu'un projet l'est, **qui** peut l'ouvrir malgré tout (la Direction ? le responsable ?), et ce qu'il advient de ses **tâches** pour un utilisateur qui détient `projects.tasks.view` sans être membre. C'est une décision d'organisation, ici **signalée et non appliquée**.
 18. **DEC-035 §g** — Les **sous-tâches** et les **dépendances entre tâches** (`Module 03` §17, §18) doivent-elles être livrées, et selon quelle règle d'avancement ? Une sous-tâche compte-t-elle dans le pourcentage du projet au même titre qu'une tâche ? Une dépendance bloquante **empêche-t-elle** de commencer, ou se contente-t-elle de l'annoncer ? §18 renvoie lui-même la question « selon les besoins du MVP ».
+19. **DEC-036 §a** — Les **documents** d'un projet, d'une réunion ou d'un rendez-vous (`Module 03` §26, §29) doivent-ils être stockés dans ADIKOM PILOT ? §29 énumère contrats, propositions, comptes rendus et conventions, et exige qu'ils ne soient « accessibles qu'aux utilisateurs autorisés ». Les livrer suppose d'arrêter trois règles : **quels** types de document, **quelle** capacité les gouverne — consulter et téléverser sont deux capacités distinctes (DEC-024) —, et **quelle durée de conservation**. Aucune capacité n'est créée en attendant.
+20. **DEC-036 §a** — Les **commentaires** sur un projet ou une tâche (`Module 03` §30) doivent-ils être livrés ? La question était déjà ouverte au LOT 12 ; elle suppose sa propre capacité, et de décider si un commentaire se modifie, se supprime, et qui peut le faire.
+21. **DEC-036 §g** — Une réunion **passée mais jamais déclarée tenue** doit-elle être notifiée ? §38 ne nomme que « réunion à venir » : la fiche le signale aujourd'hui à qui l'ouvre, mais la veille se tait. En faire une famille supposerait un **seuil** — au bout de combien de temps une réunion sans compte rendu appelle-t-elle un rappel ? — qui est une règle de gestion, pas une déduction.
+22. **DEC-036 — défaut signalé** — Dix recettes SQL (`customer_invoices`, `customer_payments`, `dashboard`, `notifications`, `treasury`, `supplier_invoices`, `location`, `rental_cycle`, `imputations`, `maintenance_costs`) bornent encore leurs périodes sur `current_date`, c'est-à-dire le jour **UTC**, alors que le système compte ses journées sur `Indian/Comoro`. Elles passent aujourd'hui — elles comparent des valeurs qu'un décalage d'un jour ne déplace pas —, mais la même fragilité y dort. Le remède est connu et déjà appliqué à `analytics.sql` : remplacer `current_date` par `(now() at time zone 'Indian/Comoro')::date`. À faire lot par lot, en vérifiant chaque recette, plutôt qu'en une passe aveugle.
 
 ---
 

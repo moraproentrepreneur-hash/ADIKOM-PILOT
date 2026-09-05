@@ -26,7 +26,7 @@
  *  10. §36    — la vue personnelle montre ce qui est attribué, et rien de plus.
  *  11. §38    — la veille apprend les échéances et les retards de tâches ; une
  *               source fermée est NOMMÉE, jamais silencieuse (DEC-017).
- *  12.        — aucun effet de bord : DEMO intactes, catalogue à 157, aucun
+ *  12.        — aucun effet de bord : DEMO intactes, catalogue à 170, aucun
  *               autre module modifié.
  *
  * AUCUNE DATE EN DUR : les échéances se posent par rapport au jour d'exécution.
@@ -391,8 +391,6 @@ async function main() {
     console.log('\n──────────────────────────────────────────────────────────────')
     console.log('2 — CRÉER UN PROJET, PAR L’ÉCRAN (§53.1, §53.2)\n')
 
-    let creeParEcran = null
-
     {
       const { context, page } = await signIn(browser, base, accounts.chef)
 
@@ -426,7 +424,6 @@ async function main() {
         .maybeSingle()
 
       if (row) {
-        creeParEcran = row.id
         fixtures.projects.push(row.id)
         check(row.owner_id === accounts.chef.id, 'Le responsable est enregistré en base')
         check(row.priority === 'URGENT', 'La priorité saisie est enregistrée', row.priority)
@@ -1051,13 +1048,15 @@ async function main() {
       const { count: total } = await admin
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-      check(total === 157, 'Catalogue conforme', `${total} permissions`)
+      check(total === 170, 'Catalogue conforme', `${total} permissions`)
 
-      const { count: projectPerms } = await admin
+      // Le LOT 13 a porté le module à vingt et une capacités (migration 059).
+      // Celles des TÂCHES restent quatre : c'est ce que ce lot-ci garantit.
+      const { count: taskPerms } = await admin
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-        .like('code', 'projects.%')
-      check(projectPerms === 8, 'Huit capacités pour le module Projets, aucune de plus')
+        .like('code', 'projects.tasks.%')
+      check(taskPerms === 4, 'Quatre capacités de tâches, aucune de plus', `${taskPerms}`)
 
       // Un projet référence, il ne pilote pas (§45).
       const { count: locations } = await admin

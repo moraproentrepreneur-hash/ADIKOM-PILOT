@@ -131,6 +131,8 @@ export const KINDS = [
   'SUPPLIER_INVOICE_OVERDUE',
   'TASK_DUE',
   'TASK_LATE',
+  'MEETING_SOON',
+  'APPOINTMENT_SOON',
 ] as const
 
 export type NotificationKind = (typeof KINDS)[number]
@@ -254,6 +256,25 @@ export const KIND_META: Record<NotificationKind, KindMeta> = {
     precision: 'day',
     moment: (at) => `Échéance dépassée depuis le ${at}`,
   },
+  /*
+   * Module 03 §38 : « réunion à venir ; rendez-vous à venir ».
+   *
+   * `minute`, contrairement aux échéances de tâche : une réunion a une HEURE, et
+   * c'est précisément l'information utile — savoir qu'elle est « demain » sans
+   * savoir à quelle heure n'aide personne à s'organiser (§21, §26).
+   */
+  MEETING_SOON: {
+    title: 'Réunion à venir',
+    origin: 'Projets · Réunions',
+    precision: 'minute',
+    moment: (at) => `Prévue le ${at}`,
+  },
+  APPOINTMENT_SOON: {
+    title: 'Rendez-vous à venir',
+    origin: 'Projets · Rendez-vous',
+    precision: 'minute',
+    moment: (at) => `Prévu le ${at}`,
+  },
 }
 
 /** Le libellé du montant, lorsqu'il y en a un — jamais « montant » tout court. */
@@ -277,6 +298,8 @@ export const OBJECT_TYPES = [
   'customer_invoice',
   'supplier_invoice',
   'task',
+  'meeting',
+  'appointment',
 ] as const
 
 export type NotificationObject = (typeof OBJECT_TYPES)[number]
@@ -299,6 +322,8 @@ export const OBJECT_HREF: Record<NotificationObject, (id: string) => string> = {
   customer_invoice: (id) => `/facturation/clients/${id}`,
   supplier_invoice: (id) => `/facturation/fournisseurs/${id}`,
   task: (id) => `/projets/taches/${id}`,
+  meeting: (id) => `/projets/reunions/${id}`,
+  appointment: (id) => `/projets/rendez-vous/${id}`,
 }
 
 /** « Action : Voir la location » (§34) — adaptée au contexte, jamais générique. */
@@ -311,6 +336,8 @@ export const OBJECT_ACTION: Record<NotificationObject, string> = {
   customer_invoice: 'Voir la facture',
   supplier_invoice: 'Voir la facture',
   task: 'Voir la tâche',
+  meeting: 'Voir la réunion',
+  appointment: 'Voir le rendez-vous',
 }
 
 export function isObjectType(value: string): value is NotificationObject {
@@ -389,5 +416,21 @@ export const WATCH_SOURCES: WatchSource[] = [
   {
     label: 'Échéances et retards de tâches',
     requires: [PERMISSIONS.TASKS_VIEW],
+  },
+  /*
+   * LOT 13 — `Module 03` §38 : « réunion à venir ; rendez-vous à venir ».
+   *
+   * Chacune sa capacité, et aucune n'en implique une autre : consulter les
+   * réunions n'ouvre pas les rendez-vous. Le nom du projet, celui du
+   * responsable et celui du tiers arrivent par jointure externe — leur absence
+   * retire un détail, jamais l'annonce elle-même.
+   */
+  {
+    label: 'Réunions à venir',
+    requires: [PERMISSIONS.MEETINGS_VIEW],
+  },
+  {
+    label: 'Rendez-vous à venir',
+    requires: [PERMISSIONS.APPOINTMENTS_VIEW],
   },
 ]

@@ -183,21 +183,73 @@ describe('rôles dans un projet (§9)', () => {
 })
 
 describe('onglets du module', () => {
-  it('ne propose que ce que les capacités ouvrent', () => {
-    const tasksOnly = moduleTabs('taches', { projects: false, tasks: true })
-    expect(tasksOnly.map((tab) => tab.key)).toEqual(['taches', 'mes-elements'])
+  /** Aucune lecture : le point de départ de chaque cas. */
+  const none = {
+    projects: false,
+    tasks: false,
+    meetings: false,
+    appointments: false,
+    actions: false,
+    decisions: false,
+  }
 
-    const projectsOnly = moduleTabs('projets', { projects: true, tasks: false })
+  it('ne propose que ce que les capacités ouvrent', () => {
+    // Les tâches ouvrent aussi le CALENDRIER : il superpose des couches, et
+    // celle des échéances suffit à le rendre utile (DEC-036 §d).
+    const tasksOnly = moduleTabs('taches', { ...none, tasks: true })
+    expect(tasksOnly.map((tab) => tab.key)).toEqual(['taches', 'calendrier', 'mes-elements'])
+
+    // Les projets, eux, n'ouvrent aucune couche du calendrier.
+    const projectsOnly = moduleTabs('projets', { ...none, projects: true })
     expect(projectsOnly.map((tab) => tab.key)).toEqual(['projets', 'mes-elements'])
   })
 
-  it('propose les trois vues à qui détient les deux lectures', () => {
-    const all = moduleTabs('projets', { projects: true, tasks: true })
-    expect(all.map((tab) => tab.key)).toEqual(['projets', 'taches', 'mes-elements'])
+  it('le calendrier s’ouvre avec n’importe laquelle de ses trois couches', () => {
+    for (const layer of ['tasks', 'meetings', 'appointments'] as const) {
+      const tabs = moduleTabs('calendrier', { ...none, [layer]: true })
+      expect(tabs.map((tab) => tab.key)).toContain('calendrier')
+    }
+
+    // Ni les décisions ni les actions ne figurent au calendrier : elles n'ont
+    // pas de place dans le temps, elles découlent de ce qui en a.
+    for (const other of ['projects', 'decisions', 'actions'] as const) {
+      const tabs = moduleTabs('calendrier', { ...none, [other]: true })
+      expect(tabs.map((tab) => tab.key)).not.toContain('calendrier')
+    }
+  })
+
+  it('propose les huit écrans à qui détient toutes les lectures', () => {
+    const all = moduleTabs('projets', {
+      projects: true,
+      tasks: true,
+      meetings: true,
+      appointments: true,
+      actions: true,
+      decisions: true,
+    })
+
+    // L'ordre est celui du Module 03 §4, suivi de la vue personnelle du §36.
+    expect(all.map((tab) => tab.key)).toEqual([
+      'projets',
+      'taches',
+      'calendrier',
+      'reunions',
+      'rendez-vous',
+      'actions',
+      'decisions',
+      'mes-elements',
+    ])
     for (const tab of all) expect(tab.href).toBeTruthy()
   })
 
   it('n’affiche aucun onglet lorsqu’il n’y a nulle part où aller', () => {
-    expect(moduleTabs('projets', { projects: false, tasks: false })).toEqual([])
+    expect(moduleTabs('projets', none)).toEqual([])
+  })
+
+  it('les décisions n’ouvrent pas la vue personnelle', () => {
+    // §36 énumère tâches, échéances, réunions, rendez-vous et projets. Une
+    // décision n'est attribuée à personne au sens du suivi : elle est prise.
+    const decisionsOnly = moduleTabs('decisions', { ...none, decisions: true })
+    expect(decisionsOnly.map((tab) => tab.key)).toEqual([])
   })
 })

@@ -930,8 +930,8 @@ do $$
 declare v_total int;
 begin
   select count(*) into v_total from public.permissions;
-  if v_total <> 157 then
-    raise exception 'Catalogue attendu à 157 permissions, obtenu %.', v_total;
+  if v_total <> 170 then
+    raise exception 'Catalogue attendu à 170 permissions, obtenu %.', v_total;
   end if;
 
   if exists (
@@ -941,7 +941,7 @@ begin
     raise exception 'Une capacité de notifications a été créée d''office (DEC-024).';
   end if;
 
-  raise notice '[OK] 15. Catalogue à 157 permissions, `notifications.view` seule.';
+  raise notice '[OK] 15. Catalogue à 170 permissions, `notifications.view` seule.';
 end $$;
 
 

@@ -669,37 +669,45 @@ begin
 end $$;
 
 
--- --- 20. LE CATALOGUE PORTE QUATRE CAPACITÉS DE PLUS, PAS CINQ ------------------------
+-- --- 20. LES QUATRE CAPACITÉS DE TÂCHES, ET RIEN QUI LES DÉBORDE ----------------------
+--
+-- Ce contrôle appartient au LOT 12 : il vérifie que les tâches portent
+-- EXACTEMENT les quatre capacités du §42. Le total du catalogue et l'inventaire
+-- complet du module Projets relèvent désormais de la recette du LOT 13
+-- (`db:verify:planning`), qui les tient à jour avec les treize capacités
+-- ajoutées par la migration 059.
 do $$
 declare
   v_total int;
   v_tasks int;
 begin
   select count(*) into v_total from public.permissions;
-  if v_total <> 157 then
-    raise exception 'Catalogue attendu à 157 permissions, obtenu %.', v_total;
+  if v_total <> 170 then
+    raise exception 'Catalogue attendu à 170 permissions, obtenu %.', v_total;
   end if;
 
-  select count(*) into v_tasks from public.permissions where code like 'projects.%';
-  if v_tasks <> 8 then
-    raise exception 'Huit capacités attendues pour le module Projets, obtenu %.', v_tasks;
+  select count(*) into v_tasks
+  from public.permissions
+  where code like 'projects.tasks.%';
+
+  if v_tasks <> 4 then
+    raise exception 'Quatre capacités de tâches attendues, obtenu %.', v_tasks;
   end if;
 
-  -- Aucune capacité d'office : ni export, ni document, ni réunion, ni décision —
-  -- le LOT 12 n'en produit aucun (DEC-024).
+  -- Aucune capacité d'office sur les tâches : ni `assign`, ni `archive`, ni
+  -- `export` — le module n'en propose aucune (DEC-024).
   if exists (
     select 1 from public.permissions
-    where code like 'projects.%'
+    where code like 'projects.tasks.%'
       and code not in (
-        'projects.view', 'projects.create', 'projects.update', 'projects.archive',
         'projects.tasks.view', 'projects.tasks.create',
         'projects.tasks.update', 'projects.tasks.close'
       )
   ) then
-    raise exception 'Une capacité a été créée d''office pour le module Projets (DEC-024).';
+    raise exception 'Une capacité a été créée d''office pour les tâches (DEC-024).';
   end if;
 
-  raise notice '[OK] 20. Catalogue à 157 ; huit capacités pour Projets, aucune de plus.';
+  raise notice '[OK] 20. Catalogue à 170 ; quatre capacités de tâches, aucune de plus.';
 end $$;
 
 

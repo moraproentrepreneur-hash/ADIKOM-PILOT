@@ -20,6 +20,7 @@ import {
   listTasks,
   type TaskListItem,
 } from '@/features/projects/data'
+import { moduleAccess } from '@/features/projects/access'
 import { moduleTabs } from '@/features/projects/tabs'
 
 export const metadata: Metadata = { title: 'Tâches' }
@@ -57,11 +58,13 @@ export default async function TasksPage(props: PageProps<'/projets/taches'>) {
     withoutDueDate: read('sans_echeance') === '1',
   }
 
-  const [tasks, canCreate, canReadProjects] = await Promise.all([
+  const [tasks, canCreate, access] = await Promise.all([
     listTasks(filters),
     can(PERMISSIONS.TASKS_CREATE),
-    can(PERMISSIONS.PROJECTS_VIEW),
+    moduleAccess(),
   ])
+
+  const canReadProjects = access.projects
 
   const projects = canReadProjects ? await listProjectOptions() : []
 
@@ -103,7 +106,7 @@ export default async function TasksPage(props: PageProps<'/projets/taches'>) {
       />
 
       <Tabs
-        items={moduleTabs('taches', { projects: canReadProjects, tasks: true })}
+        items={moduleTabs('taches', { ...access, tasks: true })}
         current="taches"
       />
 

@@ -2960,7 +2960,7 @@ async function main() {
       const { count: total } = await admin
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-      check(total === 157, 'Catalogue conforme', `${total} permissions`)
+      check(total === 170, 'Catalogue conforme', `${total} permissions`)
 
       const [{ count: clients }, { count: vehicles }] = await Promise.all([
         admin

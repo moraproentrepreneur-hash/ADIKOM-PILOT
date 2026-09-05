@@ -4,10 +4,14 @@ import {
   Bell,
   Building2,
   CalendarCheck,
+  CalendarClock,
+  CalendarDays,
   CarFront,
+  CheckSquare,
   ClipboardList,
   FileText,
   FolderKanban,
+  Gavel,
   Handshake,
   History,
   KeyRound,
@@ -22,6 +26,7 @@ import {
   Truck,
   UserCog,
   Users,
+  Users2,
   Wallet,
   Wrench,
 } from 'lucide-react'
@@ -51,6 +56,18 @@ export type NavItem = {
   href: string
   icon: LucideIcon
   permission: PermissionCode
+  /**
+   * Lectures alternatives, pour un écran qui n'a pas de capacité propre.
+   *
+   * Le calendrier (Module 03 §19) superpose des couches gouvernées chacune par
+   * sa permission ; il n'en possède aucune, parce qu'il ne montre rien de plus
+   * qu'elles (DEC-036 §d). L'entrée s'affiche donc dès qu'une seule est
+   * détenue — et la page n'affiche alors que la couche correspondante.
+   *
+   * Ce champ ne relâche rien : `filterNavigation` ne fait que du confort de
+   * lecture, la page réexige les mêmes capacités.
+   */
+  alternatives?: readonly PermissionCode[]
   status: NavStatus
 }
 
@@ -90,9 +107,10 @@ export const NAVIGATION: NavEntry[] = [
    * lecture relève d'une capacité distincte. Une seule entrée aurait laissé
    * croire que l'une ouvre l'autre.
    *
-   * Réunions, rendez-vous, décisions et calendrier ne figurent pas ici : ils
-   * relèvent du LOT 13, et une entrée « à venir » de plus n'aiderait personne
-   * tant que la page n'existe pas.
+   * Le LOT 13 a complété la section : elle reprend désormais, dans l'ordre, la
+   * structure du `Module 03` §4 — Projets, Tâches, Calendrier, Réunions,
+   * Rendez-vous, Actions, Décisions. Chaque entrée porte SA lecture ; le
+   * calendrier n'en a pas, il en accepte trois (DEC-036 §d).
    */
   {
     label: 'Projets & Planification',
@@ -110,6 +128,42 @@ export const NAVIGATION: NavEntry[] = [
         href: '/projets/taches',
         icon: ListChecks,
         permission: PERMISSIONS.TASKS_VIEW,
+        status: 'ready',
+      },
+      {
+        label: 'Calendrier',
+        href: '/projets/calendrier',
+        icon: CalendarDays,
+        permission: PERMISSIONS.TASKS_VIEW,
+        alternatives: [PERMISSIONS.MEETINGS_VIEW, PERMISSIONS.APPOINTMENTS_VIEW],
+        status: 'ready',
+      },
+      {
+        label: 'Réunions',
+        href: '/projets/reunions',
+        icon: Users2,
+        permission: PERMISSIONS.MEETINGS_VIEW,
+        status: 'ready',
+      },
+      {
+        label: 'Rendez-vous',
+        href: '/projets/rendez-vous',
+        icon: CalendarClock,
+        permission: PERMISSIONS.APPOINTMENTS_VIEW,
+        status: 'ready',
+      },
+      {
+        label: 'Actions',
+        href: '/projets/actions',
+        icon: CheckSquare,
+        permission: PERMISSIONS.ACTIONS_VIEW,
+        status: 'ready',
+      },
+      {
+        label: 'Décisions',
+        href: '/projets/decisions',
+        icon: Gavel,
+        permission: PERMISSIONS.DECISIONS_VIEW,
         status: 'ready',
       },
     ],
@@ -319,13 +373,16 @@ export function filterNavigation(
   granted: ReadonlySet<string>,
   isSuperAdmin: boolean
 ): NavEntry[] {
-  const allowed = (permission: PermissionCode) => isSuperAdmin || granted.has(permission)
+  const allowed = (item: NavItem) =>
+    isSuperAdmin ||
+    granted.has(item.permission) ||
+    (item.alternatives ?? []).some((code) => granted.has(code))
 
   return entries.reduce<NavEntry[]>((acc, entry) => {
     if (isSection(entry)) {
-      const items = entry.items.filter((item) => allowed(item.permission))
+      const items = entry.items.filter(allowed)
       if (items.length > 0) acc.push({ ...entry, items })
-    } else if (allowed(entry.permission)) {
+    } else if (allowed(entry)) {
       acc.push(entry)
     }
     return acc
