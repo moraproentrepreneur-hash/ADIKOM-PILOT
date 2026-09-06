@@ -699,6 +699,43 @@ Toutes trouvées **avant livraison**, par les recettes.
 | **Production** | 38 recettes Playwright | De vraies sessions, de vrais profils, et les gestes interdits tentés **par appel direct** |
 | **Qualité** | `lint` · `typecheck` · `build` | Aucune erreur, aucun avertissement |
 
+> **Deux recettes ne peuvent pas être exécutées** — `verify:users:ui` et
+> `verify:permissions` exigent les identifiants du Super Admin
+> (`ADIKOM_ADMIN_USERNAME`, `ADIKOM_ADMIN_PASSWORD`), qui ne figurent pas dans
+> l'environnement de développement et **ne doivent pas y figurer**. Constat
+> identique depuis le LOT 14. Les frontières qu'elles éprouvent sont couvertes
+> par `verify:capabilities`, qui crée ses propres profils.
+
+### La passe finale, exécutée contre la production
+
+Toutes ces recettes ont été rejouées **après le déploiement**, sur
+`https://adikom-pilot.vercel.app` et la base réelle.
+
+| Recette | Contrôles |
+| --- | --- |
+| **21 recettes SQL** (`db:verify:*`) | **366** ✔ |
+| `verify:responsive` — 32 écrans × 3 largeurs | **329** ✔ |
+| `verify:capabilities` — toutes les frontières de capacités | **206** ✔ |
+| `verify:rental-documents` | 58 ✔ |
+| `verify:maintenance` | 54 ✔ |
+| `verify:transfers` · `verify:customer-invoices` | 52 · 52 ✔ |
+| `verify:rental-return` | 51 ✔ |
+| `verify:backup` — dont une réinitialisation et une restauration **réelles** | **50** ✔ |
+| `verify:imputations` | 47 ✔ |
+| `verify:incidents` | 39 ✔ |
+| `verify:supplier-invoices` | 37 ✔ |
+| `verify:checkout` · `verify:customer-payments` | 36 · 36 ✔ |
+| `verify:reservations` · `verify:rental-live` | 35 · 35 ✔ |
+| `verify:treasury` · `verify:rentals` | 34 · 34 ✔ |
+| `verify:dashboard` | 30 ✔ |
+| `verify:maintenance-costs` | 29 ✔ |
+
+**Total : 1 610 contrôles, tous verts.**
+
+Et après la passe, la base est retrouvée **exactement** dans son état de départ :
+134 lignes métier, 6 comptes dont **1 Super Admin**, 171 permissions, aucun
+résidu de recette.
+
 ### La leçon la plus utile du dernier lot
 
 Le défaut « `DELETE requires a WHERE clause` » est passé **inaperçu de la recette
