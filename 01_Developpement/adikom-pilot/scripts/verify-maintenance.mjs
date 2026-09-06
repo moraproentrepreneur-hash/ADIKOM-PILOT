@@ -27,6 +27,7 @@ import { chromium } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 
 import { loadEnvFile, required } from './lib/env.mjs'
+import { demoFootprint } from './lib/demo.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -207,6 +208,15 @@ async function main() {
   const admin = createClient(url, required('SUPABASE_SERVICE_ROLE_KEY'), {
     auth: { autoRefreshToken: false, persistSession: false },
   })
+
+  /*
+   * L'EMPREINTE DU JEU DE DÉMONSTRATION, PRISE AVANT TOUTE ÉCRITURE.
+   *
+   * Le contrôle final vérifie que la recette n'a touché à rien qui ne lui
+   * appartienne. Il se comparait autrefois à un nombre écrit en dur, qui a
+   * cessé d'être vrai dès que la démonstration s'est étoffée.
+   */
+  const demoAvant = await demoFootprint(admin)
 
   console.log(`\nCible : ${base}\n`)
 
@@ -964,15 +974,17 @@ async function main() {
         .in('entity_id', fixtures.maintenances)
       check((audited ?? 0) > 0, 'Les maintenances sont journalisées', `${audited} entrée(s)`)
 
-      const [{ count: clients }, { count: vehicles }] = await Promise.all([
-        admin
-          .from('clients')
-          .select('id', { count: 'exact', head: true })
-          .like('legal_name', '%DEMO%'),
-        admin.from('vehicles').select('id', { count: 'exact', head: true }).like('model', '%DEMO%'),
-      ])
-      check(clients === 3, 'Les trois clients DEMO sont intacts', `${clients}`)
-      check(vehicles === 3, 'Les trois véhicules DEMO sont intacts', `${vehicles}`)
+      const demoApres = await demoFootprint(admin)
+      check(
+        demoApres.clients === demoAvant.clients,
+        'Les clients DEMO sont intacts',
+        `${demoApres.clients} / ${demoAvant.clients} au départ`
+      )
+      check(
+        demoApres.vehicles === demoAvant.vehicles,
+        'Les véhicules DEMO sont intacts',
+        `${demoApres.vehicles} / ${demoAvant.vehicles} au départ`
+      )
     }
   } finally {
     await browser.close()

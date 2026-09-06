@@ -42,6 +42,7 @@ import { chromium } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 
 import { loadEnvFile, required } from './lib/env.mjs'
+import { referentialFootprint } from './lib/demo.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -213,6 +214,15 @@ async function main() {
   const admin = createClient(url, required('SUPABASE_SERVICE_ROLE_KEY'), {
     auth: { autoRefreshToken: false, persistSession: false },
   })
+
+  /*
+   * L'EMPREINTE DU JEU DE DÉMONSTRATION, PRISE AVANT TOUTE ÉCRITURE.
+   *
+   * Le contrôle final vérifie que la recette n'a touché à rien qui ne lui
+   * appartienne. Il se comparait autrefois à un nombre écrit en dur, qui a
+   * cessé d'être vrai dès que la démonstration s'est étoffée.
+   */
+  const demoAvant = await referentialFootprint(admin)
 
   console.log(`\nCible : ${base}\n`)
 
@@ -817,15 +827,13 @@ async function main() {
       check(catalogue === 171, 'Le catalogue reste à 171 capacités', `${catalogue}`)
 
       // Les données DEMO sont intactes.
-      const [{ count: clients }, { count: vehicules }, { count: fournisseurs }] = await Promise.all([
-        admin.from('clients').select('id', { count: 'exact', head: true }),
-        admin.from('vehicles').select('id', { count: 'exact', head: true }),
-        admin.from('suppliers').select('id', { count: 'exact', head: true }),
-      ])
+      const apres = await referentialFootprint(admin)
       check(
-        clients === 3 && vehicules === 3 && fournisseurs === 3,
-        'Base DEMO intacte',
-        `${clients} clients · ${vehicules} véhicules · ${fournisseurs} fournisseurs`
+        apres.clients === demoAvant.clients &&
+          apres.vehicles === demoAvant.vehicles &&
+          apres.suppliers === demoAvant.suppliers,
+        'Référentiel rendu à son état initial',
+        `${apres.clients}/${demoAvant.clients} clients · ${apres.vehicles}/${demoAvant.vehicles} véhicules · ${apres.suppliers}/${demoAvant.suppliers} fournisseurs`
       )
 
       // Les lots précédents restent lisibles et inchangés.

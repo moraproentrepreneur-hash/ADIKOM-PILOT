@@ -614,6 +614,20 @@ async function main() {
 
   console.log(`\nCible : ${url} ${DIM}(appels directs, aucun navigateur)${RESET}\n`)
 
+  /*
+   * L'EMPREINTE DU JEU DE DÉMONSTRATION, PRISE AVANT TOUTE ÉCRITURE.
+   *
+   * Le contrôle final vérifie que la recette n'a touché à rien qui ne lui
+   * appartienne. Il comparait à des nombres écrits en dur — « trois clients,
+   * trois véhicules » —, ce qui a cessé d'être vrai le jour où la démonstration
+   * s'est étoffée. Ce n'était pas la règle : la règle est que rien ne bouge.
+   * Une empreinte prise sur place la dit, quel que soit le jeu de données.
+   */
+  const [{ count: demoClients0 }, { count: demoVehicles0 }] = await Promise.all([
+    admin.from('clients').select('id', { count: 'exact', head: true }).like('legal_name', '%DEMO%'),
+    admin.from('vehicles').select('id', { count: 'exact', head: true }).like('model', '%DEMO%'),
+  ])
+
   const accounts = {}
   const sessions = {}
   const fixtures = {
@@ -2969,8 +2983,16 @@ async function main() {
           .like('legal_name', '%DEMO%'),
         admin.from('vehicles').select('id', { count: 'exact', head: true }).like('model', '%DEMO%'),
       ])
-      check(clients === 3, 'Les trois clients DEMO sont intacts', `${clients}`)
-      check(vehicles === 3, 'Les trois véhicules DEMO sont intacts', `${vehicles}`)
+      check(
+        clients === demoClients0,
+        'Les clients DEMO sont intacts',
+        `${clients} / ${demoClients0} au départ`
+      )
+      check(
+        vehicles === demoVehicles0,
+        'Les véhicules DEMO sont intacts',
+        `${vehicles} / ${demoVehicles0} au départ`
+      )
     }
   } finally {
     for (const client of Object.values(sessions)) await client.auth.signOut()
