@@ -101,6 +101,20 @@ const PROFILES = {
   ],
   // Voit les écritures, PAS les virements : l'écran doit lui rester fermé.
   ecritures: ['treasury.accounts.view', 'treasury.balances.view', 'treasury.entries.view'],
+  /*
+   * Le VOISIN : il annule les règlements, pas les virements.
+   *
+   * Il porte `supplier_payments.cancel` et `customer_payments.cancel`, et LIT
+   * les écritures. Avant la migration 073, la policy d'UPDATE était une
+   * disjonction de capacités sans lien avec l'origine de la ligne : il pouvait
+   * annuler l'écriture d'un VIREMENT, dont le virement restait validé.
+   */
+  voisin: [
+    'treasury.accounts.view',
+    'treasury.entries.view',
+    'billing.supplier_payments.cancel',
+    'billing.customer_payments.cancel',
+  ],
 }
 
 async function createProfile(admin, accounts, key, codes) {
@@ -533,6 +547,49 @@ async function main() {
         .select('id', { count: 'exact', head: true })
         .eq('internal_transfer_id', transferId)
       check(count === 2, 'Le virement porte exactement deux écritures', `${count}`)
+    }
+
+    {
+      /*
+       * L'écriture s'annule sous LA capacité de son origine — migration 073.
+       *
+       * Ce profil annule les règlements, et lit les écritures. Il ne doit pas
+       * pouvoir défaire celles d'un virement : le virement resterait validé,
+       * et le solde du compte remonterait sans cause.
+       */
+      const client = await session('voisin')
+
+      const seen = await client
+        .from('treasury_entries')
+        .select('id')
+        .eq('internal_transfer_id', transferId)
+      check(
+        (seen.data ?? []).length === 2,
+        'Le voisin LIT bien les deux écritures — le refus qui suit n’est pas un effet de RLS',
+        `${(seen.data ?? []).length}`
+      )
+
+      const patch = await client
+        .from('treasury_entries')
+        .update({ status: 'CANCELLED' })
+        .eq('internal_transfer_id', transferId)
+        .select('id')
+      check(
+        Boolean(patch.error) || (patch.data ?? []).length === 0,
+        'PATCH direct : annuler l’écriture d’un virement exige `transfers.cancel`',
+        patch.error?.message?.slice(0, 70) ?? 'aucune ligne modifiée'
+      )
+
+      const { count: alive } = await admin
+        .from('treasury_entries')
+        .select('id', { count: 'exact', head: true })
+        .eq('internal_transfer_id', transferId)
+        .eq('status', 'VALIDATED')
+      check(
+        alive === 2,
+        'Les deux écritures restent validées : aucun solde n’a bougé sans cause',
+        `${alive}`
+      )
     }
 
     /* ------------------------------------------------------------------ */

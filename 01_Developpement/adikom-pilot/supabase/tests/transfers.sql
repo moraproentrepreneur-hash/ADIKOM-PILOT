@@ -938,7 +938,23 @@ begin
     raise exception 'La policy d''insertion des écritures ignore les nouvelles origines.';
   end if;
 
-  raise notice '[OK] 19. Contrainte d''origine et policy d''insertion étendues, sans rien retirer.';
+  /*
+   * Migration 073 — la policy d'UPDATE doit lier la capacité à l'ORIGINE de la
+   * ligne. Une disjonction de capacités laisserait un porteur de
+   * `supplier_payments.cancel` annuler l'écriture d'un virement.
+   */
+  select count(*) into v_cnt from pg_policies
+  where schemaname = 'public' and tablename = 'treasury_entries'
+    and policyname = 'treasury_entries_update'
+    and qual like '%supplier_payment_id IS NOT NULL%'
+    and qual like '%customer_payment_id IS NOT NULL%'
+    and qual like '%internal_transfer_id IS NOT NULL%'
+    and qual like '%misc_payment_id IS NOT NULL%';
+  if v_cnt <> 1 then
+    raise exception 'La policy d''annulation des écritures n''est pas liée à leur origine (migration 073).';
+  end if;
+
+  raise notice '[OK] 19. Origine unique, insertion étendue, et l''annulation liée à l''origine.';
 end $$;
 
 
