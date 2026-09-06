@@ -1,5 +1,8 @@
 import { FileSpreadsheet } from 'lucide-react'
 
+import { BUTTON_BASE, BUTTON_TONES } from '@/components/ui/primitives'
+import { cn } from '@/lib/utils'
+
 /**
  * Export Excel d'une liste.
  *
@@ -31,9 +34,9 @@ export function ExportButton({
   return (
     <a
       href={`/api/exports/${module}${query ? `?${query}` : ''}`}
-      className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
+      className={cn(BUTTON_BASE, BUTTON_TONES.secondary)}
     >
-      <FileSpreadsheet className="size-4" aria-hidden />
+      <FileSpreadsheet className="size-4 shrink-0" aria-hidden />
       {label}
     </a>
   )

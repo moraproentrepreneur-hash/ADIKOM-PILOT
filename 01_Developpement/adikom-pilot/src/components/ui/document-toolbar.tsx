@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Download, Eye, Printer, X } from 'lucide-react'
 
 import { Notice } from '@/components/ui/feedback'
+import { BUTTON_BASE, BUTTON_TONES } from '@/components/ui/primitives'
+import { cn } from '@/lib/utils'
 
 /**
  * Aperçu, téléchargement et impression d'un document.
@@ -81,18 +83,18 @@ export function DocumentToolbar({
         <button
           type="button"
           onClick={() => openPreview(false)}
-          className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
+          className={cn(BUTTON_BASE, BUTTON_TONES.secondary)}
         >
-          <Eye className="size-4" aria-hidden />
+          <Eye className="size-4 shrink-0" aria-hidden />
           Aperçu
         </button>
 
         {canDownload && (
           <a
             href={`${base}?mode=download`}
-            className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
+            className={cn(BUTTON_BASE, BUTTON_TONES.secondary)}
           >
-            <Download className="size-4" aria-hidden />
+            <Download className="size-4 shrink-0" aria-hidden />
             Télécharger PDF
           </a>
         )}
@@ -101,9 +103,9 @@ export function DocumentToolbar({
           <button
             type="button"
             onClick={() => openPreview(true)}
-            className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
+            className={cn(BUTTON_BASE, BUTTON_TONES.secondary)}
           >
-            <Printer className="size-4" aria-hidden />
+            <Printer className="size-4 shrink-0" aria-hidden />
             Imprimer
           </button>
         )}
@@ -118,9 +120,9 @@ export function DocumentToolbar({
               {canDownload && (
                 <a
                   href={`${base}?mode=download`}
-                  className="inline-flex items-center gap-2 rounded-control bg-adikom-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-adikom-600"
+                  className={cn(BUTTON_BASE, BUTTON_TONES.primary)}
                 >
-                  <Download className="size-4" aria-hidden />
+                  <Download className="size-4 shrink-0" aria-hidden />
                   Télécharger
                 </a>
               )}
@@ -128,9 +130,9 @@ export function DocumentToolbar({
                 <button
                   type="button"
                   onClick={printFrame}
-                  className="inline-flex items-center gap-2 rounded-control border border-line bg-white px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
+                  className={cn(BUTTON_BASE, BUTTON_TONES.secondary)}
                 >
-                  <Printer className="size-4" aria-hidden />
+                  <Printer className="size-4 shrink-0" aria-hidden />
                   Imprimer
                 </button>
               )}
@@ -183,11 +185,11 @@ function PreviewOverlay({
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-3 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-card bg-white"
+        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl flex-col overflow-hidden rounded-card bg-white sm:max-h-[calc(100dvh-2rem)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-line px-5 py-3">
@@ -196,15 +198,15 @@ function PreviewOverlay({
             type="button"
             onClick={onClose}
             aria-label="Fermer l’aperçu"
-            className="rounded-control p-1.5 text-muted transition-colors hover:bg-canvas hover:text-ink"
+            className="inline-flex size-9 shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-canvas hover:text-ink"
           >
-            <X className="size-4" aria-hidden />
+            <X className="size-4 shrink-0" aria-hidden />
           </button>
         </div>
 
         <div className="overflow-auto px-5 py-4">{children}</div>
 
-        <div className="border-t border-line px-5 py-3">{footer}</div>
+        <div className="shrink-0 border-t border-line px-5 py-3">{footer}</div>
       </div>
     </div>
   )

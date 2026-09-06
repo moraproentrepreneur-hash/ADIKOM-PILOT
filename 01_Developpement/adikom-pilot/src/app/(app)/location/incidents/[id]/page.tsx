@@ -4,6 +4,8 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft, Image as ImageIcon, TriangleAlert, Wrench } from 'lucide-react'
 
 import {
+  ACTION_BASE,
+  ACTION_TONES,
   Badge,
   ButtonLink,
   Card,
@@ -12,6 +14,7 @@ import {
   InfoRow,
   PageHeader,
 } from '@/components/ui/primitives'
+import { cn } from '@/lib/utils'
 import { Notice } from '@/components/ui/feedback'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
@@ -196,7 +199,7 @@ export default async function IncidentDetailPage(props: PageProps<'/location/inc
                       href={`/api/incidents/photos/${photo.id}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 rounded-control border border-line px-3 py-1.5 text-xs text-adikom-500 transition-colors hover:border-adikom-300"
+                      className={cn(ACTION_BASE, ACTION_TONES.link)}
                     >
                       <ImageIcon className="size-3.5" aria-hidden />
                       {photo.caption ?? photo.fileName}

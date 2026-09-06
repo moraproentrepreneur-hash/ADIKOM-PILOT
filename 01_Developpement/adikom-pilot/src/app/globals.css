@@ -104,3 +104,65 @@ h4 {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* =============================================================================
+   Confort tactile (Design System §53, CLAUDE.md §35)
+
+   Sur un écran tactile, une cible de moins de 44 px se rate. La règle ne
+   s'applique qu'aux pointeurs GROSSIERS : sur desktop, la souris est précise et
+   des boutons de 44 px de haut alourdiraient inutilement les barres d'action.
+   ============================================================================= */
+
+@media (pointer: coarse) {
+  button:not([data-compact]),
+  a[role='button'],
+  [type='submit'],
+  [type='button'] {
+    min-height: 2.75rem;
+  }
+}
+
+/* Un champ de moins de 16 px déclenche un zoom automatique sur iOS, qui décale
+   la mise en page et ne revient pas. Le confort passe avant l'échelle. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 1rem;
+  }
+}
+
+/* =============================================================================
+   Animations d'entrée — page publique uniquement
+
+   Discrètes et courtes : elles accompagnent la lecture, elles ne la retardent
+   pas. Un utilisateur qui a demandé moins d'animations n'en voit aucune.
+   ============================================================================= */
+
+@keyframes adikom-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise {
+  animation: adikom-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -5,6 +5,7 @@ import { useFormStatus } from 'react-dom'
 import { Check, CheckCheck, LoaderCircle } from 'lucide-react'
 
 import { FormFeedback } from '@/components/ui/feedback'
+import { ACTION_BASE, ACTION_TONES } from '@/components/ui/primitives'
 import { EMPTY_FORM_STATE, type FormState } from '@/lib/form-state'
 import { cn } from '@/lib/utils'
 
@@ -103,7 +104,7 @@ function CompactButton({
       type="submit"
       disabled={pending || disabled}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-control border border-line bg-white px-2.5 py-1.5 text-xs font-medium text-muted transition-colors',
+        ACTION_BASE, ACTION_TONES.quiet,
         'hover:border-adikom-300 hover:text-adikom-500',
         'disabled:cursor-not-allowed disabled:opacity-60'
       )}

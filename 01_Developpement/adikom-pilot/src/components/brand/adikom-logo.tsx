@@ -57,14 +57,24 @@ export function AdikomLogo({
     />
   )
 
+  /*
+   * `shrink-0` N'EST PAS UN DÉTAIL DE MISE EN PAGE : C'EST LA RÈGLE ABSOLUE.
+   *
+   * Placé dans une rangée flexible étroite — l'en-tête de la page publique à
+   * 360 px —, le conteneur du logo se laissait comprimer : la recette
+   * responsive l'a mesuré à 37 × 40 au lieu de 40 × 40. Le logo était donc
+   * ÉCRASÉ, ce que CLAUDE.md §33 interdit sans exception.
+   *
+   * Le conteneur s'adapte au logo, jamais l'inverse (§34).
+   */
   if (!framed) {
-    return <span className={cn('inline-flex', className)}>{image}</span>
+    return <span className={cn('inline-flex shrink-0', className)}>{image}</span>
   }
 
   return (
     <span
       className={cn(
-        'inline-flex items-center justify-center rounded-full bg-white',
+        'inline-flex shrink-0 items-center justify-center rounded-full bg-white',
         'shadow-[0_1px_3px_rgba(31,41,55,0.12)]',
         className
       )}

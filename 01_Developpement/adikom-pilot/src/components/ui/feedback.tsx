@@ -5,6 +5,7 @@ import { useFormStatus } from 'react-dom'
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, LoaderCircle } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
+import { BUTTON_BASE, BUTTON_TONES } from '@/components/ui/primitives'
 import { cn } from '@/lib/utils'
 
 /**
@@ -104,26 +105,16 @@ export function SubmitButton({
 }) {
   const { pending } = useFormStatus()
 
-  const tones = {
-    primary: 'bg-adikom-500 text-white hover:bg-adikom-600',
-    secondary: 'border border-line bg-white text-ink hover:bg-adikom-50 hover:text-adikom-500',
-    danger:
-      'border border-danger-soft bg-danger-soft text-danger hover:bg-danger hover:text-white',
-  } as const
-
   return (
     <button
       type="submit"
       disabled={pending || disabled}
-      className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-control px-4 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60',
-        tones[tone]
-      )}
+      className={cn(BUTTON_BASE, BUTTON_TONES[tone])}
     >
       {pending ? (
-        <LoaderCircle className="size-4 animate-spin" aria-hidden />
+        <LoaderCircle className="size-4 shrink-0 animate-spin" aria-hidden />
       ) : (
-        Icon && <Icon className="size-4" aria-hidden />
+        Icon && <Icon className="size-4 shrink-0" aria-hidden />
       )}
       {pending ? pendingLabel : label}
     </button>

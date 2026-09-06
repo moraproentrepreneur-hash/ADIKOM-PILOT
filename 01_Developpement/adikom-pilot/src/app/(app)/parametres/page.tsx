@@ -17,6 +17,7 @@ import { comorianYear } from '@/features/settings/constants'
 import { PreferencesSection, SectionForm } from '@/features/settings/section-form'
 import { LogoPanel } from '@/features/settings/logo-panel'
 import { NumberingRuleForm } from '@/features/settings/numbering-form'
+import { BackupPanel } from '@/features/settings/backup-panel'
 
 export const metadata: Metadata = { title: 'Paramètres' }
 
@@ -67,8 +68,20 @@ export default async function SettingsPage(props: PageProps<'/parametres'>) {
    * L'onglet demandé est donc conservé, et le refus est nommé. Sans demande
    * explicite, on ouvre le premier onglet lisible.
    */
-  const requested = asked === 'entreprise' || asked === 'numerotation' ? asked : null
-  const current = requested ?? (canCompany ? 'entreprise' : 'numerotation')
+  const requested =
+    asked === 'entreprise' || asked === 'numerotation' || asked === 'sauvegarde' ? asked : null
+  const current = requested ?? (canCompany ? 'entreprise' : canNumbering ? 'numerotation' : 'sauvegarde')
+
+  /*
+   * LA SAUVEGARDE SUIT LE STATUT, PAS UNE PERMISSION (DEC-041).
+   *
+   * Réinitialiser efface l'activité entière d'ADIKOM ; restaurer la réécrit.
+   * Aucune des deux ne se délègue, et une capacité qui ne s'attribue jamais
+   * n'en est pas une (CLAUDE.md §19 bis). L'onglet n'apparaît donc qu'au Super
+   * Admin — et son absence pour les autres n'est pas la protection : l'action
+   * serveur et la base refusent l'une et l'autre, indépendamment de l'écran.
+   */
+  const canBackup = user.isSuperAdmin
 
   // La barre d'onglets suit la même convention que la barre latérale : elle
   // n'annonce pas ce qu'elle ne peut pas ouvrir (Module 08 §23).
@@ -78,6 +91,9 @@ export default async function SettingsPage(props: PageProps<'/parametres'>) {
       : []),
     ...(canNumbering
       ? [{ key: 'numerotation', label: 'Numérotation', href: '/parametres?onglet=numerotation' }]
+      : []),
+    ...(canBackup
+      ? [{ key: 'sauvegarde', label: 'Sauvegarde', href: '/parametres?onglet=sauvegarde' }]
       : []),
   ]
 
@@ -96,6 +112,12 @@ export default async function SettingsPage(props: PageProps<'/parametres'>) {
         ) : (
           <Refus capacite="Consulter les paramètres entreprise" />
         )
+      ) : current === 'sauvegarde' ? (
+        canBackup ? (
+          <BackupPanel />
+        ) : (
+          <Refus exigence="Cette section est réservée au Super Admin. Aucune permission ne l’ouvre." />
+        )
       ) : canNumbering ? (
         <NumberingTab />
       ) : (
@@ -105,13 +127,13 @@ export default async function SettingsPage(props: PageProps<'/parametres'>) {
   )
 }
 
-function Refus({ capacite }: { capacite: string }) {
+function Refus({ capacite, exigence }: { capacite?: string; exigence?: string }) {
   return (
     <Card>
       <EmptyState
         icon={ShieldAlert}
         title="Section non consultable avec vos droits"
-        description={`Capacité requise : ${capacite}.`}
+        description={exigence ?? `Capacité requise : ${capacite}.`}
       />
     </Card>
   )

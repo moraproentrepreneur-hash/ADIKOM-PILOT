@@ -4,7 +4,8 @@ import { useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { ImageUp, Trash2 } from 'lucide-react'
 
-import { Card } from '@/components/ui/primitives'
+import { BUTTON_BASE, BUTTON_TONES, Card } from '@/components/ui/primitives'
+import { cn } from '@/lib/utils'
 import { FormFeedback, Notice } from '@/components/ui/feedback'
 import { EMPTY_FORM_STATE } from '@/lib/form-state'
 import { removeCompanyLogo, uploadCompanyLogo } from './actions'
@@ -39,13 +40,9 @@ function PendingButton({
     <button
       type="submit"
       disabled={pending}
-      className={
-        tone === 'danger'
-          ? 'inline-flex items-center justify-center gap-2 rounded-control border border-danger-soft bg-danger-soft px-4 py-2.5 text-sm font-medium text-danger transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60'
-          : 'inline-flex items-center justify-center gap-2 rounded-control bg-adikom-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-adikom-600 disabled:cursor-not-allowed disabled:opacity-60'
-      }
+      className={cn(BUTTON_BASE, BUTTON_TONES[tone])}
     >
-      <Icon className="size-4" aria-hidden />
+      <Icon className="size-4 shrink-0" aria-hidden />
       {pending ? pendingLabel : label}
     </button>
   )

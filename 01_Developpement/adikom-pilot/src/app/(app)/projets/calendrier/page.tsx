@@ -122,7 +122,7 @@ export default async function CalendarPage(props: PageProps<'/projets/calendrier
             <Link
               href={link({ jour: shiftAnchor(view, anchor, -1) })}
               aria-label="Période précédente"
-              className="inline-flex size-9 items-center justify-center rounded-control border border-line text-muted transition-colors hover:border-adikom-300 hover:text-ink"
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-control border border-line text-muted transition-colors hover:border-adikom-300 hover:text-ink sm:size-9"
             >
               <ChevronLeft className="size-4" aria-hidden />
             </Link>
@@ -137,7 +137,7 @@ export default async function CalendarPage(props: PageProps<'/projets/calendrier
             <Link
               href={link({ jour: shiftAnchor(view, anchor, 1) })}
               aria-label="Période suivante"
-              className="inline-flex size-9 items-center justify-center rounded-control border border-line text-muted transition-colors hover:border-adikom-300 hover:text-ink"
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-control border border-line text-muted transition-colors hover:border-adikom-300 hover:text-ink sm:size-9"
             >
               <ChevronRight className="size-4" aria-hidden />
             </Link>

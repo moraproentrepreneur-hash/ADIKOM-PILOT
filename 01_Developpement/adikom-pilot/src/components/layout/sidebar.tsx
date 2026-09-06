@@ -73,7 +73,9 @@ export function Sidebar({
           type="button"
           onClick={() => setMobileOpen(true)}
           aria-label="Ouvrir la navigation"
-          className="inline-flex size-9 items-center justify-center rounded-control text-muted transition-colors hover:bg-adikom-50 hover:text-adikom-500"
+          // 44 px : c'est la plus petite cible qu'un doigt atteint sans se
+          // tromper, et c'est le SEUL accès à la navigation sur mobile.
+          className="inline-flex size-11 shrink-0 items-center justify-center rounded-control text-muted transition-colors hover:bg-adikom-50 hover:text-adikom-500"
         >
           <Menu className="size-5" aria-hidden />
         </button>
@@ -126,7 +128,7 @@ export function Sidebar({
             type="button"
             onClick={() => setMobileOpen(false)}
             aria-label="Fermer la navigation"
-            className="inline-flex size-8 items-center justify-center rounded-control text-muted hover:bg-adikom-50 lg:hidden"
+            className="inline-flex size-11 shrink-0 items-center justify-center rounded-control text-muted hover:bg-adikom-50 lg:hidden"
           >
             <X className="size-4" aria-hidden />
           </button>

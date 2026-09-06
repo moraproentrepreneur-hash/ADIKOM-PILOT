@@ -3,7 +3,8 @@
 import { useActionState, useState } from 'react'
 import { Archive, Layers, Plus, Power } from 'lucide-react'
 
-import { Badge, EmptyState } from '@/components/ui/primitives'
+import { ACTION_BASE, ACTION_TONES, Badge, EmptyState } from '@/components/ui/primitives'
+import { cn } from '@/lib/utils'
 import { Field, FormSection, Input, Textarea } from '@/components/ui/form'
 import { FormFeedback, SubmitButton } from '@/components/ui/feedback'
 import { EMPTY_FORM_STATE } from '@/lib/form-state'
@@ -103,7 +104,7 @@ function CategoryRowItem({
               <input type="hidden" name="activate" value={category.isActive ? '0' : '1'} />
               <button
                 type="submit"
-                className="inline-flex items-center gap-1.5 rounded-control border border-line px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
+                className={cn(ACTION_BASE, ACTION_TONES.secondary)}
               >
                 {category.isActive ? (
                   <>

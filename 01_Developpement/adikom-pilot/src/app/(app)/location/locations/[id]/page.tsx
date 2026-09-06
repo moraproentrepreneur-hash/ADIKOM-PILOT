@@ -12,6 +12,8 @@ import {
 } from 'lucide-react'
 
 import {
+  ACTION_BASE,
+  ACTION_TONES,
   Badge,
   ButtonLink,
   Card,
@@ -20,6 +22,7 @@ import {
   InfoRow,
   PageHeader,
 } from '@/components/ui/primitives'
+import { cn } from '@/lib/utils'
 import { Notice } from '@/components/ui/feedback'
 import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { DocumentToolbar } from '@/components/ui/document-toolbar'
@@ -659,7 +662,7 @@ async function InspectionsTab({ rentalId }: { rentalId: string }) {
                       href={`/api/inspections/${photo.id}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 rounded-control border border-line px-3 py-1.5 text-xs text-adikom-500 transition-colors hover:border-adikom-300"
+                      className={cn(ACTION_BASE, ACTION_TONES.link)}
                     >
                       <ImageIcon className="size-3.5" aria-hidden />
                       {photo.caption ?? photo.fileName}

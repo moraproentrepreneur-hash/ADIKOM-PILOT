@@ -3,7 +3,16 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, Pencil } from 'lucide-react'
 
-import { Badge, Card, Empty, InfoRow, PageHeader } from '@/components/ui/primitives'
+import {
+  Badge,
+  BUTTON_BASE,
+  BUTTON_TONES,
+  Card,
+  Empty,
+  InfoRow,
+  PageHeader,
+} from '@/components/ui/primitives'
+import { cn } from '@/lib/utils'
 import { Notice } from '@/components/ui/feedback'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
@@ -88,7 +97,7 @@ export default async function ReservationDetailPage(
           canUpdate && isOpen && !editing ? (
             <Link
               href={`/location/reservations/${id}?mode=edition`}
-              className="inline-flex items-center justify-center gap-2 rounded-control border border-line bg-white px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-adikom-50 hover:text-adikom-500"
+              className={cn(BUTTON_BASE, BUTTON_TONES.secondary)}
             >
               <Pencil className="size-4" aria-hidden />
               Modifier

@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { BellRing, Inbox, Lock } from 'lucide-react'
 
-import { Badge, Card, EmptyState, PageHeader } from '@/components/ui/primitives'
+import { ACTION_BASE, ACTION_TONES, Badge, Card, EmptyState, PageHeader } from '@/components/ui/primitives'
 import { Notice } from '@/components/ui/feedback'
 import { requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
@@ -366,8 +366,8 @@ function FilterLink({
       aria-current={active ? 'page' : undefined}
       className={
         active
-          ? 'rounded-control bg-adikom-500 px-3 py-1.5 text-xs font-medium text-white'
-          : 'rounded-control border border-line bg-white px-3 py-1.5 text-xs text-muted transition-colors hover:border-adikom-300 hover:text-adikom-500'
+          ? cn(ACTION_BASE, ACTION_TONES.active)
+          : cn(ACTION_BASE, ACTION_TONES.quiet)
       }
     >
       {children}
@@ -463,7 +463,7 @@ function NotificationRow({ item }: { item: NotificationItem }) {
           {target && item.objectType && (
             <Link
               href={target}
-              className="inline-flex items-center rounded-control border border-line bg-white px-2.5 py-1.5 text-xs font-medium text-adikom-500 transition-colors hover:border-adikom-300"
+              className={cn(ACTION_BASE, ACTION_TONES.link)}
             >
               {OBJECT_ACTION[item.objectType]}
             </Link>
