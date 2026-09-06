@@ -590,8 +590,8 @@ declare
   v_missing text[];
 begin
   select count(*) into v_total from public.permissions;
-  if v_total <> 170 then
-    raise exception 'Catalogue attendu à 170 permissions, obtenu %.', v_total;
+  if v_total <> 171 then
+    raise exception 'Catalogue attendu à 171 permissions, obtenu %.', v_total;
   end if;
 
   select array_agg(code) into v_missing
@@ -610,7 +610,7 @@ begin
     raise exception 'Une capacité `dashboard.*` a été ajoutée sans décision (DEC-024).';
   end if;
 
-  raise notice '[OK] 12. Catalogue à 170 ; trois capacités de pilotage, pas une de plus.';
+  raise notice '[OK] 12. Catalogue à 171 ; trois capacités de pilotage, pas une de plus.';
 end $$;
 
 

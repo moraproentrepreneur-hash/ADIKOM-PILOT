@@ -23,11 +23,20 @@ import type { FormState } from '@/lib/form-state'
  * `treasury.balances.view` est à part : voir un compte n'est pas voir ce qu'il
  * contient. La fonction de calcul l'exige elle-même, en base.
  *
+ * TROIS AUTRES POUR LE VIREMENT INTERNE — Module 06 §28 à §33
+ *
+ *   `treasury.transfers.view`      consulter les virements
+ *   `treasury.transfers.create`    en saisir un (brouillon)
+ *   `treasury.transfers.validate`  le valider — c'est ce geste qui déplace
+ *                                  les fonds et produit les DEUX écritures
+ *   `treasury.transfers.cancel`    l'annuler, avec ses deux écritures
+ *
  * CE QUE CES ACTIONS NE FONT JAMAIS
  *
- * Aucune écriture libre. Une écriture naît d'un règlement, jamais d'un
- * formulaire : le dépôt, le retrait et le virement interne relèvent d'un lot
- * ultérieur (Module 06 §28).
+ * Aucune écriture libre. Une écriture naît d'un règlement, d'un paiement divers
+ * ou d'un virement validé — jamais d'un formulaire. Le dépôt, le retrait et la
+ * correction figurent au vocabulaire de Module 06 §20 : aucun écran ne les
+ * produit.
  */
 
 export type TreasuryFormState = FormState
@@ -44,6 +53,43 @@ const ERROR_PATTERNS: readonly [RegExp, string][] = [
   [
     /Compte financier introuvable/i,
     'Ce compte est introuvable ou n’est pas accessible avec vos droits.',
+  ],
+  [
+    /doivent être distincts/i,
+    'Le compte source et le compte destination doivent être différents : un virement d’un compte vers lui-même ne déplace rien.',
+  ],
+  [
+    /fonds disponibles sont insuffisants|ne dispose que de/i,
+    'Le compte source ne dispose pas des fonds nécessaires. Le virement est bloqué (Module 06 §30).',
+  ],
+  [
+    /n'est pas actif|n’est plus actif/i,
+    'Un compte du virement n’est pas actif : un compte inactif ou archivé ne reçoit plus de nouvelle opération.',
+  ],
+  [
+    /devise du compte source|ne partagent plus la même devise/i,
+    'Les deux comptes n’ont pas la même devise. Aucune conversion n’est définie.',
+  ],
+  [
+    /seul un virement en brouillon peut être validé/i,
+    'Seul un virement en brouillon se valide. Celui-ci ne l’est plus.',
+  ],
+  [/ce virement est déjà annulé/i, 'Ce virement est déjà annulé.'],
+  [
+    /un virement ne se modifie pas/i,
+    'Un virement ne se modifie pas : il s’annule, et un virement correct est enregistré.',
+  ],
+  [
+    /porte EXACTEMENT deux écritures|mouvement sans contrepartie|écritures produites par ce virement/i,
+    'Le virement n’a pas pu produire ses deux écritures. L’opération est annulée dans son ensemble : aucun compte ne porte de mouvement isolé.',
+  ],
+  [
+    /n'est pas lisible avec vos droits|n’est pas lisible avec vos droits/i,
+    'Certaines informations nécessaires à cette opération ne sont pas accessibles avec vos droits.',
+  ],
+  [
+    /Virement introuvable/i,
+    'Ce virement est introuvable ou n’est pas accessible avec vos droits.',
   ],
   [
     /Droit insuffisant pour cette opération/i,
@@ -220,6 +266,164 @@ export async function setFinancialAccountStatusAction(
           status === 'ACTIVE'
             ? 'Le compte est actif : il est de nouveau proposé pour les opérations.'
             : 'Le compte n’est plus proposé pour de nouvelles opérations. Son historique reste consultable.',
+      }
+    },
+    ERROR_PATTERNS
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Virement interne — Module 06 §28 à §33                                     */
+/*                                                                             */
+/*  TROIS ACTES, TROIS CAPACITÉS, ET C'EST LA VALIDATION QUI DÉPLACE LES FONDS */
+/*                                                                             */
+/*  La saisie ne produit rien : ni écriture, ni mouvement de solde. Le contrôle */
+/*  de solde de §30 porte donc sur l'instant où l'argent sort réellement, et    */
+/*  non sur un chiffre qui serait périmé au moment de la validation.           */
+/* -------------------------------------------------------------------------- */
+
+const AMOUNT_PATTERN = /^\d+$/
+
+/** Montant saisi → entier KMF strictement positif (DEC-010). */
+function toAmount(raw: string): number | null {
+  const cleaned = raw.replace(/\s/g, '')
+  if (!AMOUNT_PATTERN.test(cleaned)) return null
+  const value = Number(cleaned)
+  return Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
+function revalidateTreasury(transferId?: string) {
+  if (transferId) revalidatePath(`/tresorerie/virements/${transferId}`)
+  revalidatePath('/tresorerie/virements')
+  revalidatePath('/tresorerie/comptes')
+  revalidatePath('/tresorerie/ecritures')
+}
+
+export async function createInternalTransferAction(
+  prevState: TreasuryFormState,
+  formData: FormData
+): Promise<TreasuryFormState> {
+  return guarded(
+    'virement interne:saisie',
+    async () => {
+      await requirePermission(PERMISSIONS.TRANSFERS_CREATE)
+
+      const parsed = z
+        .object({
+          sourceAccountId: z.string().uuid('Choisissez le compte source.'),
+          destinationAccountId: z.string().uuid('Choisissez le compte destination.'),
+          transferDate: z
+            .string()
+            .trim()
+            .regex(/^\d{4}-\d{2}-\d{2}$/, 'Indiquez la date du virement.'),
+        })
+        .safeParse({
+          sourceAccountId: readText(formData, 'sourceAccountId'),
+          destinationAccountId: readText(formData, 'destinationAccountId'),
+          transferDate: readText(formData, 'transferDate'),
+        })
+      if (!parsed.success) return { fieldErrors: toFieldErrors(parsed.error) }
+
+      // Le serveur le refuse aussi (§29) ; le dire ici évite un aller-retour
+      // pour une erreur que l'écran peut voir.
+      if (parsed.data.sourceAccountId === parsed.data.destinationAccountId) {
+        return {
+          fieldErrors: {
+            destinationAccountId:
+              'Le compte destination doit être différent du compte source.',
+          },
+        }
+      }
+
+      const amount = toAmount(readText(formData, 'amount'))
+      if (amount === null) {
+        return {
+          fieldErrors: {
+            amount: 'Indiquez un montant entier positif, en KMF, sans espace ni décimale.',
+          },
+        }
+      }
+
+      const supabase = await createSupabaseServerClient()
+
+      const { data, error } = await supabase.rpc('create_internal_transfer', {
+        p_source_account_id: parsed.data.sourceAccountId,
+        p_destination_account_id: parsed.data.destinationAccountId,
+        p_amount: amount,
+        p_transfer_date: parsed.data.transferDate,
+        p_purpose: orNull(readText(formData, 'purpose')),
+        p_reference: orNull(readText(formData, 'reference')),
+        p_notes: orNull(readText(formData, 'notes')),
+      })
+
+      if (error) throw new Error(error.message)
+
+      revalidateTreasury()
+      redirect(`/tresorerie/virements/${data as string}?cree=1`)
+    },
+    ERROR_PATTERNS
+  )
+}
+
+/** Valider — §30 (contrôle du solde) puis §31 (les deux écritures). */
+export async function validateInternalTransferAction(
+  prevState: TreasuryFormState,
+  formData: FormData
+): Promise<TreasuryFormState> {
+  return guarded(
+    'virement interne:validation',
+    async () => {
+      await requirePermission(PERMISSIONS.TRANSFERS_VALIDATE)
+
+      const transferId = readText(formData, 'transferId')
+      if (!transferId) return { error: 'Virement introuvable.' }
+
+      const supabase = await createSupabaseServerClient()
+
+      const { error } = await supabase.rpc('validate_internal_transfer', {
+        p_transfer_id: transferId,
+      })
+
+      if (error) throw new Error(error.message)
+
+      revalidateTreasury(transferId)
+
+      return {
+        success:
+          'Le virement est validé : le compte source est débité et le compte destination crédité du même montant.',
+      }
+    },
+    ERROR_PATTERNS
+  )
+}
+
+/** Annuler — §33. Les deux écritures suivent ; rien n'est effacé. */
+export async function cancelInternalTransferAction(
+  prevState: TreasuryFormState,
+  formData: FormData
+): Promise<TreasuryFormState> {
+  return guarded(
+    'virement interne:annulation',
+    async () => {
+      await requirePermission(PERMISSIONS.TRANSFERS_CANCEL)
+
+      const transferId = readText(formData, 'transferId')
+      if (!transferId) return { error: 'Virement introuvable.' }
+
+      const supabase = await createSupabaseServerClient()
+
+      const { error } = await supabase.rpc('cancel_internal_transfer', {
+        p_transfer_id: transferId,
+        p_reason: orNull(readText(formData, 'reason')),
+      })
+
+      if (error) throw new Error(error.message)
+
+      revalidateTreasury(transferId)
+
+      return {
+        success:
+          'Le virement est annulé. Les deux soldes reviennent d’autant ; les écritures restent, marquées annulées.',
       }
     },
     ERROR_PATTERNS

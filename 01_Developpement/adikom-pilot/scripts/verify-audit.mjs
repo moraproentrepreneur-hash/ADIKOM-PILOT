@@ -833,7 +833,7 @@ async function main() {
       const { count: catalogue } = await journal
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-      check(catalogue === 170, 'Catalogue à 170 capacités', String(catalogue))
+      check(catalogue === 171, 'Catalogue à 171 capacités', String(catalogue))
 
       const { count: inventees } = await admin
         .from('permissions')

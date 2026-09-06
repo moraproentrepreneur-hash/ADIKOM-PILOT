@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, History } from 'lucide-react'
+import { ArrowLeft, Banknote, History } from 'lucide-react'
 
 import { Badge, Card, Empty, EmptyState, InfoRow, PageHeader } from '@/components/ui/primitives'
 import { Notice } from '@/components/ui/feedback'
@@ -9,7 +9,11 @@ import { StatusChangeForm } from '@/components/ui/status-change-form'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate, formatDateTime } from '@/lib/dates'
-import { getFinancialAccount, listTreasuryEntries } from '@/features/treasury/data'
+import {
+  getFinancialAccount,
+  listInternalTransfers,
+  listTreasuryEntries,
+} from '@/features/treasury/data'
 import { setFinancialAccountStatusAction } from '@/features/treasury/actions'
 import { EditAccountPanel } from '@/features/treasury/panels'
 import {
@@ -21,6 +25,8 @@ import {
   ENTRY_KIND_LABELS,
   ENTRY_STATUS_LABELS,
   ENTRY_STATUS_TONES,
+  TRANSFER_STATUS_LABELS,
+  TRANSFER_STATUS_TONES,
   formatAmount,
   formatSigned,
 } from '@/features/treasury/constants'
@@ -41,12 +47,14 @@ export default async function AccountDetailPage(props: PageProps<'/tresorerie/co
   const searchParams = await props.searchParams
   const justCreated = searchParams.cree === '1'
 
-  const [canUpdate, canArchive, canReadBalances, canSeeEntries] = await Promise.all([
-    can(PERMISSIONS.ACCOUNTS_UPDATE),
-    can(PERMISSIONS.ACCOUNTS_ARCHIVE),
-    can(PERMISSIONS.BALANCES_VIEW),
-    can(PERMISSIONS.ENTRIES_VIEW),
-  ])
+  const [canUpdate, canArchive, canReadBalances, canSeeEntries, canSeeTransfers] =
+    await Promise.all([
+      can(PERMISSIONS.ACCOUNTS_UPDATE),
+      can(PERMISSIONS.ACCOUNTS_ARCHIVE),
+      can(PERMISSIONS.BALANCES_VIEW),
+      can(PERMISSIONS.ENTRIES_VIEW),
+      can(PERMISSIONS.TRANSFERS_VIEW),
+    ])
 
   // Le solde est la somme des écritures : sans le droit de les lire, la base
   // refuse de le calculer plutôt que de renvoyer le solde d'ouverture (050).
@@ -58,6 +66,17 @@ export default async function AccountDetailPage(props: PageProps<'/tresorerie/co
   // Sans `treasury.entries.view`, la section DISPARAÎT : une liste vide se
   // lirait « ce compte n'a jamais bougé » (DEC-017).
   const entries = canSeeEntries ? await listTreasuryEntries({ accountId: id }) : null
+
+  /*
+   * Module 06 §16 — la fiche d'un compte comporte un volet « Virements ».
+   *
+   * Un virement en BROUILLON n'a produit aucune écriture : il n'apparaîtrait
+   * nulle part ailleurs, alors qu'il engage ce compte. Sa lecture relève de
+   * `treasury.transfers.view`, distincte de celle des écritures (DEC-040).
+   */
+  const transfers = canSeeTransfers
+    ? await listInternalTransfers({ accountId: id })
+    : null
 
   const balanceLocked = (entries ?? []).length > 0
 
@@ -168,6 +187,59 @@ export default async function AccountDetailPage(props: PageProps<'/tresorerie/co
               Votre compte ne peut pas consulter les écritures : ce compte peut en porter sans que
               cet écran puisse les montrer.
             </Notice>
+          )}
+
+          {canSeeTransfers && (
+            <Card
+              title="Virements"
+              description="Transferts au départ ou à destination de ce compte (Module 06 §16)."
+            >
+              {transfers === null || transfers.length === 0 ? (
+                <EmptyState
+                  icon={Banknote}
+                  title="Aucun virement"
+                  description="Ce compte n’a encore participé à aucun transfert interne."
+                />
+              ) : (
+                <ul className="divide-y divide-line">
+                  {transfers.map((transfer) => (
+                    <li
+                      key={transfer.id}
+                      className="flex flex-wrap items-start justify-between gap-3 py-3"
+                    >
+                      <div className="min-w-0">
+                        <Link
+                          href={`/tresorerie/virements/${transfer.id}`}
+                          className="font-medium text-adikom-500 hover:underline"
+                        >
+                          {transfer.transferNo}
+                        </Link>
+                        <p className="text-xs text-muted">
+                          {formatDate(transfer.transferDate)} ·{' '}
+                          {transfer.sourceAccountId === id
+                            ? `Sortie vers ${transfer.destinationAccountLabel ?? 'un compte non lisible'}`
+                            : `Entrée depuis ${transfer.sourceAccountLabel ?? 'un compte non lisible'}`}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={
+                            transfer.status === 'VALIDATED'
+                              ? 'font-medium text-ink tabular'
+                              : 'text-sm text-muted tabular'
+                          }
+                        >
+                          {formatAmount(transfer.amount)}
+                        </span>
+                        <Badge tone={TRANSFER_STATUS_TONES[transfer.status]}>
+                          {TRANSFER_STATUS_LABELS[transfer.status]}
+                        </Badge>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
           )}
         </div>
 

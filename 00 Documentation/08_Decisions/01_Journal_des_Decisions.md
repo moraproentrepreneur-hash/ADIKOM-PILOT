@@ -73,6 +73,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-037 | Groupes & Vue hiérarchique — LOT 14 | Arbitrages et sécurité | Appliquée | 2026-09-05 |
 | DEC-038 | Portée de la lecture du journal d'activité — LOT 15 | Ambiguïté tranchée et défaut de sécurité | Appliquée — **achève le Module 08** | 2026-09-05 |
 | DEC-039 | Paramètres — Entreprise & Numérotation — LOT 16 | Arbitrages et défauts de sécurité | Appliquée — **ouvre le Module 09** | 2026-09-05 |
+| DEC-040 | Virement interne & Paiements divers — LOT 17 | Arbitrages, capacité et sécurité | Appliquée — **achève les Modules 06 et 07** | 2026-09-06 |
 
 ---
 
@@ -3625,6 +3626,172 @@ celles que le lot touche.*
 
 ---
 
+## DEC-040 — Virement interne et Paiements divers (LOT 17)
+
+**Date :** 6 septembre 2026
+**Portée :** métier, capacités et sécurité
+**Statut :** appliquée · **achève le Module 06 et le Module 07**
+
+### Contexte — les deux derniers sous-menus « À venir »
+
+DEC-029 §i avait explicitement écarté le virement interne du LOT 6 ; DEC-031 avait
+écarté le paiement divers du LOT 8, faute d'objet auquel le rattacher. Les deux
+entrées de navigation portaient depuis lors la mention « À venir ». Le LOT 17 les
+livre, et il ne reste plus rien de « planifié » dans la navigation.
+
+### a. Saisie et validation sont deux gestes — le catalogue le disait déjà
+
+DEC-029 §c a posé la doctrine : **le catalogue est l'autorité** sur la question de
+savoir si une opération se valide en un ou deux temps.
+
+| Objet | Capacités au catalogue | Conséquence |
+|---|---|---|
+| `billing.supplier_payments` | view · create · cancel | **un** geste |
+| `billing.customer_payments` | view · create · cancel | **un** geste |
+| `billing.misc_payments` | view · create · **validate** · cancel | **deux** |
+| `treasury.transfers` | create · **validate** · cancel | **deux** |
+
+`Module 07` §46 le confirme mot pour mot pour le paiement divers : « Brouillon ;
+Validé ; Annulé ». `Module 06` §45 nomme, parmi les notifications du module,
+« opération nécessitant une validation » — et le virement est la seule opération
+de trésorerie à porter une capacité de validation.
+
+**Arbitrage ADIKOM du 5 septembre 2026 :** cette lecture est retenue.
+
+La distinction n'est pas de forme. Un **règlement** constate un mouvement déjà
+survenu : il naît validé (DEC-029 §c). Un **virement** et un **paiement divers**
+*décident* d'un mouvement : l'argent ne bouge qu'à la validation. C'est aussi le
+seul ordre qui permette au contrôle de solde de `Module 06` §30 de porter sur
+l'instant où les fonds sortent réellement, et non sur un chiffre déjà périmé.
+
+### b. Une capacité créée, et une seule — `treasury.transfers.view`
+
+Le catalogue de la migration 007 ouvrait le menu « Virements internes » avec
+`create`, `validate` et `cancel`, **sans lecture**. Or un virement en brouillon
+n'a produit aucune écriture : personne ne pouvait le lire pour le valider. Une
+capacité de validation sans lecture correspondante est **inapplicable**.
+
+Elle n'est déduite d'aucune autre (DEC-024) : consulter les virements n'est ni
+consulter les écritures — `treasury.entries.view` ouvre les **mouvements**, et un
+brouillon n'en a aucun —, ni en effectuer un. L'entrée de navigation, qui portait
+`transfers.create` faute de mieux, porte désormais la lecture.
+
+**Catalogue : 170 → 171.** Aucune autre n'est créée : ni `.update`, ni `.export`,
+ni `.download`, ni `.print` pour ces deux menus (DEC-024 — ne pas surcharger).
+
+### c. Le demi-virement est rendu impossible par une SIXIÈME couche
+
+Les cinq couches de contrôle reconduites depuis l'audit 041–042 encadrent les
+**actes**. Aucune n'empêche à elle seule qu'un `PATCH` direct passe un virement à
+« Validé » sans produire d'écriture, ni qu'un porteur de `treasury.entries.create`
+fabrique une troisième écriture se réclamant d'un virement.
+
+Une garde **différée** (`deferrable initially deferred`) le fait : elle s'exécute
+quand tout est écrit, et refuse la transaction **entière** si le compte n'y est
+pas.
+
+| État du virement | Ce que la garde exige |
+|---|---|
+| Brouillon | **aucune** écriture |
+| Validé | **exactement deux** — une sortie sur la source, une entrée sur la destination, du même montant |
+| Annulé | aucune écriture **validée** ; les deux, annulées, restent |
+
+La même garde vaut pour le paiement divers : validé, il porte **exactement une**
+écriture de sortie, du montant payé, sur son compte source.
+
+### d. Une garde qui COMPTE doit compter la vérité
+
+Ces gardes lisent `treasury_entries` **sous RLS**. Un appelant sans
+`treasury.entries.view` n'en verrait aucune et conclurait « zéro ». Le sens de
+l'erreur est ici un **refus**, jamais un accord — mais un refus subi après coup,
+sans motif lisible, est un mauvais refus.
+
+`validate_internal_transfer`, `cancel_internal_transfer`, `validate_misc_payment`
+et `cancel_misc_payment` exigent donc `treasury.entries.view` **nommément**, avec
+son motif. C'est la doctrine de la migration 054 appliquée **en amont** plutôt
+qu'après coup.
+
+Conséquence assumée : valider un virement réunit **cinq** capacités —
+`transfers.validate`, `transfers.view`, `accounts.view`, `balances.view` et
+`entries.view`. Aucune n'est du décor : §30 contrôle un solde, qui est la somme
+d'écritures, sur des comptes qu'il faut lire.
+
+### e. §30 est le SEUL contrôle de découvert du système
+
+`Module 06` §30 : « Pour le MVP, l'option la plus sûre est de **bloquer** le
+virement lorsque les fonds disponibles sont insuffisants. » Il est appliqué **là,
+et nulle part ailleurs** : DEC-029 §b reste entière — la documentation ne définit
+ni découvert autorisé ni seuil, pour les règlements comme pour les paiements
+divers.
+
+Le contrôle porte sur la **validation**, non sur la saisie : c'est à la validation
+que les fonds sortent, et un solde contrôlé à la saisie serait périmé. L'exiger
+plus tôt obligerait de surcroît la personne qui saisit à détenir
+`treasury.balances.view`, que DEC-024 refuse de déduire.
+
+*L'**annulation** d'un virement validé n'est pas soumise à ce contrôle : rendre
+l'argent au compte source peut rendre le compte destination négatif, et le
+refuser inventerait une règle qu'ADIKOM n'a pas posée.*
+
+### f. Ce que le lot ne fait pas, et pourquoi
+
+| Écarté | Motif |
+|---|---|
+| **Justificatif** de paiement divers (`Module 07` §44) | Aucune capacité de document n'existe pour ce menu ; en créer une d'office inventerait une fonctionnalité (DEC-024, précédent DEC-029 §i). |
+| **Mode de paiement** sur le paiement divers | §44 énumère ses informations et n'en cite pas. Le **type du compte** — banque ou caisse — dit déjà par où l'argent est sorti. |
+| **Modification** d'un paiement divers | §52 cite « modifier » parmi les permissions envisageables, mais `billing.misc_payments.update` n'existe pas au catalogue. Un brouillon erroné **s'annule**, et un paiement correct est saisi (§47). Même traitement pour le virement (`Module 06` §33, §34). |
+| **Écriture libre** — dépôt, retrait, correction | `treasury.entries.create` reste sans écran. Les trois figurent au vocabulaire de `Module 06` §20 et §34 ; aucun acte ne les produit. |
+| **Export** des virements et des paiements divers | Aucune capacité ne le couvre. Se rattache aux arbitrages 15 et 24. |
+| **Rapprochement bancaire**, **seuils d'alerte** (§42, §46) | Rangés « futurs » par la documentation elle-même. |
+
+### g. Aucun format de numérotation inventé
+
+La règle `transfer` — « Virement interne », `VIR`, année, six chiffres, remise à
+zéro annuelle — existe depuis la migration 005 et n'avait jamais servi. Le
+paiement divers emprunte la série `payment` (`REG`), générique et déjà partagée
+par les deux règlements : en créer une seconde inventerait un format que DEC-005
+n'a pas arrêté (précédent DEC-031).
+
+### h. Un défaut trouvé par la recette, avant livraison
+
+`fn_treasury_entry_source` s'exécute `before insert OR UPDATE`. La condition
+ajoutée pour les nouvelles origines — « l'opération dont l'écriture se réclame
+doit être **validée** » — est juste à la création, et fausse à l'annulation :
+`cancel_internal_transfer` passe d'abord le virement à « Annulé », puis met ses
+écritures à « Annulée », et cet `UPDATE` rejouait le contrôle sur un virement
+désormais annulé. **L'annulation devenait impossible.**
+
+`db:verify:transfers` l'a arrêtée au contrôle 11. La migration **072** restreint
+la vérification de l'état à l'`INSERT` : sur `UPDATE`, `fn_treasury_entry_immutable`
+fige déjà l'origine, le compte, le montant, le sens et la date — seul le statut
+change, et seulement pour suivre l'opération.
+
+### i. Le contrôle de parité de l'audit lisait un seul fichier
+
+`audit.test.ts` reconstituait la cartographie `audit_detail_permission` depuis la
+migration du LOT 15, **nommée en dur**. Or cette cartographie s'étend à chaque
+module livré. Le test est aligné sur `permissions.test.ts` : il parcourt
+**toutes** les migrations qui redéfinissent la fonction, dans l'ordre, la dernière
+l'emportant — sans quoi il serait passé à côté précisément de l'oubli silencieux
+qu'il existe pour rendre bruyant (DEC-038).
+
+### Conséquences
+
+- Migrations **071** et **072** : trois types, deux tables, deux colonnes
+  d'origine sur `treasury_entries`, six fonctions atomiques `SECURITY INVOKER`,
+  deux fonctions de cohérence, trois gardes différées, dix déclencheurs, RLS,
+  audit, interdiction de suppression, révocation d'`EXECUTE` à PUBLIC.
+- **Une permission créée** : `treasury.transfers.view`. Catalogue : **171**.
+- Menus **Virement interne** et **Paiements divers** ouverts ; volet
+  **Virements** ajouté à la fiche d'un compte (`Module 06` §16). Plus aucune
+  entrée de navigation n'est « À venir ».
+- Recettes : `db:verify:transfers` (19 contrôles) et `verify:transfers`
+  (49 contrôles) ; le total attendu du catalogue porté à 171 dans les
+  19 recettes qui le vérifient.
+- Aucune fonction n'est `SECURITY DEFINER` (DEC-022, DEC-026 §f).
+
+---
+
 # 3. Décisions restant à arbitrer par ADIKOM
 
 Récapitulatif des points nécessitant une réponse métier. Aucun automatisme correspondant ne sera développé sans validation.
@@ -3636,7 +3803,7 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 5. **DEC-005** — Confirmation des formats restants et de la règle de remise à zéro annuelle. *Partiellement tranché : les formats client, fournisseur et véhicule sont confirmés par **DEC-021**. Les documents commerciaux relèvent désormais de **DEC-023**, dont l'implémentation est reportée à l'Étape 2.5. Restent à confirmer les objets datés non commerciaux — réservation, location, maintenance, imputation.*
 6. **DEC-023 §4** — Validation par le responsable comptable et fiscal d'ADIKOM de la convention de référence des factures, avant toute première émission. *Le LOT 5 conserve pour cette raison le format provisoire `FAC-F-2026-000001`, paramétrable (**DEC-027 §h**).*
 ~~7. **DEC-027 §i** — Une même référence de facture peut-elle être enregistrée deux fois pour un même fournisseur ?~~ **Tranché par DEC-028** (31 août 2026) : unique par fournisseur, refus explicite par la base.
-8. **DEC-029 §c** — ADIKOM souhaite-t-elle séparer la **saisie** et la **validation** d'un règlement (`Workflow 08` §56) ? Aujourd'hui, un règlement constate un mouvement effectué et naît validé ; le catalogue n'offre aucune capacité de validation. La séparation suppose d'en créer une : c'est une décision d'organisation. *La question vaut à l'identique pour les **règlements clients** depuis **DEC-031**.*
+8. **DEC-029 §c** — ADIKOM souhaite-t-elle séparer la **saisie** et la **validation** d'un règlement (`Workflow 08` §56) ? Aujourd'hui, un règlement constate un mouvement effectué et naît validé ; le catalogue n'offre aucune capacité de validation. La séparation suppose d'en créer une : c'est une décision d'organisation. *La question vaut à l'identique pour les **règlements clients** depuis **DEC-031**. Elle est en revanche **tranchée** là où le catalogue offrait déjà la capacité : le **virement interne** et le **paiement divers** se saisissent puis se valident (**DEC-040 §a**).*
 9. **DEC-031 §b** — Que devient un **trop-perçu client** ? `Workflow 08` §40 impose une règle définie par ADIKOM et interdit au système d'en décider seul. Les trois issues qu'il envisage supposent chacune une fonctionnalité non retenue : affectation à une autre facture (§37), conservation en **avance** (§41, §42), ou autre règle validée. En attendant, tout versement supérieur au solde est **refusé**, avec son motif. Trancher suppose d'arrêter la règle **et** de décider si l'avance devient un objet du système.
 10. **DEC-030 §i** — La **facture client doit-elle être remise au client** sous forme de document ? Le catalogue porte `billing.customer_invoices.print` mais pas `.download`, et DEC-024 interdit de déduire l'une de l'autre. Produire le PDF suppose donc de créer `billing.customer_invoices.download` : c'est une décision de capacité, prise ici pour signalement et non appliquée. *Se rattache à **DEC-023 §4**, la convention de référence restant à valider avant toute première émission d'un document comptable.*
 11. **DEC-032 §h** — Le tableau de bord doit-il proposer une **disposition différente selon le métier** (`Module 01` §3) ? Le contenu suit déjà les permissions : un utilisateur sans droits financiers ne voit aucun montant. Une disposition propre au Gérant, à l'assistante de direction ou au responsable de location supposerait de savoir **laquelle** — quels indicateurs, dans quel ordre, pour quel poste. C'est une décision d'organisation, et l'inventer reviendrait à créer une règle métier.

@@ -188,6 +188,13 @@ export const PERMISSIONS = {
   ENTRIES_VIEW: 'treasury.entries.view',
   ENTRIES_CREATE: 'treasury.entries.create',
   ENTRIES_EXPORT: 'treasury.entries.export',
+  /*
+   * Consulter les virements n'est déduit d'aucune autre capacité (DEC-024,
+   * DEC-040). `treasury.entries.view` ouvre les MOUVEMENTS ; un virement en
+   * brouillon n'en a produit aucun, et resterait invisible à qui doit le
+   * valider. Créée par la migration 071 — la seule du LOT 17.
+   */
+  TRANSFERS_VIEW: 'treasury.transfers.view',
   TRANSFERS_CREATE: 'treasury.transfers.create',
   TRANSFERS_VALIDATE: 'treasury.transfers.validate',
   TRANSFERS_CANCEL: 'treasury.transfers.cancel',

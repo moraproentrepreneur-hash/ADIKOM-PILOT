@@ -26,8 +26,9 @@ export const metadata: Metadata = { title: 'Écritures' }
  * Une écriture y est toujours lue avec son SENS (§19) : le montant stocké est
  * positif, et l'afficher nu laisserait confondre une entrée et une sortie.
  *
- * AUCUNE ÉCRITURE NE SE SAISIT ICI. Elles naissent d'un règlement : le dépôt,
- * le retrait et le virement interne relèvent d'un lot ultérieur.
+ * AUCUNE ÉCRITURE NE SE SAISIT ICI. Elle naît d'un règlement, d'un paiement
+ * divers validé ou d'un virement validé — le dépôt, le retrait et la correction
+ * figurent au vocabulaire de §20, mais aucun écran ne les produit.
  */
 export default async function EntriesPage(props: PageProps<'/tresorerie/ecritures'>) {
   await requirePermissionOrRedirect(PERMISSIONS.ENTRIES_VIEW)
@@ -80,8 +81,9 @@ export default async function EntriesPage(props: PageProps<'/tresorerie/ecriture
       />
 
       <Notice tone="info" className="mb-5">
-        Une écriture naît d’un <strong>règlement</strong> : elle ne se saisit pas ici. Les dépôts,
-        retraits et virements internes relèvent d’une étape ultérieure.
+        Une écriture ne se saisit pas ici : elle naît d’un <strong>règlement</strong>, d’un{' '}
+        <strong>paiement divers</strong> validé ou d’un <strong>virement interne</strong> validé.
+        Les dépôts et retraits relèvent d’une étape ultérieure.
       </Notice>
 
       <form method="get" className="mb-5">

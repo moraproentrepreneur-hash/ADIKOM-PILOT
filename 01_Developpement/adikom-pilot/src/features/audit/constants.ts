@@ -181,10 +181,12 @@ export const ENTITY_LABELS: Record<string, string> = {
   supplier_payments: 'Règlement fournisseur',
   imputations: 'Imputation',
   imputation_documents: 'Justificatif d’imputation',
+  misc_payments: 'Paiement divers',
 
   // Banques & Caisses
   financial_accounts: 'Compte financier',
   treasury_entries: 'Écriture',
+  internal_transfers: 'Virement interne',
 
   // Projets & Planification
   projects: 'Projet',
@@ -248,8 +250,9 @@ export const ENTITIES_BY_MODULE: Record<string, readonly string[]> = {
     'supplier_payments',
     'imputations',
     'imputation_documents',
+    'misc_payments',
   ],
-  treasury: ['financial_accounts', 'treasury_entries'],
+  treasury: ['financial_accounts', 'treasury_entries', 'internal_transfers'],
   projects: [
     'projects',
     'project_members',

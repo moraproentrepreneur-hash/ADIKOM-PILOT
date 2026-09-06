@@ -396,9 +396,9 @@ async function main() {
       })
       const perms = await mainText(page)
       check(
-        perms.includes('Ce groupe accorde') && perms.includes('sur 170'),
+        perms.includes('Ce groupe accorde') && perms.includes('sur 171'),
         'L’onglet Permissions présente le catalogue complet',
-        '170 capacités'
+        '171 capacités'
       )
       check(
         perms.includes('Consultation seule'),
@@ -814,7 +814,7 @@ async function main() {
       const { count: catalogue } = await admin
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-      check(catalogue === 170, 'Le catalogue reste à 170 capacités', `${catalogue}`)
+      check(catalogue === 171, 'Le catalogue reste à 171 capacités', `${catalogue}`)
 
       // Les données DEMO sont intactes.
       const [{ count: clients }, { count: vehicules }, { count: fournisseurs }] = await Promise.all([
@@ -879,7 +879,7 @@ async function main() {
       })
 
       const onglet = await mainText(page)
-      check(onglet.includes('sur 170'), 'L’arborescence présente le catalogue complet')
+      check(onglet.includes('sur 171'), 'L’arborescence présente le catalogue complet')
       check(
         onglet.includes('Refusé (groupe)'),
         'Un refus hérité d’un groupe reste nommé comme tel (§48)'

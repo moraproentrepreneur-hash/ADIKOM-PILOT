@@ -5,6 +5,7 @@ import { reportQueryFailure } from '@/lib/server-action'
 import type {
   FinancialAccountKind,
   FinancialAccountStatus,
+  InternalTransferStatus,
   TreasuryDirection,
   TreasuryEntryKind,
   TreasuryEntryStatus,
@@ -63,6 +64,8 @@ export type TreasuryEntry = {
   reference: string | null
   status: TreasuryEntryStatus
   supplierPaymentId: string | null
+  internalTransferId: string | null
+  miscPaymentId: string | null
   createdAt: string
 }
 
@@ -230,6 +233,10 @@ export type EntryFilters = {
   status?: string
   from?: string
   to?: string
+  /** Les deux moitiés d'un virement — Module 06 §32. */
+  internalTransferId?: string
+  /** L'écriture d'un paiement divers — Module 07 §45. */
+  miscPaymentId?: string
 }
 
 export async function listTreasuryEntries(filters: EntryFilters): Promise<TreasuryEntry[]> {
@@ -239,7 +246,7 @@ export async function listTreasuryEntries(filters: EntryFilters): Promise<Treasu
     .from('treasury_entries')
     .select(
       `id, account_id, entry_date, direction, kind, amount, description, reference,
-       status, supplier_payment_id, created_at,
+       status, supplier_payment_id, internal_transfer_id, misc_payment_id, created_at,
        financial_accounts ( label, account_no )`
     )
 
@@ -249,6 +256,10 @@ export async function listTreasuryEntries(filters: EntryFilters): Promise<Treasu
   if (filters.status) query = query.eq('status', filters.status)
   if (filters.from) query = query.gte('entry_date', filters.from)
   if (filters.to) query = query.lte('entry_date', filters.to)
+  if (filters.internalTransferId) {
+    query = query.eq('internal_transfer_id', filters.internalTransferId)
+  }
+  if (filters.miscPaymentId) query = query.eq('misc_payment_id', filters.miscPaymentId)
 
   const { data, error } = await query
     .order('entry_date', { ascending: false })
@@ -263,10 +274,15 @@ export async function listTreasuryEntries(filters: EntryFilters): Promise<Treasu
     )
   }
 
-  const rows = (data ?? []) as unknown as (Omit<TreasuryEntry, 'accountLabel'> & {
+  const rows = (data ?? []) as unknown as (Omit<
+    TreasuryEntry,
+    'accountLabel' | 'supplierPaymentId' | 'internalTransferId' | 'miscPaymentId'
+  > & {
     account_id: string
     entry_date: string
     supplier_payment_id: string | null
+    internal_transfer_id: string | null
+    misc_payment_id: string | null
     created_at: string
     financial_accounts?: { label: string; account_no: string } | null
   })[]
@@ -287,6 +303,161 @@ export async function listTreasuryEntries(filters: EntryFilters): Promise<Treasu
     reference: row.reference,
     status: row.status,
     supplierPaymentId: row.supplier_payment_id,
+    internalTransferId: row.internal_transfer_id,
+    miscPaymentId: row.misc_payment_id,
     createdAt: row.created_at,
   }))
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Virements internes — Module 06 §28 à §33                                   */
+/*                                                                             */
+/*  LA LECTURE PORTE SA CAPACITÉ.                                              */
+/*                                                                             */
+/*  `treasury.transfers.view` gouverne cette table, et rien d'autre ne la      */
+/*  gouverne : voir les écritures n'est pas voir les virements, dont un        */
+/*  brouillon n'a produit aucune (DEC-024, DEC-040). Les libellés de comptes,  */
+/*  eux, restent derrière `treasury.accounts.view` — la ressource embarquée    */
+/*  revient `null` sans cette capacité, et l'écran le DIT (DEC-017).           */
+/* -------------------------------------------------------------------------- */
+
+export type InternalTransfer = {
+  id: string
+  transferNo: string
+  sourceAccountId: string
+  /** `null` sans `treasury.accounts.view` — l'écran le dit, il n'invente pas. */
+  sourceAccountLabel: string | null
+  destinationAccountId: string
+  destinationAccountLabel: string | null
+  amount: number
+  currencyCode: string
+  transferDate: string
+  purpose: string | null
+  reference: string | null
+  notes: string | null
+  status: InternalTransferStatus
+  statusReason: string | null
+  validatedAt: string | null
+  cancelledAt: string | null
+  createdAt: string
+}
+
+const TRANSFER_SELECT = `
+  id, transfer_no, source_account_id, destination_account_id, amount, currency_code,
+  transfer_date, purpose, reference, notes, status, status_reason,
+  validated_at, cancelled_at, created_at,
+  source:financial_accounts!internal_transfers_source_account_id_fkey ( label, account_no ),
+  destination:financial_accounts!internal_transfers_destination_account_id_fkey ( label, account_no )
+`
+
+type RawTransfer = {
+  id: string
+  transfer_no: string
+  source_account_id: string
+  destination_account_id: string
+  amount: number
+  currency_code: string
+  transfer_date: string
+  purpose: string | null
+  reference: string | null
+  notes: string | null
+  status: InternalTransferStatus
+  status_reason: string | null
+  validated_at: string | null
+  cancelled_at: string | null
+  created_at: string
+  source?: { label: string; account_no: string } | null
+  destination?: { label: string; account_no: string } | null
+}
+
+function accountLabel(row?: { label: string; account_no: string } | null): string | null {
+  return row ? `${row.label} (${row.account_no})` : null
+}
+
+function toTransfer(row: RawTransfer): InternalTransfer {
+  return {
+    id: row.id,
+    transferNo: row.transfer_no,
+    sourceAccountId: row.source_account_id,
+    sourceAccountLabel: accountLabel(row.source),
+    destinationAccountId: row.destination_account_id,
+    destinationAccountLabel: accountLabel(row.destination),
+    amount: row.amount,
+    currencyCode: row.currency_code,
+    transferDate: row.transfer_date,
+    purpose: row.purpose,
+    reference: row.reference,
+    notes: row.notes,
+    status: row.status,
+    statusReason: row.status_reason,
+    validatedAt: row.validated_at,
+    cancelledAt: row.cancelled_at,
+    createdAt: row.created_at,
+  }
+}
+
+export type TransferFilters = {
+  search?: string
+  accountId?: string
+  status?: string
+  from?: string
+  to?: string
+}
+
+export async function listInternalTransfers(
+  filters: TransferFilters
+): Promise<InternalTransfer[]> {
+  const supabase = await createSupabaseServerClient()
+
+  let query = supabase.from('internal_transfers').select(TRANSFER_SELECT)
+
+  const search = filters.search ? sanitizeSearch(filters.search) : ''
+  if (search) {
+    query = query.or(
+      `transfer_no.ilike.%${search}%,purpose.ilike.%${search}%,reference.ilike.%${search}%`
+    )
+  }
+  if (filters.status) query = query.eq('status', filters.status)
+  if (filters.from) query = query.gte('transfer_date', filters.from)
+  if (filters.to) query = query.lte('transfer_date', filters.to)
+  // Un compte est concerné par un virement qu'il en soit la source OU la
+  // destination : filtrer sur la seule source masquerait la moitié des
+  // mouvements de ce compte.
+  if (filters.accountId) {
+    query = query.or(
+      `source_account_id.eq.${filters.accountId},destination_account_id.eq.${filters.accountId}`
+    )
+  }
+
+  const { data, error } = await query
+    .order('transfer_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  if (error) {
+    reportQueryFailure(
+      'virements internes',
+      error,
+      'La liste des virements n’a pas pu être chargée.'
+    )
+  }
+
+  return ((data ?? []) as unknown as RawTransfer[]).map(toTransfer)
+}
+
+export async function getInternalTransfer(id: string): Promise<InternalTransfer | null> {
+  const supabase = await createSupabaseServerClient()
+
+  const { data, error } = await supabase
+    .from('internal_transfers')
+    .select(TRANSFER_SELECT)
+    .eq('id', id)
+    .maybeSingle()
+
+  if (error) {
+    reportQueryFailure('virement interne', error, 'Ce virement n’a pas pu être chargé.')
+  }
+  if (!data) return null
+
+  return toTransfer(data as unknown as RawTransfer)
 }

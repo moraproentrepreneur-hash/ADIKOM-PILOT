@@ -278,12 +278,20 @@ export const NAVIGATION: NavEntry[] = [
         permission: PERMISSIONS.ENTRIES_VIEW,
         status: 'ready',
       },
+      /*
+       * L'entrée s'ouvre sur la LECTURE, non sur l'acte.
+       *
+       * Elle portait `treasury.transfers.create` faute de mieux : le catalogue
+       * n'avait pas de lecture pour ce menu. Le LOT 17 en crée une (DEC-040),
+       * et le menu la porte — un valideur qui ne saisit pas doit voir l'écran,
+       * un lecteur aussi (DEC-024).
+       */
       {
         label: 'Virement interne',
         href: '/tresorerie/virements',
         icon: Banknote,
-        permission: PERMISSIONS.TRANSFERS_CREATE,
-        status: 'planned',
+        permission: PERMISSIONS.TRANSFERS_VIEW,
+        status: 'ready',
       },
     ],
   },
@@ -317,7 +325,7 @@ export const NAVIGATION: NavEntry[] = [
         href: '/facturation/paiements-divers',
         icon: Banknote,
         permission: PERMISSIONS.MISC_PAYMENTS_VIEW,
-        status: 'planned',
+        status: 'ready',
       },
     ],
   },

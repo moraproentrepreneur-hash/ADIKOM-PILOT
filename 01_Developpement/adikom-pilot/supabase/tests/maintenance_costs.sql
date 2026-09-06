@@ -443,11 +443,11 @@ begin
   end if;
 
   select count(*) into v_total from public.permissions;
-  if v_total <> 170 then
-    raise exception 'Catalogue attendu à 170 permissions, obtenu %.', v_total;
+  if v_total <> 171 then
+    raise exception 'Catalogue attendu à 171 permissions, obtenu %.', v_total;
   end if;
 
-  raise notice '[OK] 13. Catalogue à 170 : cost.view créée et sensible, aucune autre.';
+  raise notice '[OK] 13. Catalogue à 171 : cost.view créée et sensible, aucune autre.';
 end $$;
 
 

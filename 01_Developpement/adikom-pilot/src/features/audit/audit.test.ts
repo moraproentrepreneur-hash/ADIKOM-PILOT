@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -32,28 +32,52 @@ import {
  *      sûr, mais il est SILENCIEUX. Ce test le rend bruyant.
  */
 
-const MIGRATION = resolve(
-  import.meta.dirname,
-  '../../../supabase/migrations/20260905000500_journal_d_activite.sql'
-)
+const MIGRATIONS_DIR = resolve(import.meta.dirname, '../../../supabase/migrations')
 
-/** Rejoue la correspondance SQL `when '<objet>' then '<capacité>'`. */
+/** La migration qui a posé le journal : elle seule porte ses révocations. */
+const MIGRATION = resolve(MIGRATIONS_DIR, '20260905000500_journal_d_activite.sql')
+
+/**
+ * Rejoue la correspondance SQL `when '<objet>' then '<capacité>'`.
+ *
+ * TOUTES les migrations qui redéfinissent `audit_detail_permission` sont
+ * parcourues, dans l'ordre, et non un fichier nommé en dur : la cartographie
+ * s'étend à chaque module livré — le LOT 17 y a ajouté les virements et les
+ * paiements divers. Figer le fichier du LOT 15 ferait passer ce contrôle à
+ * côté de tout ce qui vient après, et c'est précisément l'oubli SILENCIEUX
+ * qu'il existe pour rendre bruyant.
+ *
+ * La dernière définition l'emporte, comme en base.
+ */
 function readDetailPermissionMap(): Map<string, string> {
-  const sql = readFileSync(MIGRATION, 'utf8')
+  const files = readdirSync(MIGRATIONS_DIR)
+    .filter((name) => name.endsWith('.sql'))
+    .sort()
 
-  const start = sql.indexOf('create or replace function public.audit_detail_permission')
-  const end = sql.indexOf('comment on function public.audit_detail_permission')
-  expect(start).toBeGreaterThan(-1)
-  expect(end).toBeGreaterThan(start)
+  let map: Map<string, string> | null = null
 
-  const body = sql.slice(start, end)
-  const map = new Map<string, string>()
+  for (const name of files) {
+    const sql = readFileSync(resolve(MIGRATIONS_DIR, name), 'utf8')
 
-  for (const match of body.matchAll(/when '([a-z_]+)'\s+then '([a-z0-9_.]+)'/g)) {
-    map.set(match[1], match[2])
+    const start = sql.indexOf('create or replace function public.audit_detail_permission')
+    if (start === -1) continue
+
+    const end = sql.indexOf('comment on function public.audit_detail_permission', start)
+    expect(end, `${name} définit la fonction sans la commenter.`).toBeGreaterThan(start)
+
+    const body = sql.slice(start, end)
+    const replayed = new Map<string, string>()
+
+    for (const match of body.matchAll(/when '([a-z_]+)'\s+then '([a-z0-9_.]+)'/g)) {
+      replayed.set(match[1], match[2])
+    }
+
+    map = replayed
   }
 
-  return map
+  expect(map, 'Aucune cartographie des lectures trouvée dans les migrations.').not.toBeNull()
+
+  return map as Map<string, string>
 }
 
 describe('cartographie des lectures (DEC-038)', () => {

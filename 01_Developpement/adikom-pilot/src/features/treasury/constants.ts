@@ -87,6 +87,41 @@ export function acceptsOperations(status: FinancialAccountStatus): boolean {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Virement interne — Module 06 §28 à §33                                     */
+/*                                                                             */
+/*  Trois états, et non deux comme pour un règlement : le catalogue distingue  */
+/*  ici la saisie de la validation (`treasury.transfers.validate`), et c'est   */
+/*  la validation qui déplace les fonds (DEC-040).                             */
+/* -------------------------------------------------------------------------- */
+
+export type InternalTransferStatus = 'DRAFT' | 'VALIDATED' | 'CANCELLED'
+
+export const TRANSFER_STATUS_LABELS: Record<InternalTransferStatus, string> = {
+  DRAFT: 'Brouillon',
+  VALIDATED: 'Validé',
+  CANCELLED: 'Annulé',
+}
+
+export const TRANSFER_STATUS_TONES: Record<InternalTransferStatus, BadgeTone> = {
+  DRAFT: 'warning',
+  VALIDATED: 'success',
+  CANCELLED: 'danger',
+}
+
+export const TRANSFER_STATUS_ORDER: InternalTransferStatus[] = [
+  'DRAFT',
+  'VALIDATED',
+  'CANCELLED',
+]
+
+/** Ce que chaque état signifie pour la trésorerie — §30, §31, §33. */
+export const TRANSFER_STATUS_HINTS: Record<InternalTransferStatus, string> = {
+  DRAFT: 'Aucun fonds déplacé : les écritures naissent à la validation.',
+  VALIDATED: 'Le compte source est débité, le compte destination crédité.',
+  CANCELLED: 'Les deux écritures sont annulées ; les soldes sont revenus.',
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Modes de paiement — Workflow 08 §12                                        */
 /*                                                                             */
 /*  Le mode appartient au MOUVEMENT, pas au sens dans lequel il va : un        */

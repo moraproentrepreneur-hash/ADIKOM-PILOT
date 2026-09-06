@@ -71,7 +71,9 @@
     "db:verify:audit": "node scripts/run-sql.mjs supabase/tests/audit_journal.sql",
     "verify:audit": "node scripts/verify-audit.mjs",
     "db:verify:settings": "node scripts/run-sql.mjs supabase/tests/settings.sql",
-    "verify:settings": "node scripts/verify-settings.mjs"
+    "verify:settings": "node scripts/verify-settings.mjs",
+    "db:verify:transfers": "node scripts/run-sql.mjs supabase/tests/transfers.sql",
+    "verify:transfers": "node scripts/verify-transfers.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",
