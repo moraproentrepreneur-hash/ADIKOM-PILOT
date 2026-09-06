@@ -310,6 +310,13 @@ begin
   exception when check_violation then ok := ok + 1;
   end;
 
+  -- Migration 074 : ce qui EXPLIQUE le virement se fige comme le virement (§32).
+  begin
+    update public.internal_transfers set purpose = 'Motif réécrit' where id = r.transfer;
+    raise exception 'Le motif d''un virement a pu être réécrit.';
+  exception when check_violation then ok := ok + 1;
+  end;
+
   -- Un virement ne naît jamais validé, même par INSERT direct.
   begin
     insert into public.internal_transfers
@@ -320,8 +327,8 @@ begin
   exception when check_violation then ok := ok + 1;
   end;
 
-  if ok <> 5 then
-    raise exception 'Cinq refus attendus sur le brouillon, % obtenus.', ok;
+  if ok <> 6 then
+    raise exception 'Six refus attendus sur le brouillon, % obtenus.', ok;
   end if;
 
   /*
@@ -342,7 +349,7 @@ begin
     raise exception 'Le déclencheur d''interdiction de suppression est absent.';
   end if;
 
-  raise notice '[OK] 6. Écriture anticipée, écriture orpheline, réécriture, INSERT validé : cinq refus, et la suppression est fermée.';
+  raise notice '[OK] 6. Écriture anticipée, écriture orpheline, montant, comptes, motif, INSERT validé : six refus, et la suppression est fermée.';
 end $$;
 
 
@@ -526,15 +533,22 @@ begin
   exception when check_violation then ok := ok + 1;
   end;
 
-  if ok <> 2 then
-    raise exception 'Deux refus attendus sur l''écriture, % obtenus.', ok;
+  -- Migration 074 : un montant juste sous une cause fausse n'est pas traçable.
+  begin
+    update public.treasury_entries set description = 'Libellé réécrit' where id = v_e;
+    raise exception 'Le libellé d''une écriture a pu être réécrit.';
+  exception when check_violation then ok := ok + 1;
+  end;
+
+  if ok <> 3 then
+    raise exception 'Trois refus attendus sur l''écriture, % obtenus.', ok;
   end if;
 
   if has_table_privilege('authenticated', 'public.treasury_entries', 'DELETE') then
     raise exception 'Le rôle applicatif peut supprimer une écriture.';
   end if;
 
-  raise notice '[OK] 10. Montant et origine d''une écriture : deux refus, la suppression reste fermée.';
+  raise notice '[OK] 10. Montant, origine et libellé d''une écriture : trois refus, la suppression reste fermée.';
 end $$;
 
 
@@ -703,6 +717,13 @@ begin
   exception when check_violation then ok := ok + 1;
   end;
 
+  -- Migration 074 : §43 — une documentation réécrivable ne documente rien.
+  begin
+    update public.misc_payments set external_ref = 'REF réécrite' where id = r.misc;
+    raise exception 'La référence d''un paiement divers a pu être réécrite.';
+  exception when check_violation then ok := ok + 1;
+  end;
+
   -- Une écriture ne peut pas devancer la validation.
   begin
     insert into public.treasury_entries
@@ -722,8 +743,8 @@ begin
   exception when check_violation then ok := ok + 1;
   end;
 
-  if ok <> 5 then
-    raise exception 'Cinq refus attendus sur le brouillon, % obtenus.', ok;
+  if ok <> 6 then
+    raise exception 'Six refus attendus sur le brouillon, % obtenus.', ok;
   end if;
 
   if has_table_privilege('authenticated', 'public.misc_payments', 'DELETE') then
@@ -738,7 +759,7 @@ begin
     raise exception 'Le déclencheur d''interdiction de suppression est absent.';
   end if;
 
-  raise notice '[OK] 14. Montant, compte, bénéficiaire, écriture anticipée, INSERT validé : cinq refus, et la suppression est fermée.';
+  raise notice '[OK] 14. Montant, compte, bénéficiaire, référence, écriture anticipée, INSERT validé : six refus, et la suppression est fermée.';
 end $$;
 
 
