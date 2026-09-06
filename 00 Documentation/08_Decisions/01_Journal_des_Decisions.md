@@ -73,7 +73,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-037 | Groupes & Vue hiérarchique — LOT 14 | Arbitrages et sécurité | Appliquée | 2026-09-05 |
 | DEC-038 | Portée de la lecture du journal d'activité — LOT 15 | Ambiguïté tranchée et défaut de sécurité | Appliquée — **achève le Module 08** | 2026-09-05 |
 | DEC-039 | Paramètres — Entreprise & Numérotation — LOT 16 | Arbitrages et défauts de sécurité | Appliquée — **ouvre le Module 09** | 2026-09-05 |
-| DEC-040 | Virement interne & Paiements divers — LOT 17 | Arbitrages, capacité et sécurité | Appliquée — **achève les Modules 06 et 07** | 2026-09-06 |
+| DEC-040 | Virement interne & Paiements divers — LOT 17 | Arbitrages, capacité et **deux défauts préexistants** | Appliquée — **achève les Modules 06 et 07** | 2026-09-06 |
 
 ---
 
@@ -3766,6 +3766,48 @@ la vérification de l'état à l'`INSERT` : sur `UPDATE`, `fn_treasury_entry_imm
 fige déjà l'origine, le compte, le montant, le sens et la date — seul le statut
 change, et seulement pour suivre l'opération.
 
+### j. Deux défauts PRÉEXISTANTS, trouvés à la relecture du lot
+
+Ni l'un ni l'autre n'appartient à ce lot : tous deux dorment dans la trésorerie
+depuis le LOT 6. Le LOT 17 les aurait élargis, et c'est en relisant son propre
+diff qu'ils ont été vus.
+
+**1. On pouvait annuler l'écriture d'une opération voisine (migration 073).**
+
+La policy d'`UPDATE` de `treasury_entries` était une disjonction de CAPACITÉS,
+sans lien avec l'origine de la ligne visée. Un porteur de
+`billing.supplier_payments.cancel` pouvait donc, par `PATCH` direct, passer à
+« Annulée » l'écriture d'un règlement CLIENT — sans toucher au règlement, qui
+restait validé. Le solde du compte remontait, la facture restait soldée, et rien
+n'expliquait l'écart : l'incohérence de `Workflow 08` §45, prise par l'autre
+bout.
+
+*Aucune recette ne l'avait vu* : toutes éprouvaient qu'un profil annule bien SON
+propre règlement ; aucune n'essayait d'annuler l'écriture du domaine VOISIN — le
+seul geste que la policy laissait passer.
+
+La capacité est désormais liée à l'**origine** de l'écriture, comme elle l'est
+déjà à l'insertion (DEC-029 §f). Une écriture libre — sans origine — devient non
+modifiable : aucun écran n'en produit, et `treasury.entries.create` n'a pas de
+capacité d'annulation au catalogue.
+
+**2. La justification d'une opération se réécrivait après coup (migration 074).**
+
+Les gardes d'immuabilité protégeaient les colonnes qui portent l'ARGENT —
+montant, compte, sens, date — et laissaient libres celles qui portent la
+JUSTIFICATION : `description` et `reference` d'une écriture, `purpose`,
+`reference`, `notes` d'un virement, `external_ref` et `notes` d'un paiement
+divers.
+
+`Module 06` §32 range pourtant le motif et la référence parmi ce que le système
+doit CONSERVER, au même titre que le montant ; §34 proscrit la réécriture de
+l'historique ; `Module 07` §43 exige qu'un paiement divers soit « suffisamment
+documenté ». Un montant juste sous une cause fausse n'est pas traçable, et une
+documentation réécrivable ne documente rien.
+
+`status_reason` reste écrivable : c'est le motif de l'ANNULATION, posé par l'acte
+d'annuler. Le figer interdirait l'acte qui le pose.
+
 ### i. Le contrôle de parité de l'audit lisait un seul fichier
 
 `audit.test.ts` reconstituait la cartographie `audit_detail_permission` depuis la
@@ -3777,16 +3819,17 @@ qu'il existe pour rendre bruyant (DEC-038).
 
 ### Conséquences
 
-- Migrations **071** et **072** : trois types, deux tables, deux colonnes
+- Migrations **071** à **074** : trois types, deux tables, deux colonnes
   d'origine sur `treasury_entries`, six fonctions atomiques `SECURITY INVOKER`,
-  deux fonctions de cohérence, trois gardes différées, dix déclencheurs, RLS,
-  audit, interdiction de suppression, révocation d'`EXECUTE` à PUBLIC.
+  deux fonctions de cohérence, trois gardes différées, treize déclencheurs, RLS,
+  audit, interdiction de suppression, révocation d'`EXECUTE` à PUBLIC — et deux
+  correctifs de défauts préexistants (§j).
 - **Une permission créée** : `treasury.transfers.view`. Catalogue : **171**.
 - Menus **Virement interne** et **Paiements divers** ouverts ; volet
   **Virements** ajouté à la fiche d'un compte (`Module 06` §16). Plus aucune
   entrée de navigation n'est « À venir ».
 - Recettes : `db:verify:transfers` (19 contrôles) et `verify:transfers`
-  (49 contrôles) ; le total attendu du catalogue porté à 171 dans les
+  (52 contrôles) ; le total attendu du catalogue porté à 171 dans les
   19 recettes qui le vérifient.
 - Aucune fonction n'est `SECURITY DEFINER` (DEC-022, DEC-026 §f).
 

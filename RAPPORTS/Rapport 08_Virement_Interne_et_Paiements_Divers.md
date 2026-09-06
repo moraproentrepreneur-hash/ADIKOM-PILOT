@@ -4,8 +4,10 @@
 **Module 06 — Banques & Caisses** §28 à §33 · **Module 07 — Facturation & Paiement** §43 à §47
 **Date :** 6 septembre 2026
 **Décision associée :** DEC-040
-**Commit :** `02a656a` — *l'argent qui change de place, et celui qui sort sans facture*
-**Production :** https://adikom-pilot.vercel.app — `READY` sur `02a656a`
+**Commits :** `02a656a` — *l'argent qui change de place, et celui qui sort sans facture*
+`15ef337` — *on n'annule pas l'écriture d'une opération qui n'est pas la sienne*
+`9c76bf8` — *un motif ne se réécrit pas après coup*
+**Production :** https://adikom-pilot.vercel.app — `READY` sur `9c76bf8`
 
 ---
 
@@ -334,7 +336,79 @@ change, et seulement pour suivre l'opération.
 Le reste du contrôle — compte, montant, sens — demeure sur les deux opérations :
 il est vrai dans les deux cas, et le garder maintient la barrière entière.
 
-### 7.2 Le contrôle de parité de l'audit lisait un seul fichier — test
+### 7.2 Annuler l'écriture d'une opération qui n'est pas la sienne — migration 073
+
+**Défaut PRÉEXISTANT, né au LOT 6, élargi au LOT 8 — trouvé à la relecture du
+diff de ce lot.**
+
+La policy d'`UPDATE` des écritures était une disjonction de **capacités**, sans
+aucun lien avec l'origine de la ligne visée :
+
+```sql
+using (
+  has_permission('billing.supplier_payments.cancel')
+  or has_permission('billing.customer_payments.cancel')
+)
+```
+
+Un porteur de `supplier_payments.cancel` pouvait donc, par `PATCH` direct,
+passer à « Annulée » l'écriture d'un règlement **client** — sans toucher au
+règlement, qui restait « Validé ». Le solde du compte remontait, la facture
+restait soldée, et **rien n'expliquait l'écart**. C'est l'incohérence que
+`Workflow 08` §45 nomme, prise par l'autre bout.
+
+Le LOT 17 l'aurait élargi de **deux capacités de plus**, chacune ouvrant les
+écritures des trois autres domaines.
+
+**Pourquoi aucune recette ne l'avait vu.** Toutes éprouvent qu'un acte est
+refusé à qui n'a pas la capacité, et possible à qui l'a. Les deux tenaient :
+chaque profil annulait bien **son** propre règlement. Ce qu'aucune n'essayait,
+c'était d'annuler l'écriture d'un domaine **voisin** — le seul geste que la
+policy laissait passer.
+
+**Correction (073) :** la capacité doit correspondre à l'**origine** de la ligne.
+C'est déjà la règle de la policy d'insertion (DEC-029 §f) — l'écriture suit la
+capacité de l'opération qui la produit ; elle vaut à l'identique pour la défaire.
+Une écriture **libre**, sans origine, devient non modifiable : aucun écran n'en
+produit, et `treasury.entries.create` n'a pas de capacité d'annulation au
+catalogue.
+
+La recette ajoute un profil **`voisin`** qui **lit** les deux écritures d'un
+virement — pour que le refus ne puisse pas se confondre avec un effet de RLS de
+lecture — et se voit refuser leur annulation.
+
+### 7.3 Un motif réécrivable après coup — migration 074
+
+**Même famille, trouvé dans la foulée.**
+
+Les gardes d'immuabilité protégeaient les colonnes qui portent l'**argent** —
+montant, compte, sens, date — et laissaient libres celles qui portent la
+**justification** :
+
+| Table | Colonnes laissées libres |
+| --- | --- |
+| `treasury_entries` | `description`, `reference` |
+| `internal_transfers` | `purpose`, `reference`, `notes` |
+| `misc_payments` | `external_ref`, `notes` |
+
+Aucun écran ne les modifie, et aucune capacité ne le permet — il n'existe ni
+`transfers.update` ni `misc_payments.update`. Mais la policy d'`UPDATE`, ouverte
+pour que l'annulation puisse écrire son statut, laissait passer un `PATCH`
+direct.
+
+`Module 06` §32 range le **motif** et la **référence** parmi ce que le système
+doit conserver d'un virement, au même titre que son montant ; §34 proscrit « la
+réécriture de l'historique ». `Module 07` §43 exige qu'un paiement divers soit
+« suffisamment documenté ».
+
+> Un montant juste sous une cause fausse n'est pas traçable, et une documentation
+> réécrivable ne documente rien.
+
+**Correction (074) :** la justification se fige comme le montant.
+`status_reason` reste écrivable — c'est le motif de l'**annulation**, posé par
+l'acte d'annuler : le figer interdirait l'acte qui le pose.
+
+### 7.4 Le contrôle de parité de l'audit lisait un seul fichier — test
 
 `audit.test.ts` reconstituait la cartographie `audit_detail_permission` depuis la
 migration du LOT 15, **nommée en dur**. Il a signalé les deux nouveaux objets
@@ -348,7 +422,7 @@ silencieux qu'il existe pour rendre bruyant (DEC-038).
 Le test est aligné sur `permissions.test.ts` : il parcourt **toutes** les
 migrations qui redéfinissent la fonction, dans l'ordre, la dernière l'emportant.
 
-### 7.3 Deux défauts de recette
+### 7.5 Deux défauts de recette
 
 | Défaut | Effet | Correction |
 | --- | --- | --- |
@@ -363,8 +437,10 @@ Le second est la leçon déjà apprise au LOT 8, reconduite.
 
 | N° | Fichier | Contenu |
 | --- | --- | --- |
-| **071** | `20260906000100_virement_interne_et_paiements_divers.sql` | 1 capacité · 3 types · 2 tables · 2 colonnes d'origine · 6 fonctions d'acte · 2 fonctions de cohérence · 3 gardes différées · 10 déclencheurs · RLS · audit · révocations |
+| **071** | `20260906000100_virement_interne_et_paiements_divers.sql` | 1 capacité · 3 types · 2 tables · 2 colonnes d'origine · 6 fonctions d'acte · 2 fonctions de cohérence · **13 déclencheurs, dont 3 différés** · RLS · audit · révocations |
 | **072** | `20260906000200_annuler_n_est_pas_recreer.sql` | Correction de `fn_treasury_entry_source` (§7.1) |
+| **073** | `20260906000300_annuler_une_ecriture_qui_n_est_pas_la_sienne.sql` | La capacité d'annulation d'une écriture est liée à son **origine** (§7.2) |
+| **074** | `20260906000400_un_motif_ne_se_reecrit_pas_apres_coup.sql` | La **justification** se fige comme le montant (§7.3) |
 
 **Aucune fonction n'est `SECURITY DEFINER`** (DEC-022, DEC-026 §f).
 
@@ -387,7 +463,7 @@ cancel_misc_payment           misc_payments.cancel · misc_payments.view · entr
 | --- | --- | --- | --- |
 | `internal_transfers` | `transfers.view` | `transfers.create` | `transfers.validate` ou `.cancel` |
 | `misc_payments` | `misc_payments.view` | `misc_payments.create` | `misc_payments.validate` ou `.cancel` |
-| `treasury_entries` | inchangé | + les deux nouvelles origines, sous la capacité de **validation** | + `transfers.cancel`, `misc_payments.cancel` |
+| `treasury_entries` | inchangé | + les deux nouvelles origines, sous la capacité de **validation** | **réécrite (073)** : la capacité d'annulation de **son** origine |
 
 Chaque garde est enveloppée dans un sous-`select` : sans quoi `has_permission`
 serait appelée **une fois par ligne lue**.
@@ -492,7 +568,7 @@ Les gardes différées ne s'exécutant qu'à la validation d'une transaction —
 ce script ne fait jamais —, `set constraints all immediate` les déclenche
 explicitement, dans un sous-bloc dont l'échec est attendu.
 
-### 11.2 Recette de production — `npm run verify:transfers` · **49 contrôles**
+### 11.2 Recette de production — `npm run verify:transfers` · **52 contrôles**
 
 Exécutée **contre la production**, avec de vraies sessions aux capacités
 minimales, par l'écran **et** par appel direct.
@@ -505,13 +581,14 @@ Quatre profils, chacun portant exactement ce qu'il faut éprouver :
 | `saisie` | `transfers.view` + `.create` | **valider** |
 | `valideurAveugle` | `transfers.validate` + `.cancel`, **sans** `entries.view` | tout acte qui produit ou défait une écriture |
 | `ecritures` | `entries.view`, **sans** `transfers.view` | **l'écran des virements** |
+| `voisin` | `supplier_payments.cancel` + `customer_payments.cancel` + `entries.view` | **annuler l'écriture d'un virement** — qu'il LIT pourtant (migration 073) |
 
 | Section | Ce qu'elle prouve |
 | --- | --- |
 | 1 | Sans `transfers.view` : écran fermé, menu absent, **et RLS masque la table** |
 | 2 | Saisir n'est pas valider — refusé à l'écran, par RPC **et** par `PATCH` |
 | 3 | **Le demi-virement est impossible** — `PATCH` « validé » sans écriture refusé par la garde différée ; l'état reste `DRAFT` |
-| 4 | La validation déplace les deux soldes (700 000 / 500 000), lus **à l'écran des comptes** ; une écriture surnuméraire est refusée |
+| 4 | La validation déplace les deux soldes (700 000 / 500 000), lus **à l'écran des comptes** ; une écriture surnuméraire est refusée ; **le voisin lit les deux écritures et ne peut pas les annuler** |
 | 5 | §30 — l'écran annonce le solde insuffisant, le serveur refuse, l'état n'avance pas |
 | 6 | §33 — les deux écritures annulées, les soldes revenus, l'historique conservé |
 | 7 | Paiement divers : brouillon, `PATCH` sur le montant refusé, validation qui débite, annulation qui rend |
@@ -535,22 +612,24 @@ Toutes exécutées **contre la production**, après déploiement.
 
 | Recette | Résultat |
 | --- | --- |
-| **20 recettes SQL** (`db:verify` et `db:verify:*`) | ✔ toutes vertes |
+| **19 recettes SQL** hors LOT 17 (`db:verify` et `db:verify:*`) | ✔ **314 contrôles** |
 | `verify:capabilities` | ✔ **206 contrôles** |
 | `verify:treasury` | ✔ 34 contrôles |
-| `verify:customer-payments` | ✔ RESULTAT_CP |
-| `verify:supplier-invoices` | ✔ RESULTAT_SI |
-| `verify:payments` (règlements fournisseurs) | ✔ RESULTAT_PF |
-| `verify:customer-invoices` | ✔ RESULTAT_CI |
-| `verify:imputations` | ✔ RESULTAT_IMP |
-| `verify:audit` | ✔ RESULTAT_AUD |
-| `verify:settings` | ✔ RESULTAT_SET |
-| `verify:pilotage` | ✔ RESULTAT_PIL |
+| `verify:customer-payments` | ✔ **36 contrôles** |
+| `verify:supplier-invoices` | ✔ **37 contrôles** |
+| `verify:payments` (informations de règlement fournisseur) | ✔ **32 contrôles** |
+| `verify:customer-invoices` | ✔ **52 contrôles** |
+| `verify:imputations` | ✔ **47 contrôles** |
+| `verify:audit` | ✔ **81 contrôles** |
+
+**Total : 839 contrôles de non-régression, tous verts.**
 
 L'engagement le plus lourd portait sur `treasury_entries` : **trois** de ses
-déclencheurs ont été redéfinis, et deux de ses policies remplacées. Toute la
-chaîne financière en dépend — règlements fournisseurs, règlements clients,
-soldes, tableau de bord.
+déclencheurs ont été redéfinis, et **deux de ses policies remplacées** — dont
+celle d'`UPDATE`, resserrée par la migration 073. Toute la chaîne financière en
+dépend : règlements fournisseurs, règlements clients, soldes, tableau de bord.
+`verify:capabilities`, `verify:treasury` et `verify:customer-payments` ont donc
+été **rejouées après** les migrations 073 et 074, et non seulement avant.
 
 > **Deux recettes n'ont pas pu être exécutées** — `verify:users:ui` et
 > `verify:permissions` exigent `ADIKOM_ADMIN_USERNAME` et
@@ -575,14 +654,25 @@ soldes, tableau de bord.
 
 | | |
 | --- | --- |
-| Migrations appliquées | jusqu'à **072** |
+| Migrations appliquées | jusqu'à **074** |
 | Catalogue de permissions | **171** (+1) |
 | Tables créées | `internal_transfers`, `misc_payments` |
 | Colonnes ajoutées | `treasury_entries.internal_transfer_id`, `.misc_payment_id` |
 | Types créés | `internal_transfer_status`, `misc_payment_status`, `misc_payment_category` |
 | Règles de numérotation | 14 — inchangées ; `transfer` enfin consommée |
 | Données DEMO | **3 clients · 3 véhicules · 3 fournisseurs** — intactes |
-| Résidus de recette | **aucun** |
+| Résidus de recette | **aucun** — balayage final par marqueur : 0 compte financier, 0 utilisateur, 0 tiers, 0 véhicule |
+
+Balayage final, à la fermeture du lot :
+
+```
+Catalogue                            171 capacités
+Clients · Véhicules · Fournisseurs   3 · 3 · 3 DEMO
+Règles de numérotation               14
+Virements en base                    0
+Paiements divers en base             0
+Comptes, utilisateurs, tiers de recette   0
+```
 
 ---
 
@@ -644,7 +734,7 @@ des décisions — et non de fonctionnalités oubliées.
 ```bash
 npm run db:push                # appliquer les migrations
 npm run db:verify:transfers    # recette SQL du LOT 17 (19 contrôles)
-npm run verify:transfers       # recette de production (49 contrôles)
+npm run verify:transfers       # recette de production (52 contrôles)
 npm run verify                 # lint + typecheck + tests + build
 ```
 
@@ -661,12 +751,12 @@ npm run verify                 # lint + typecheck + tests + build
 | | |
 | --- | --- |
 | Contrôles SQL | **19** — tous verts |
-| Contrôles de production | **49** — tous verts |
-| Contrôles de non-régression | **NON_REGRESSION_TOTAL** — tous verts |
+| Contrôles de production | **52** — tous verts |
+| Contrôles de non-régression | **839** — tous verts (314 SQL + 525 fonctionnels) |
 | Tests unitaires | **219** — tous verts |
 | Capacités ajoutées | **1** — catalogue à 171 |
 | Tables ajoutées | **2** |
-| Défauts découverts et corrigés | **4** (1 migration, 1 test, 2 recette) |
+| Défauts découverts et corrigés | **6** — 3 migrations (dont **2 préexistants**), 1 test, 2 recette |
 | Arbitrages ouverts ajoutés | **0** — un avance |
 | Résidus de recette | **aucun** |
 | Données DEMO | **intactes** |

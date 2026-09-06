@@ -20,9 +20,12 @@
  *      virement à « Validé » sans écriture est refusé par la garde différée.
  *   6. Une écriture ne se fabrique pas : `INSERT` direct sur un brouillon,
  *      sur un compte étranger, dans le mauvais sens — tous refusés.
- *   7. Paiement divers : brouillon sans écriture, validation qui débite,
+ *   7. Une écriture ne se défait que sous LA capacité de son origine : un
+ *      profil qui annule les règlements — et qui LIT les écritures du
+ *      virement — ne peut pas les annuler (migration 073).
+ *   8. Paiement divers : brouillon sans écriture, validation qui débite,
  *      annulation qui rend, aucune modification possible (Module 07 §43 à §47).
- *   8. Les données DEMO sont intactes, le catalogue à 171, aucun résidu.
+ *   9. Les données DEMO sont intactes, le catalogue à 171, aucun résidu.
  *
  * Utilisation :
  *   node scripts/verify-transfers.mjs [url]
