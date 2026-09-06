@@ -35,6 +35,17 @@ create temporary table recette_imp (
 
 insert into recette_imp values (null, null, null, null, null, null, null, null, null, null, null);
 
+/*
+ * L'EMPREINTE DU JEU DE DÉMONSTRATION, PRISE AVANT TOUTE ÉCRITURE.
+ *
+ * Le contrôle 21 vérifie que la recette n'a touché à rien qui ne lui appartienne.
+ * Il comparait autrefois à un nombre écrit en dur, qui a cessé d'être vrai dès
+ * que la démonstration s'est étoffée. Une empreinte prise sur place vaut pour
+ * n'importe quel jeu de données.
+ */
+create temporary table recette_imp_demo on commit drop as
+  select id from public.vehicles where model like '%DEMO%';
+
 
 -- --- 1. Structure ------------------------------------------------------------------
 do $$
@@ -808,25 +819,43 @@ end $$;
 
 
 -- --- 21. Aucune donnée DEMO touchée --------------------------------------------------------------
+--
+-- CE CONTRÔLE COMPTAIT UN NOMBRE ÉCRIT EN DUR — « 3 véhicules DEMO » —, et il a
+-- échoué le jour où le jeu de démonstration s'est étoffé (LOT 18 : huit
+-- véhicules, et une imputation de démonstration parfaitement légitime).
+--
+-- Le nombre n'était pas la règle : la règle est que LA RECETTE NE TOUCHE À RIEN
+-- de ce qui ne lui appartient pas. L'empreinte est donc PRISE, puis comparée —
+-- ce qui vaut quel que soit le jeu de démonstration, aujourd'hui et demain.
 do $$
-declare v_demo int;
+declare
+  v_avant int := (select count(*) from recette_imp_demo);
+  v_apres int;
+  v_mienne int;
 begin
-  select count(*) into v_demo from public.vehicles where model like '%DEMO%';
-  if v_demo <> 3 then
-    raise exception 'Les véhicules DEMO ont bougé : % au lieu de 3.', v_demo;
+  select count(*) into v_apres from public.vehicles where model like '%DEMO%';
+
+  if v_apres <> v_avant then
+    raise exception 'Les véhicules DEMO ont bougé : % au lieu de %.', v_apres, v_avant;
   end if;
 
-  select count(*) into v_demo
+  -- Les imputations de CETTE recette, reconnues par leur fournisseur marqué :
+  -- aucune ne doit porter sur un véhicule de démonstration.
+  select count(*) into v_mienne
   from public.imputations i
   join public.vehicle_maintenances m on m.id = i.maintenance_id
   join public.vehicles v on v.id = m.vehicle_id
-  where v.model like '%DEMO%';
+  join public.suppliers s on s.id = i.supplier_id
+  where v.model like '%DEMO%'
+    and s.legal_name like 'RECETTE IMP%';
 
-  if v_demo <> 0 then
+  if v_mienne <> 0 then
     raise exception 'Une imputation de recette porte sur un véhicule DEMO.';
   end if;
 
-  raise notice '[OK] 21. Données DEMO intactes, aucune imputation de recette sur elles.';
+  raise notice
+    '[OK] 21. Données DEMO intactes (% véhicule(s)), aucune imputation de recette sur elles.',
+    v_apres;
 end $$;
 
 

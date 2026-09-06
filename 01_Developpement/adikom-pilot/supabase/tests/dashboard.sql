@@ -290,8 +290,18 @@ begin
     raise exception 'Une facture annulée a été comptée dans le facturé.';
   end if;
 
-  -- Hors période : une facture d'il y a vingt jours n'est pas d'hier.
-  if public.dashboard_customer_invoiced(current_date - 19, current_date) <> 0 then
+  /*
+   * Hors période : une facture d'il y a vingt jours n'est pas d'hier.
+   *
+   * Ce contrôle exigeait autrefois que la fenêtre [-19, aujourd'hui] soit VIDE.
+   * Cela ne tenait que tant que la base ne portait aucune autre facture — une
+   * hypothèse que le jeu de démonstration a cessé de vérifier au LOT 18. Ce
+   * n'était d'ailleurs pas la règle : la règle est que RETIRER le jour -20 de
+   * la fenêtre en retire la facture de la recette. C'est ce qui est mesuré ici,
+   * et cela reste vrai quel que soit le contenu de la base.
+   */
+  if public.dashboard_customer_invoiced(current_date - 20, current_date)
+     - public.dashboard_customer_invoiced(current_date - 19, current_date) < 450000 then
     raise exception 'Une facture est comptée hors de sa période.';
   end if;
 
@@ -306,42 +316,62 @@ end $$;
 
 
 -- --- 6. ENCAISSÉ ET RESTE À ENCAISSER — Workflow 08 §21 ------------------------------
+--
+-- LES INDICATEURS SONT GLOBAUX : ON MESURE CE QU'ILS BOUGENT, PAS CE QU'ILS VALENT.
+--
+-- Ces contrôles comparaient des valeurs ABSOLUES — « reste à encaisser : 250 000 ».
+-- C'était juste tant que la base ne portait rien d'autre que la recette, et faux
+-- dès qu'un jeu de démonstration a existé (LOT 18). Or ce n'est pas la valeur qui
+-- est en jeu : c'est l'EFFET d'un règlement sur l'indicateur. Une empreinte prise
+-- avant, comparée après, dit exactement cela — et le dit quel que soit le reste.
 do $$
 declare
   v_inv uuid := (select invoice from recette_tdb);
   v_acc uuid := (select account from recette_tdb);
   v_pay uuid;
   r     record;
+  v_encaisse0 bigint;
+  v_futur0    bigint;
+  v_creance0  bigint;
+  v_nombre0   int;
+  v_echu0     int;
+  v_echue0    bigint;
 begin
-  if public.dashboard_customer_collected(current_date, current_date) <> 0 then
-    raise exception 'Un encaissement est présumé avant tout règlement.';
-  end if;
+  v_encaisse0 := public.dashboard_customer_collected(current_date, current_date);
+  v_futur0    := public.dashboard_customer_collected(current_date + 1, current_date + 30);
+
+  select amount, invoice_count, overdue_count, overdue_amount
+    into v_creance0, v_nombre0, v_echu0, v_echue0
+  from public.dashboard_customer_receivables();
 
   v_pay := public.record_customer_payment(v_inv, v_acc, 200000, current_date, 'BANK_TRANSFER',
                                           'VIR-TDB-1', null);
 
-  if public.dashboard_customer_collected(current_date, current_date) <> 200000 then
-    raise exception 'Encaissé attendu 200 000, obtenu %.',
-      public.dashboard_customer_collected(current_date, current_date);
+  if public.dashboard_customer_collected(current_date, current_date) - v_encaisse0 <> 200000 then
+    raise exception 'Encaissé attendu +200 000, obtenu %.',
+      public.dashboard_customer_collected(current_date, current_date) - v_encaisse0;
   end if;
 
   -- Le règlement se compte à SA date, jamais à celle de la facture (§11).
-  if public.dashboard_customer_collected(current_date + 1, current_date + 30) <> 0 then
+  if public.dashboard_customer_collected(current_date + 1, current_date + 30) <> v_futur0 then
     raise exception 'Un règlement est compté hors de sa date de réception.';
   end if;
 
   select * into r from public.dashboard_customer_receivables();
 
-  if r.amount <> 250000 then
-    raise exception 'Reste à encaisser attendu 250 000, obtenu %.', r.amount;
+  -- La facture de la recette vaut 450 000, dont 200 000 encaissés : elle pèse
+  -- 250 000 sur la créance, et elle est ÉCHUE (échéance à J−5).
+  if r.amount - v_creance0 <> 250000 - 450000 then
+    raise exception 'Reste à encaisser : variation attendue de %, obtenue %.',
+      250000 - 450000, r.amount - v_creance0;
   end if;
-  if r.invoice_count <> 1 then
-    raise exception 'Une seule facture non soldée attendue, % trouvée(s).', r.invoice_count;
+  if r.invoice_count <> v_nombre0 then
+    raise exception 'Le nombre de factures non soldées a changé : % au lieu de %.',
+      r.invoice_count, v_nombre0;
   end if;
-  -- Échéance à J−5 : la créance est échue.
-  if r.overdue_count <> 1 or r.overdue_amount <> 250000 then
-    raise exception 'Part échue attendue 1 / 250 000, obtenue % / %.',
-      r.overdue_count, r.overdue_amount;
+  if r.overdue_count <> v_echu0 or r.overdue_amount - v_echue0 <> 250000 - 450000 then
+    raise exception 'Part échue : variation attendue de %, obtenue % (nombre % → %).',
+      250000 - 450000, r.overdue_amount - v_echue0, v_echu0, r.overdue_count;
   end if;
 
   -- ANNULER le règlement rétablit la créance ENTIÈRE : un encaissement annulé
@@ -349,10 +379,11 @@ begin
   perform public.cancel_customer_payment(v_pay, 'Recette LOT 9');
 
   select * into r from public.dashboard_customer_receivables();
-  if r.amount <> 450000 then
-    raise exception 'Après annulation, créance attendue 450 000, obtenue %.', r.amount;
+  if r.amount <> v_creance0 then
+    raise exception 'Après annulation, la créance devait revenir à %, obtenue %.',
+      v_creance0, r.amount;
   end if;
-  if public.dashboard_customer_collected(current_date, current_date) <> 0 then
+  if public.dashboard_customer_collected(current_date, current_date) <> v_encaisse0 then
     raise exception 'Un règlement annulé compte encore dans l''encaissé.';
   end if;
 
@@ -372,21 +403,36 @@ declare
   v_inv uuid := (select invoice from recette_tdb);
   v_acc uuid := (select account from recette_tdb);
   r     record;
+  v_creance0 bigint;
+  v_nombre0  int;
+  v_echu0    int;
+  v_encaisse0 bigint;
 begin
+  select amount, invoice_count, overdue_count
+    into v_creance0, v_nombre0, v_echu0
+  from public.dashboard_customer_receivables();
+
+  v_encaisse0 := public.dashboard_customer_collected(current_date, current_date);
+
   perform public.record_customer_payment(v_inv, v_acc, 250000, current_date, 'CASH', null, null);
 
+  -- La facture de la recette est soldée : elle DISPARAÎT des créances. Le reste
+  -- de la base, lui, ne bouge pas — c'est la variation qui le dit.
   select * into r from public.dashboard_customer_receivables();
-  if r.amount <> 0 or r.invoice_count <> 0 then
-    raise exception 'Une facture soldée reste comptée : % / %.', r.invoice_count, r.amount;
+  if r.amount - v_creance0 <> -250000 or r.invoice_count <> v_nombre0 - 1 then
+    raise exception 'Une facture soldée reste comptée : variation % / %.',
+      r.invoice_count - v_nombre0, r.amount - v_creance0;
   end if;
-  if r.overdue_count <> 0 then
+  if r.overdue_count <> v_echu0 - 1 then
     raise exception 'Une facture soldée est présentée comme en retard.';
   end if;
 
-  -- Et l'encaissé du jour vaut bien la totalité versée.
-  if public.dashboard_customer_collected(current_date, current_date) <> 450000 then
-    raise exception 'Encaissé attendu 450 000, obtenu %.',
-      public.dashboard_customer_collected(current_date, current_date);
+  -- Et l'encaissé du jour a bien augmenté du solde versé. Les 200 000 du
+  -- contrôle précédent sont déjà dans l'empreinte : la facture de 450 000 est
+  -- donc entièrement encaissée à l'issue des deux règlements.
+  if public.dashboard_customer_collected(current_date, current_date) - v_encaisse0 <> 250000 then
+    raise exception 'Encaissé attendu +250 000, obtenu %.',
+      public.dashboard_customer_collected(current_date, current_date) - v_encaisse0;
   end if;
 
   raise notice '[OK] 7. Facture soldée : sortie des créances, jamais dite en retard.';
@@ -408,7 +454,17 @@ declare
   v_sup uuid; v_gar uuid; v_veh uuid; v_mnt uuid; v_imp uuid; v_inv uuid;
   v_acc uuid := (select account from recette_tdb);
   r     record;
+  v_dette0   bigint;
+  v_nombre0  int;
+  v_echu0    int;
+  v_echue0   bigint;
 begin
+  -- Empreinte AVANT toute écriture : l'indicateur est global, seule sa
+  -- variation appartient à la recette (voir le contrôle 6).
+  select amount, invoice_count, overdue_count, overdue_amount
+    into v_dette0, v_nombre0, v_echu0, v_echue0
+  from public.dashboard_supplier_payables();
+
   insert into public.suppliers (supplier_no, type, legal_name, phone, status)
   values (public.next_number('supplier'), 'VEHICLE_SUPPLIER', 'RECETTE TDB — Fournisseur',
           '+269 901', 'ACTIVE')
@@ -456,25 +512,27 @@ begin
     raise exception 'Imputé attendu 300 000, obtenu %.', public.supplier_invoice_imputed(v_inv);
   end if;
 
-  -- AVANT tout règlement : la dette vaut le NET, jamais le brut.
+  -- AVANT tout règlement : la dette ajoutée vaut le NET, jamais le brut.
   select * into r from public.dashboard_supplier_payables();
-  if r.amount <> 700000 then
-    raise exception 'Dette attendue 700 000 (imputation déduite), obtenue %.', r.amount;
+  if r.amount - v_dette0 <> 700000 then
+    raise exception 'Dette ajoutée attendue 700 000 (imputation déduite), obtenue %.',
+      r.amount - v_dette0;
   end if;
 
   perform public.record_supplier_payment(v_inv, v_acc, 200000, current_date, 'BANK_TRANSFER',
                                          'VIR-TDB-F', null);
 
   select * into r from public.dashboard_supplier_payables();
-  if r.amount <> 500000 then
-    raise exception 'Reste à payer attendu 500 000, obtenu %.', r.amount;
+  if r.amount - v_dette0 <> 500000 then
+    raise exception 'Reste à payer attendu 500 000, obtenu %.', r.amount - v_dette0;
   end if;
-  if r.invoice_count <> 1 then
-    raise exception 'Une seule facture fournisseur due attendue, %.', r.invoice_count;
+  if r.invoice_count <> v_nombre0 + 1 then
+    raise exception 'Une seule facture fournisseur due ajoutée, % (avant : %).',
+      r.invoice_count, v_nombre0;
   end if;
-  if r.overdue_count <> 1 or r.overdue_amount <> 500000 then
-    raise exception 'Part échue fournisseur attendue 1 / 500 000, obtenue % / %.',
-      r.overdue_count, r.overdue_amount;
+  if r.overdue_count <> v_echu0 + 1 or r.overdue_amount - v_echue0 <> 500000 then
+    raise exception 'Part échue fournisseur attendue +1 / +500 000, obtenue % / %.',
+      r.overdue_count - v_echu0, r.overdue_amount - v_echue0;
   end if;
 
   raise notice '[OK] 8. Dette = brut − imputé − payé : 500 000 KMF, jamais 1 000 000.';

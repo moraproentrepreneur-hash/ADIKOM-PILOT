@@ -334,6 +334,7 @@ declare
   v_out   uuid;
   s       record;
   v_ref   bigint;
+  v_hors  bigint;
 begin
   select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date - 20);
   v_ref := s.invoiced_amount;
@@ -362,9 +363,19 @@ begin
     raise exception 'Une facture annulée est comptée dans le facturé.';
   end if;
 
-  -- Hors période : une facture d'il y a vingt jours n'est pas d'hier.
+  /*
+   * Hors période : une facture d'il y a vingt jours n'est pas d'hier.
+   *
+   * Ce contrôle exigeait autrefois une fenêtre VIDE — vrai tant que la base ne
+   * portait aucune autre facture, faux dès que le jeu de démonstration en a
+   * porté (LOT 18). La règle réellement en jeu est celle-ci : retirer le jour
+   * -20 de la fenêtre en retire la facture de la recette, et elle seule.
+   */
   select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 19, (now() at time zone 'Indian/Comoro')::date);
-  if s.invoiced_amount <> 0 then
+  v_hors := s.invoiced_amount;
+
+  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date);
+  if s.invoiced_amount - v_hors < v_ref then
     raise exception 'Une facture est comptée hors de sa période.';
   end if;
 
@@ -394,49 +405,72 @@ declare
   v_acc uuid := (select account from recette_stats);
   v_pay uuid;
   s     record;
+  v_encaisse0 bigint; v_nbEnc0 int;
+  v_emises0   int;
+  v_creance0  bigint; v_nbCre0 int;
+  v_echue0    bigint; v_nbEchu0 int;
+  v_soldees0  int; v_nonSoldees0 int; v_retard0 int;
 begin
-  select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date, (now() at time zone 'Indian/Comoro')::date);
-  if s.collected_amount <> 0 then
-    raise exception 'Un encaissement est présumé avant tout règlement.';
-  end if;
+  /*
+   * LES SYNTHÈSES SONT GLOBALES : ON MESURE LEUR VARIATION.
+   *
+   * Ces contrôles comparaient des valeurs absolues — vrai tant que la base ne
+   * portait rien d'autre que la recette, faux dès qu'un jeu de démonstration a
+   * existé (LOT 18). Ce qui est éprouvé ici n'est pas le total du SaaS : c'est
+   * l'effet exact d'un règlement, puis de son annulation, sur chaque colonne.
+   */
+  select collected_amount, collected_count, issued_count,
+         outstanding_amount, outstanding_count,
+         outstanding_overdue_amount, outstanding_overdue_count
+    into v_encaisse0, v_nbEnc0, v_emises0,
+         v_creance0, v_nbCre0, v_echue0, v_nbEchu0
+  from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date, (now() at time zone 'Indian/Comoro')::date);
+
+  select settled_count, unsettled_count, period_overdue_count
+    into v_soldees0, v_nonSoldees0, v_retard0
+  from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date - 20);
 
   v_pay := public.record_customer_payment(v_inv, v_acc, 200000, (now() at time zone 'Indian/Comoro')::date, 'BANK_TRANSFER',
                                           'VIR-STATS-1', null);
 
   select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date, (now() at time zone 'Indian/Comoro')::date);
-  if s.collected_amount <> 200000 or s.collected_count <> 1 then
-    raise exception 'Encaissé attendu 1 / 200 000, obtenu % / %.',
-      s.collected_count, s.collected_amount;
+  if s.collected_amount - v_encaisse0 <> 200000 or s.collected_count <> v_nbEnc0 + 1 then
+    raise exception 'Encaissé attendu +1 / +200 000, obtenu % / %.',
+      s.collected_count - v_nbEnc0, s.collected_amount - v_encaisse0;
   end if;
   -- Le règlement du jour ne fait entrer AUCUNE facture dans la période.
-  if s.issued_count <> 0 then
+  if s.issued_count <> v_emises0 then
     raise exception 'Une facture est comptée à la date de son règlement.';
   end if;
 
-  -- La créance, elle, ignore la période : 450 000 − 200 000.
-  if s.outstanding_amount <> 250000 or s.outstanding_count <> 1 then
-    raise exception 'Créance attendue 1 / 250 000, obtenue % / %.',
-      s.outstanding_count, s.outstanding_amount;
+  -- La créance, elle, ignore la période : la facture pèse 200 000 de moins.
+  if s.outstanding_amount - v_creance0 <> -200000 or s.outstanding_count <> v_nbCre0 then
+    raise exception 'Créance : variation attendue de −200 000 à nombre constant, obtenue % / %.',
+      s.outstanding_count - v_nbCre0, s.outstanding_amount - v_creance0;
   end if;
-  -- Échéance à J−5 : elle est échue.
-  if s.outstanding_overdue_count <> 1 or s.outstanding_overdue_amount <> 250000 then
-    raise exception 'Part échue attendue 1 / 250 000, obtenue % / %.',
-      s.outstanding_overdue_count, s.outstanding_overdue_amount;
+  -- Échéance à J−5 : elle est échue, et le reste.
+  if s.outstanding_overdue_count <> v_nbEchu0
+     or s.outstanding_overdue_amount - v_echue0 <> -200000 then
+    raise exception 'Part échue : variation attendue de −200 000, obtenue % / %.',
+      s.outstanding_overdue_count - v_nbEchu0, s.outstanding_overdue_amount - v_echue0;
   end if;
 
   -- Sur la période de la FACTURE, elle est non soldée et en retard.
   select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date - 20);
-  if s.settled_count <> 0 or s.unsettled_count <> 1 or s.period_overdue_count <> 1 then
-    raise exception 'États attendus 0 soldée / 1 non soldée / 1 en retard, obtenus % / % / %.',
-      s.settled_count, s.unsettled_count, s.period_overdue_count;
+  if s.settled_count <> v_soldees0
+     or s.unsettled_count <> v_nonSoldees0
+     or s.period_overdue_count <> v_retard0 then
+    raise exception 'États du jour de la facture modifiés par un règlement : % / % / %.',
+      s.settled_count - v_soldees0, s.unsettled_count - v_nonSoldees0,
+      s.period_overdue_count - v_retard0;
   end if;
 
   -- ANNULER le règlement rétablit la créance ENTIÈRE (Workflow 08 §28).
   perform public.cancel_customer_payment(v_pay, 'Recette LOT 11');
   select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date, (now() at time zone 'Indian/Comoro')::date);
-  if s.outstanding_amount <> 450000 or s.collected_amount <> 0 then
-    raise exception 'Un règlement annulé compte encore : créance %, encaissé %.',
-      s.outstanding_amount, s.collected_amount;
+  if s.outstanding_amount <> v_creance0 or s.collected_amount <> v_encaisse0 then
+    raise exception 'Un règlement annulé compte encore : créance % (attendue %), encaissé % (attendu %).',
+      s.outstanding_amount, v_creance0, s.collected_amount, v_encaisse0;
   end if;
 
   -- Puis on le rejoue, pour la suite de la recette.
@@ -455,23 +489,37 @@ declare
   v_inv uuid := (select invoice from recette_stats);
   v_acc uuid := (select account from recette_stats);
   s     record;
+  v_creance0 bigint; v_nbCre0 int; v_nbEchu0 int;
+  v_soldees0 int; v_nonSoldees0 int; v_retard0 int;
+  v_encaisse0 bigint;
 begin
+  -- Empreinte de la fenêtre AVANT le règlement soldeur : c'est la VARIATION
+  -- qui appartient à la recette, pas le total du SaaS (voir le contrôle 8).
+  select outstanding_amount, outstanding_count, outstanding_overdue_count,
+         settled_count, unsettled_count, period_overdue_count, collected_amount
+    into v_creance0, v_nbCre0, v_nbEchu0,
+         v_soldees0, v_nonSoldees0, v_retard0, v_encaisse0
+  from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date);
+
   perform public.record_customer_payment(v_inv, v_acc, 250000, (now() at time zone 'Indian/Comoro')::date, 'CASH', null, null);
 
   select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date);
-  if s.outstanding_amount <> 0 or s.outstanding_count <> 0 then
-    raise exception 'Une facture soldée reste comptée : % / %.',
-      s.outstanding_count, s.outstanding_amount;
+  if s.outstanding_amount - v_creance0 <> -250000 or s.outstanding_count <> v_nbCre0 - 1 then
+    raise exception 'Une facture soldée reste comptée : variation % / %.',
+      s.outstanding_count - v_nbCre0, s.outstanding_amount - v_creance0;
   end if;
-  if s.outstanding_overdue_count <> 0 then
+  if s.outstanding_overdue_count <> v_nbEchu0 - 1 then
     raise exception 'Une facture soldée est présentée comme en retard.';
   end if;
-  if s.settled_count <> 1 or s.unsettled_count <> 0 or s.period_overdue_count <> 0 then
+  if s.settled_count <> v_soldees0 + 1
+     or s.unsettled_count <> v_nonSoldees0 - 1
+     or s.period_overdue_count <> v_retard0 - 1 then
     raise exception 'La facture soldée n''est pas comptée comme telle : % / % / %.',
-      s.settled_count, s.unsettled_count, s.period_overdue_count;
+      s.settled_count - v_soldees0, s.unsettled_count - v_nonSoldees0,
+      s.period_overdue_count - v_retard0;
   end if;
-  if s.collected_amount <> 450000 then
-    raise exception 'Encaissé attendu 450 000, obtenu %.', s.collected_amount;
+  if s.collected_amount - v_encaisse0 <> 250000 then
+    raise exception 'Encaissé attendu +250 000, obtenu %.', s.collected_amount - v_encaisse0;
   end if;
 
   raise notice '[OK] 9. Facture soldée : sortie des créances, jamais dite en retard.';
@@ -489,6 +537,9 @@ declare
   v_sum_i  bigint := 0;
   v_sum_c  bigint := 0;
   v_points int := 0;
+  v_vides  int := 0;
+  v_jour_facture   boolean := false;
+  v_jour_reglement boolean := false;
   p        record;
 begin
   select * into s from public.billing_customer_stats((now() at time zone 'Indian/Comoro')::date - 20, (now() at time zone 'Indian/Comoro')::date);
@@ -498,12 +549,22 @@ begin
     v_sum_c := v_sum_c + p.collected_amount;
     v_points := v_points + 1;
 
-    -- Le jour de la facture ne porte aucun encaissement, et réciproquement.
-    if p.bucket = (now() at time zone 'Indian/Comoro')::date - 20 and p.collected_amount <> 0 then
-      raise exception 'Un encaissement est daté du jour de la facture.';
+    if p.invoiced_amount = 0 and p.collected_amount = 0 then
+      v_vides := v_vides + 1;
     end if;
-    if p.bucket = (now() at time zone 'Indian/Comoro')::date and p.invoiced_amount <> 0 then
-      raise exception 'Une facture est datée du jour de son règlement.';
+
+    -- Le jour de la facture ne porte aucun encaissement, et réciproquement.
+    if p.bucket = (now() at time zone 'Indian/Comoro')::date - 20 then
+      v_jour_facture := true;
+      if p.collected_amount <> 0 then
+        raise exception 'Un encaissement est daté du jour de la facture.';
+      end if;
+    end if;
+    if p.bucket = (now() at time zone 'Indian/Comoro')::date then
+      v_jour_reglement := true;
+      if p.invoiced_amount <> 0 then
+        raise exception 'Une facture est datée du jour de son règlement.';
+      end if;
     end if;
   end loop;
 
@@ -512,9 +573,24 @@ begin
       v_sum_i, v_sum_c, s.invoiced_amount, s.collected_amount;
   end if;
 
-  -- Un pas sans mouvement n'est pas rendu : deux jours porteurs, pas vingt et un.
-  if v_points <> 2 then
-    raise exception 'Points attendus 2 (facture et règlement), obtenus %.', v_points;
+  /*
+   * Un pas sans mouvement n'est pas rendu.
+   *
+   * Le contrôle attendait EXACTEMENT deux points — ceux de la recette —, ce qui
+   * ne tenait que sur une base vide de tout le reste. La règle éprouvée est
+   * celle-ci : la fenêtre couvre vingt et un jours, et la série en rend
+   * strictement moins ; chaque point rendu porte un mouvement, et les deux jours
+   * de la recette y figurent. Cela vaut quel que soit le reste de la base.
+   */
+  if v_points >= 21 then
+    raise exception 'Un pas sans mouvement est rendu : % points pour 21 jours.', v_points;
+  end if;
+  if v_vides > 0 then
+    raise exception '% point(s) sans aucun mouvement dans la série.', v_vides;
+  end if;
+  if not v_jour_facture or not v_jour_reglement then
+    raise exception 'Les jours porteurs de la recette manquent à la série : facture %, règlement %.',
+      v_jour_facture, v_jour_reglement;
   end if;
 
   -- Au grain « mois », les deux jours peuvent se rejoindre ou non selon la
@@ -595,7 +671,25 @@ declare
   v_acc uuid := (select account from recette_stats);
   v_sup uuid; v_gar uuid; v_veh uuid; v_mnt uuid; v_imp uuid; v_inv uuid;
   s     record;
+  v_brut0 bigint; v_imput0 bigint; v_nbImput0 int;
+  v_dette0 bigint; v_nbDette0 int;
+  v_paye0 bigint; v_nbPaye0 int;
+  v_echue0 bigint; v_nbEchue0 int;
 begin
+  /*
+   * Empreinte AVANT toute écriture. Ces synthèses portent sur TOUT le SaaS :
+   * comparer des valeurs absolues ne tenait que sur une base vide de tout le
+   * reste (LOT 18). Ce qui est éprouvé ici, c'est l'effet exact d'une facture,
+   * d'une imputation et d'un règlement sur chaque colonne.
+   */
+  select gross_amount, imputed_amount, imputation_count,
+         payable_amount, payable_count, paid_amount, payment_count,
+         payable_overdue_amount, payable_overdue_count
+    into v_brut0, v_imput0, v_nbImput0,
+         v_dette0, v_nbDette0, v_paye0, v_nbPaye0,
+         v_echue0, v_nbEchue0
+  from public.billing_supplier_stats((now() at time zone 'Indian/Comoro')::date - 10, (now() at time zone 'Indian/Comoro')::date);
+
   insert into public.suppliers (supplier_no, type, legal_name, phone, status)
   values (public.next_number('supplier'), 'VEHICLE_SUPPLIER', 'RECETTE STATS — Fournisseur',
           '+269 911', 'ACTIVE')
@@ -636,37 +730,40 @@ begin
 
   -- AVANT tout règlement : la dette vaut le NET, jamais le brut.
   select * into s from public.billing_supplier_stats((now() at time zone 'Indian/Comoro')::date - 10, (now() at time zone 'Indian/Comoro')::date);
-  if s.gross_amount <> 1000000 then
-    raise exception 'Brut attendu 1 000 000, obtenu %.', s.gross_amount;
+  if s.gross_amount - v_brut0 <> 1000000 then
+    raise exception 'Brut ajouté attendu 1 000 000, obtenu %.', s.gross_amount - v_brut0;
   end if;
-  if s.imputed_amount <> 300000 or s.imputation_count <> 1 then
-    raise exception 'Imputé attendu 1 / 300 000, obtenu % / %.',
-      s.imputation_count, s.imputed_amount;
+  if s.imputed_amount - v_imput0 <> 300000 or s.imputation_count <> v_nbImput0 + 1 then
+    raise exception 'Imputé attendu +1 / +300 000, obtenu % / %.',
+      s.imputation_count - v_nbImput0, s.imputed_amount - v_imput0;
   end if;
-  if s.payable_amount <> 700000 then
-    raise exception 'Dette attendue 700 000 (imputation déduite), obtenue %.', s.payable_amount;
+  if s.payable_amount - v_dette0 <> 700000 then
+    raise exception 'Dette ajoutée attendue 700 000 (imputation déduite), obtenue %.',
+      s.payable_amount - v_dette0;
   end if;
   -- Et une imputation n'est PAS un règlement : le payé reste à zéro.
-  if s.paid_amount <> 0 or s.payment_count <> 0 then
+  if s.paid_amount <> v_paye0 or s.payment_count <> v_nbPaye0 then
     raise exception 'Une imputation est comptée comme un paiement : % / %.',
-      s.payment_count, s.paid_amount;
+      s.payment_count - v_nbPaye0, s.paid_amount - v_paye0;
   end if;
 
   perform public.record_supplier_payment(v_inv, v_acc, 200000, (now() at time zone 'Indian/Comoro')::date, 'BANK_TRANSFER',
                                          'VIR-STATS-F', null);
 
   select * into s from public.billing_supplier_stats((now() at time zone 'Indian/Comoro')::date - 10, (now() at time zone 'Indian/Comoro')::date);
-  if s.paid_amount <> 200000 or s.payment_count <> 1 then
-    raise exception 'Réglé attendu 1 / 200 000, obtenu % / %.', s.payment_count, s.paid_amount;
+  if s.paid_amount - v_paye0 <> 200000 or s.payment_count <> v_nbPaye0 + 1 then
+    raise exception 'Réglé attendu +1 / +200 000, obtenu % / %.',
+      s.payment_count - v_nbPaye0, s.paid_amount - v_paye0;
   end if;
-  if s.payable_amount <> 500000 or s.payable_count <> 1 then
-    raise exception 'Reste à payer attendu 1 / 500 000, obtenu % / %.',
-      s.payable_count, s.payable_amount;
+  if s.payable_amount - v_dette0 <> 500000 or s.payable_count <> v_nbDette0 + 1 then
+    raise exception 'Reste à payer attendu +1 / +500 000, obtenu % / %.',
+      s.payable_count - v_nbDette0, s.payable_amount - v_dette0;
   end if;
   -- Échéance à J−3 : la dette est échue.
-  if s.payable_overdue_count <> 1 or s.payable_overdue_amount <> 500000 then
-    raise exception 'Part échue attendue 1 / 500 000, obtenue % / %.',
-      s.payable_overdue_count, s.payable_overdue_amount;
+  if s.payable_overdue_count <> v_nbEchue0 + 1
+     or s.payable_overdue_amount - v_echue0 <> 500000 then
+    raise exception 'Part échue attendue +1 / +500 000, obtenue % / %.',
+      s.payable_overdue_count - v_nbEchue0, s.payable_overdue_amount - v_echue0;
   end if;
 
   raise notice '[OK] 12. Dette = brut − imputé − payé : 500 000 KMF, jamais 1 000 000.';

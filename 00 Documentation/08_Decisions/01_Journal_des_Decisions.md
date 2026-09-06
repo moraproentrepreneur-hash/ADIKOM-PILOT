@@ -74,6 +74,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-038 | Portée de la lecture du journal d'activité — LOT 15 | Ambiguïté tranchée et défaut de sécurité | Appliquée — **achève le Module 08** | 2026-09-05 |
 | DEC-039 | Paramètres — Entreprise & Numérotation — LOT 16 | Arbitrages et défauts de sécurité | Appliquée — **ouvre le Module 09** | 2026-09-05 |
 | DEC-040 | Virement interne & Paiements divers — LOT 17 | Arbitrages, capacité et **deux défauts préexistants** | Appliquée — **achève les Modules 06 et 07** | 2026-09-06 |
+| DEC-041 | Sauvegarde, réinitialisation et restauration — LOT 18 | Capacités, sécurité et exploitation | Appliquée — **complète le Module 09** | 2026-09-06 |
 
 ---
 
@@ -3831,6 +3832,175 @@ qu'il existe pour rendre bruyant (DEC-038).
 - Recettes : `db:verify:transfers` (19 contrôles) et `verify:transfers`
   (52 contrôles) ; le total attendu du catalogue porté à 171 dans les
   19 recettes qui le vérifient.
+- Aucune fonction n'est `SECURITY DEFINER` (DEC-022, DEC-026 §f).
+
+---
+
+## DEC-041 — Sauvegarde, réinitialisation et restauration (LOT 18)
+
+**Date :** 6 septembre 2026
+**Portée :** capacités, sécurité et exploitation
+**Statut :** appliquée · **complète le Module 09**
+
+### Contexte — trois actes qu'aucun module ne portait
+
+Le SaaS savait tout produire et ne savait rien reprendre. Aucune sauvegarde, aucun
+moyen de remettre l'environnement à zéro avant une reprise d'activité, aucun moyen
+de rétablir un état antérieur. `Module 09` §55 range « sauvegarde et restauration »
+parmi les évolutions du module ; le LOT 18 les livre.
+
+### a. Aucune permission n'est créée — et c'est la décision, pas un oubli
+
+CLAUDE.md §19 bis impose de se demander, avant toute fonctionnalité :
+**« doit-elle pouvoir être attribuée séparément à un utilisateur ? »**
+
+La réponse est **non**, pour les trois actes :
+
+| Acte | Ce qu'il engage |
+|---|---|
+| Télécharger une sauvegarde | l'intégralité des données métier, dans un fichier qui sort du système |
+| Réinitialiser | la suppression de toute l'activité d'ADIKOM |
+| Restaurer | la réécriture de cette activité par un fichier |
+
+Aucun de ces gestes ne se délègue à un poste. Une permission qui ne serait jamais
+attribuée à personne n'est pas une capacité : c'est un ornement du catalogue, et
+§19 bis interdit précisément de l'y ajouter. Les trois actes suivent donc le
+**statut de Super Admin**, comme l'administration des comptes (`Module 08` §33).
+
+**Catalogue inchangé : 171.**
+
+### b. Le compte Super Admin n'appartient à aucun périmètre
+
+C'est la garantie centrale du lot, et ce n'est pas une précaution d'exécution :
+c'est une propriété de la **liste** des tables concernées (`backup_scope`).
+
+`app_users` n'y figure pas. `user_groups`, `user_permissions`, `user_departments`,
+`permissions`, `groups`, `group_permissions`, `departments` non plus. Ni l'export,
+ni la réinitialisation, ni la restauration ne lisent, ne suppriment ni n'écrivent
+un compte — **aucun fichier JSON ne peut donc retirer au Super Admin sa capacité à
+se connecter**, quel que soit son contenu.
+
+La recette le vérifie plutôt que de le promettre : elle refuse le lot si
+`app_users` entre un jour dans cette liste.
+
+### c. Ce qu'une réinitialisation supprime, et ce qu'elle laisse
+
+| Supprimé | Conservé |
+|---|---|
+| Tiers, parc, tarifs | Comptes utilisateurs, **Super Admin compris** |
+| Réservations, locations, états des lieux | Groupes, départements, rattachements |
+| Incidents, maintenances, coûts | Catalogue des permissions |
+| Factures, imputations, règlements | Paramètres d'entreprise et numérotation |
+| Comptes financiers, écritures, virements | **Journal d'activité** |
+| Projets, tâches, réunions, décisions, actions | |
+
+Le **journal d'activité** survit par construction : `fn_forbid_mutation` refuse
+toute suppression, quel que soit le rôle (`Audit` §40, §77). C'est lui qui garde la
+trace de la réinitialisation elle-même.
+
+Les **compteurs de numérotation ne reculent pas**. `Module 09` §16 : « un numéro
+déjà émis ne se réutilise jamais ». Une sauvegarde plus ancienne que la base porte
+des compteurs plus bas ; la restauration retient donc **le plus grand des deux**.
+
+### d. Une restauration n'est pas un acte métier
+
+C'est l'arbitrage technique du lot, et il mérite d'être écrit.
+
+La base interdit à une facture de « naître émise », à une imputation de naître
+rattachée, à un virement de naître validé. Ces règles disent une vérité du **cycle
+de vie** : elles empêchent de FABRIQUER un passé. Une restauration, elle, ne
+fabrique rien — elle **remet** un état qui a réellement existé, produit à l'époque
+par les actes légitimes que ces règles gouvernent.
+
+Ces gardes-là sont donc levées, et elles seules, dans un contexte nommé
+(`is_restoring()`) qui exige **deux** conditions simultanées :
+
+- aucun utilisateur authentifié (`current_actor() is null`) — une session
+  applicative, fût-elle celle du Super Admin, ne le satisfait jamais ;
+- un réglage local à la transaction, posé par la seule fonction de restauration.
+
+**Les gardes de COHÉRENCE, elles, restent entières** : une écriture doit porter le
+compte, le montant et le sens de l'opération dont elle se réclame ; un virement
+validé porte exactement ses deux écritures ; une imputation ne dépasse pas son
+plafond ; toute clé étrangère et tout contrôle de domaine s'applique. C'est ce qui
+protège la base d'un fichier fabriqué — et c'est vérifié par la recette.
+
+### e. Le périmètre est une LISTE BLANCHE
+
+Une restauration refuse toute section qui ne désigne pas une table du périmètre.
+Un fichier contenant `app_users`, `permissions`, `group_permissions` ou `audit_log`
+est **refusé**, avec son motif — il n'est pas ignoré en silence. Le refus est
+opposé par la base, pas seulement par l'écran.
+
+### f. Trois barrières, et aucune ne suffit seule
+
+1. **L'écran** n'affiche l'onglet qu'au Super Admin — confort de lecture.
+2. **L'action serveur** revérifie le statut à chaque appel.
+3. **La base** revérifie encore (`assert_backup_operator`), et l'exécution des
+   fonctions est retirée à `public`, `anon` et `authenticated` : aucun jeton
+   d'utilisateur ne les atteint. Déclarer l'identifiant du Super Admin dans
+   l'appel ne change rien — la fonction reste inatteignable. La recette l'éprouve.
+
+### g. Deux défauts trouvés par les recettes, avant livraison
+
+**1. Le contexte de restauration restait ouvert après l'opération.**
+`set_config(..., true)` est local à la **transaction**, pas à la fonction : le
+réglage survivait au retour de la restauration. En production, PostgREST ouvre une
+transaction par appel et le défaut ne se serait jamais vu ; la recette SQL, qui
+enchaîne dans une seule, l'a trouvé. Le contexte se referme désormais
+explicitement.
+
+**2. « DELETE requires a WHERE clause ».**
+Les sessions ouvertes par PostgREST chargent `safeupdate`, qui refuse tout `DELETE`
+sans clause `WHERE`. Une connexion directe l'accepte : **la recette SQL passait
+pendant que l'écran échouait**. Le défaut n'a été vu qu'en éprouvant le vrai
+chemin — celui de l'application — et non le chemin commode. C'est la leçon la plus
+utile du lot : une recette qui n'emprunte pas le chemin de l'utilisateur ne prouve
+pas que l'utilisateur peut passer.
+
+S'y ajoute un troisième constat, corrigé au passage : un refus renvoyé par la base
+à une action serveur n'était **pas journalisé** côté serveur. L'utilisateur
+recevait un message fonctionnel, et le développeur aucune trace — c'est ce qui a
+masqué le défaut n° 2 un temps.
+
+### h. TRUNCATE retiré sur le périmètre — DEC-039 §g, appliqué en partie
+
+Le droit était accordé par défaut à `authenticated` sur toutes les tables.
+`TRUNCATE` ne déclenche aucun déclencheur de ligne : il contournerait
+`fn_forbid_delete`. Il est retiré sur les **44 tables du périmètre de sauvegarde**,
+énumérées et non balayées à l'aveugle. **Les tables de gouvernance restent à
+traiter** : l'arbitrage 29 reste donc ouvert, réduit.
+
+### i. Le logo se laissait écraser — CLAUDE.md §33
+
+Trouvé par la recette responsive, qui **mesure** au lieu de regarder : dans
+l'en-tête de la page publique à 360 px, le conteneur du logo se comprimait à
+37 × 40 au lieu de 40 × 40. Le logo officiel était donc **déformé**, ce que la
+règle absolue n° 13 interdit sans exception. Le conteneur porte désormais
+`shrink-0` : il s'adapte au logo, jamais l'inverse (§34).
+
+### j. Ce que le lot ne fait pas
+
+| Écarté | Pourquoi |
+|---|---|
+| **Sauvegarde automatique** ou planifiée | `Module 09` §55 ne l'énonce pas, et elle supposerait d'arrêter une fréquence, une durée de rétention et un lieu de stockage. |
+| **Restauration partielle** — un module, une période | Suppose de décider ce qu'il advient des données qui référencent ce qui n'est pas restauré. Une restauration est aujourd'hui un tout. |
+| **Export des comptes et des permissions** | Ils ne se restaurent pas proprement : un compte vit aussi dans l'authentification, qu'un fichier JSON ne peut pas reconstituer. Les comptes se créent par l'administration des utilisateurs. |
+| **Chiffrement du fichier** | Aucune règle ne l'exige. L'écran avertit en revanche que le fichier est **confidentiel** — il porte des montants et des coordonnées de règlement. |
+| **Historique des sauvegardes** en base | Le fichier est remis à l'utilisateur ; le SaaS n'en conserve pas de copie. Le journal d'activité garde la trace de chaque téléchargement. |
+
+### Conséquences
+
+- Migration **075** : trois fonctions d'administration, quatre fonctions de
+  service, **treize gardes de cycle de vie** rendues compatibles avec une reprise,
+  `TRUNCATE` retiré sur 44 tables, exécution réservée au rôle de service.
+- **Aucune permission créée.** Catalogue : **171**.
+- Onglet **Paramètres → Sauvegarde**, route de téléchargement, deux actions
+  serveur.
+- Recettes : `db:verify:backup` (15 contrôles), `verify:backup` (50 contrôles,
+  dont une réinitialisation et une restauration **réelles**), `verify:responsive`
+  (329 contrôles sur 32 écrans et 3 largeurs).
+- Jeu de démonstration : `demo:seed` (84 éléments, 9 modules) et `demo:clean`.
 - Aucune fonction n'est `SECURITY DEFINER` (DEC-022, DEC-026 §f).
 
 ---
