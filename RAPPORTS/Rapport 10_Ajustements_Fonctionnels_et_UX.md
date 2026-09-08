@@ -611,7 +611,9 @@ Le jeu de démonstration est **intact** : 6 clients, 8 véhicules, 4 fournisseur
 | Build Vercel | **READY** — compilé en 9,3 s, 59 pages, aucun avertissement |
 | Second commit | `9b14080` — recette de production et rapport ; déploiement **READY** |
 | Troisième commit | `de3b2b3` — précisions du rapport ; déploiement **READY** |
+| Quatrième commit | `caa8a3a` — la recette nomme ses lectures abandonnées ; déploiement **READY** |
 | Production | <https://adikom-pilot.vercel.app> — la page publique annonce **178 capacités attribuables** |
+| Recette finale | contre `caa8a3a` : **56 contrôles, tous réussis**, aucun lien interrompu, aucun résidu de compte |
 
 ### Recette de production — `npm run verify:production`
 
@@ -657,8 +659,8 @@ plutôt que passée sous silence.
 
 ### Ce que le lien dégradé a coûté à la recette elle-même
 
-La recette de production a été jouée **six fois** contre <https://adikom-pilot.vercel.app>.
-Quatre passages ont donné **56 contrôles, tous réussis**. Deux ne l'ont pas
+La recette de production a été jouée **sept fois** contre <https://adikom-pilot.vercel.app>.
+Cinq passages ont donné **56 contrôles, tous réussis**. Deux ne l'ont pas
 donné, et les deux méritent d'être nommés :
 
 - un passage s'est **interrompu à la mise en place**, sur `fetch failed` en
