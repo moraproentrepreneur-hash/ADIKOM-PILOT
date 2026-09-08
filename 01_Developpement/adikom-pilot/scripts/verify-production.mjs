@@ -129,6 +129,17 @@ function sessionCookies(session) {
 }
 
 /**
+ * Les lectures qui n'ont jamais abouti — le lien, pas l'application.
+ *
+ * Une lecture abandonnée rend un corps VIDE. Les contrôles qui cherchent un
+ * libellé dedans échouent alors comme si l'écran avait perdu son contenu, et
+ * l'on part chercher un défaut là où il n'y en a pas. La liste ci-dessous est
+ * rappelée à la fin de la recette pour que l'aléa de transport se distingue
+ * d'une panne du SaaS.
+ */
+const interrupted = []
+
+/**
  * Une lecture, réessayée : un lien lointain n'est pas un défaut du SaaS.
  *
  * La recette s'exécute contre la production, à travers l'internet. Une coupure
@@ -153,7 +164,9 @@ async function get(path, cookies, attempts = 3) {
     }
   }
 
-  return { status: 0, body: '', location: null, error: last?.message ?? 'lecture impossible' }
+  const reason = last?.message ?? 'lecture impossible'
+  interrupted.push(`${path} — ${reason}`)
+  return { status: 0, body: '', location: null, error: reason }
 }
 
 /** Le texte d'une page, balises retirées et entités les plus courantes rendues. */
@@ -341,8 +354,9 @@ try {
         })
         const buffer = Buffer.from(await response.arrayBuffer())
         produced = { status: response.status, size: buffer.length, pdf: buffer.subarray(0, 4).toString() }
-      } catch {
+      } catch (error) {
         if (attempt < 3) await new Promise((r) => setTimeout(r, 2000 * attempt))
+        else interrupted.push(`/api/documents/${type}/${id} — ${error.message}`)
       }
     }
 
@@ -419,6 +433,15 @@ try {
     failed += 1
   } else {
     console.log(`${DIM}Comptes de recette supprimés. ${MARK}${RESET}`)
+  }
+
+  if (interrupted.length > 0) {
+    console.log(`\n${RED}LIENS INTERROMPUS — ${interrupted.length} lecture(s) n’ont jamais abouti :${RESET}`)
+    for (const line of interrupted) console.log(`  ${line}`)
+    console.log(
+      `${DIM}Les contrôles portant sur ces pages ont lu un corps vide : ils disent le` +
+        ` transport, pas le SaaS. Rejouer la recette avant de conclure.${RESET}`
+    )
   }
 
   if (failed === 0) {

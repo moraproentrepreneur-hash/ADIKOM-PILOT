@@ -610,6 +610,7 @@ Le jeu de démonstration est **intact** : 6 clients, 8 véhicules, 4 fournisseur
 | Push GitHub | `main` → `b776523..5c9c1b7` |
 | Build Vercel | **READY** — compilé en 9,3 s, 59 pages, aucun avertissement |
 | Second commit | `9b14080` — recette de production et rapport ; déploiement **READY** |
+| Troisième commit | `de3b2b3` — précisions du rapport ; déploiement **READY** |
 | Production | <https://adikom-pilot.vercel.app> — la page publique annonce **178 capacités attribuables** |
 
 ### Recette de production — `npm run verify:production`
@@ -649,12 +650,39 @@ tous réussis.
 
 La tentative a été **répétée** après que le lien se fut partiellement rétabli
 (229 Ko en 25 s) : le navigateur atteint alors la page de connexion et clique,
-mais la navigation qui suit n'aboutit toujours pas en soixante secondes. Le
-serveur, lui, a répondu aux cinquante-six contrôles de la recette de production
-deux fois de suite, avant et après le dernier déploiement.
+mais la navigation qui suit n'aboutit toujours pas en soixante secondes.
 
 C'est une limite du réseau du poste, pas du déploiement, et elle est écrite ici
 plutôt que passée sous silence.
+
+### Ce que le lien dégradé a coûté à la recette elle-même
+
+La recette de production a été jouée **six fois** contre <https://adikom-pilot.vercel.app>.
+Quatre passages ont donné **56 contrôles, tous réussis**. Deux ne l'ont pas
+donné, et les deux méritent d'être nommés :
+
+- un passage s'est **interrompu à la mise en place**, sur `fetch failed` en
+  créant le compte de recette — la coupure a frappé Supabase, pas le SaaS. La
+  recette s'est arrêtée là et a nettoyé ses comptes ;
+- un passage a rendu **55 réussis sur 56**. Le contrôle en défaut portait un
+  libellé, mais la recette ne DISAIT pas ce qui lui était arrivé.
+
+C'est ce silence qui a été corrigé. Une lecture est déjà réessayée trois fois ;
+si elle n'aboutit toujours pas, elle rend un corps **vide**, et les contrôles
+qui y cherchent un libellé échouent alors comme si l'écran avait perdu son
+contenu. On part chercher un défaut là où il n'y en a pas. La recette tient
+désormais la liste des lectures abandonnées et la rappelle avant son total :
+
+```
+LIENS INTERROMPUS — 1 lecture(s) n'ont jamais abouti :
+  /location/tarification?onglet=preferentiels — fetch failed
+Les contrôles portant sur ces pages ont lu un corps vide : ils disent le
+transport, pas le SaaS. Rejouer la recette avant de conclure.
+```
+
+Le nombre de contrôles est inchangé — **56** — et aucun ne change de sens : la
+recette ne se donne pas le droit d'excuser un échec, elle donne de quoi le
+qualifier.
 
 ---
 
