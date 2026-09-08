@@ -146,7 +146,7 @@ export default async function ImputationDetailPage(
                 </Badge>
               </InfoRow>
 
-              <InfoRow label="Effet financier" hint="DEC-013 : seule « Imputée » réduit un montant dû.">
+              <InfoRow label="Effet financier" hint="Seule une imputation « Imputée » réduit un montant dû.">
                 {IMPUTATION_STATUS_EFFECT[imputation.status]}
               </InfoRow>
 
@@ -221,7 +221,7 @@ export default async function ImputationDetailPage(
                 )}
               </InfoRow>
 
-              <InfoRow label="Facture fournisseur" hint="DEC-013 : sans elle, aucun montant dû n’est réduit.">
+              <InfoRow label="Facture fournisseur" hint="Sans facture rattachée, aucun montant dû n’est réduit.">
                 {imputation.supplierInvoiceId === null ? (
                   <span className="text-muted">
                     Aucune — l’imputation est en attente de facture.

@@ -290,7 +290,11 @@ try {
       check(false, `${label} répond`, `${page.status}`)
       continue
     }
-    const found = /§|\bDEC-\d{3}\b|CLAUDE\.md/.exec(body)
+    // « §43 » n'est pas la seule forme : la documentation se cite aussi par
+    // « Workflow 08 » ou « Module 01 », sans le signe. Une description de carte
+    // portant « (Workflow 08) » a franchi un premier balayage qui ne cherchait
+    // que le §. Le motif couvre désormais les trois formes.
+    const found = /§|\bWorkflow\s+\d+|\bModule\s+\d+|\bDEC-\d{3}\b|CLAUDE\.md/.exec(body)
     if (found) check(false, `${label} porte une référence interne`, found[0])
     else clean += 1
   }

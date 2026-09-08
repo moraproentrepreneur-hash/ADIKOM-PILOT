@@ -535,7 +535,7 @@ export default async function SupplierInvoiceDetailPage(
           {canPay && payable && (
             <Card
               title="Enregistrer un règlement"
-              description="Le décaissement qui solde le net à payer (Workflow 08)."
+              description="Le décaissement qui solde le net à payer."
             >
               <RecordPaymentPanel
                 invoiceId={id}

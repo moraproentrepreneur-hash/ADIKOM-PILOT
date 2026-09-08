@@ -153,6 +153,33 @@ dans onze commentaires JSX ; ils ont été rétablis.
 
 **Les intitulés de tests.** Ce ne sont pas une interface.
 
+### Trois références retrouvées après coup, et le garde-fou qui en découle
+
+Un dernier balayage — de la **source**, cette fois, et non des écrans — a
+retrouvé trois textes visibles que la première passe avait manqués :
+
+| Écran | Texte | Pourquoi il avait échappé |
+|---|---|---|
+| Facture fournisseur → *Enregistrer un règlement* | « Le décaissement qui solde le net à payer **(Workflow 08)** » | aucun `§` : le motif de recherche ne cherchait que ce signe |
+| Fiche d'imputation → *Effet financier* | « **DEC-013 :** seule « Imputée » réduit un montant dû » | infobulle d'un `InfoRow`, rendue seulement au survol |
+| Fiche d'imputation → *Facture fournisseur* | « **DEC-013 :** sans elle, aucun montant dû n'est réduit » | idem |
+
+Les trois disent maintenant la même règle sans la référence — « Seule une
+imputation « Imputée » réduit un montant dû », « Sans facture rattachée, aucun
+montant dû n'est réduit », « Le décaissement qui solde le net à payer ».
+
+**Ce que cet oubli enseigne.** Balayer par les écrans ne suffit pas : la recette
+de production ne voit un texte que si la page a été visitée, **avec les
+capacités qui l'affichent**, sur une donnée **dans le bon état**. Trois
+conditions — et la carte « Enregistrer un règlement » n'apparaît qu'à un compte
+autorisé à régler, que le profil de recette n'avait pas.
+
+Un test lit donc désormais la source **en entier** : `references-internes.test.ts`
+échoue si `§NN`, `Workflow NN`, `Module NN`, `DEC-NNN` ou `CLAUDE.md` apparaît
+ailleurs que dans un commentaire. Il a été éprouvé en réintroduisant l'une des
+trois phrases : le test échoue, et **nomme le fichier et la ligne**. Le motif de
+la recette de production a été élargi aux mêmes formes.
+
 ### Un cas signalé, hors périmètre
 
 La capture 11 montre une fiche de maintenance intitulée « Donnée de démonstration
@@ -495,7 +522,7 @@ de trésorerie vérifie désormais les trois gardes.
 |---|---|
 | `npm run lint` | aucune erreur, aucun avertissement |
 | `npm run typecheck` | aucune erreur |
-| `npm run test` (Vitest) | **219 tests, 12 fichiers** — tous passés |
+| `npm run test` (Vitest) | **220 tests, 13 fichiers** — tous passés |
 | `npm run build` | compilé sans erreur |
 
 Le contrôle de parité TS/SQL du catalogue a **changé d'objet** : il vérifie
