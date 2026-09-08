@@ -153,6 +153,18 @@ async function createProfile(admin, key, codes) {
 
 async function signIn(browser, base, account) {
   const context = await browser.newContext()
+
+  /*
+   * DES DÉLAIS QUI TIENNENT SUR UN LIEN LENT.
+   *
+   * Les 30 secondes par défaut de Playwright suffisent contre un serveur local
+   * et pas toujours contre la production : depuis certains réseaux, le premier
+   * octet de Vercel arrive après six secondes, et une page complète — polices
+   * comprises — dépasse le délai. La recette échouait alors sur « navigating
+   * to /connexion », ce qui n'apprend rien du SaaS.
+   */
+  context.setDefaultNavigationTimeout(120000)
+  context.setDefaultTimeout(60000)
   const page = await context.newPage()
 
   await page.goto(`${base}/connexion`, { waitUntil: 'load' })

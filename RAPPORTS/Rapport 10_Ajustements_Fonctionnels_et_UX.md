@@ -527,6 +527,15 @@ désormais que chaque capacité documentaire correspond à une entrée du regist
 | `verify:reservations` | 35 contrôles, tous réussis |
 | `verify:referential` | 31 contrôles, tous réussis |
 | `verify:partners` | 45 contrôles, tous réussis |
+| `verify:supplier-payments` | 32 contrôles, tous réussis |
+| `verify:rentals` · `verify:checkout` · `verify:rental-live` · `verify:rental-return` | 34 · 36 · 35 · 51, tous réussis |
+| `verify:dashboard` (Tableau de location) · `verify:rental-documents` | 30 · 58, tous réussis |
+| `verify:incidents` · `verify:maintenance` · `verify:maintenance-costs` · `verify:imputations` | 39 · 54 · 29 · 47, tous réussis |
+| `verify:supplier-invoices` · `verify:treasury` | 37 · 34, tous réussis |
+| `verify:customer-invoices` · `verify:customer-payments` | 52 · 36, tous réussis |
+| `verify:analytics` · `verify:notifications` · `verify:planning` | 82 · 85 · 100, tous réussis |
+| `verify:groups` · `verify:audit` · `verify:settings` · `verify:backup` | 73 · 81 · 80 · 50, tous réussis |
+| **`verify:production`** *(nouvelle)* | **56 contrôles**, contre Vercel |
 
 ### La recette dédiée — `npm run verify:ajustements`
 
@@ -561,7 +570,17 @@ intacts — 6 / 0 au départ »). Le décompte est désormais **réessayé**, pu
 recette échoue immédiatement en nommant sa cause. Deux faux échecs observés
 pendant la mission venaient de là.
 
-**b. `supabase/tests/projects.sql` échouait par intermittence** depuis le LOT 13 :
+**b. Deux recettes héritaient d’un nombre écrit en dur.**
+`verify:supplier-payments` vérifiait « les TROIS fournisseurs DEMO » et « AUCUNE
+coordonnée de règlement sur un fournisseur DEMO ». Ni l'un ni l'autre n'était la
+règle — la règle est que la recette ne touche à rien qui ne lui appartienne — et
+les deux nombres avaient cessé d'être vrais dès que la démonstration s'était
+étoffée. Ils sont remplacés par une empreinte prise sur place, comme dans les
+vingt-deux recettes corrigées le 06/09. Et `verify:rental-live` attendait trois
+secondes fixes après une prolongation refusée : elle attend désormais le message,
+non un délai.
+
+**c. `supabase/tests/projects.sql` échouait par intermittence** depuis le LOT 13 :
 écrite au LOT 12, elle n'admettait que deux familles de notification pour les
 projets, et le calendrier en a ajouté deux — « réunion à venir » et « rendez-vous
 à venir ». Elle échouait dès qu'une réunion de démonstration tombait dans la
@@ -583,7 +602,52 @@ Le jeu de démonstration est **intact** : 6 clients, 8 véhicules, 4 fournisseur
 
 ## 13. Déploiement
 
-*(complété après le déploiement — voir §15)*
+| Étape | Résultat |
+|---|---|
+| Migrations Supabase | 076, 077, 078 appliquées à la base de production |
+| Commit | `5c9c1b7` — 141 fichiers, +8 335 / −878 |
+| Secrets | aucun : `.env*` reste exclu, le différentiel a été relu ligne à ligne |
+| Push GitHub | `main` → `b776523..5c9c1b7` |
+| Build Vercel | `dpl_58P2PN92MVLv49crxH1EH4oGcZR2` — **READY**, compilé en 9,3 s, 59 pages, aucun avertissement |
+| Production | <https://adikom-pilot.vercel.app> — la page publique annonce **178 capacités attribuables** |
+
+### Recette de production — `npm run verify:production`
+
+**56 contrôles, tous réussis**, contre <https://adikom-pilot.vercel.app>, avec de
+vraies sessions et les données réelles :
+
+| Section | Ce qui est vérifié |
+|---|---|
+| 1 | La session est reconnue ; un visiteur sans session est renvoyé à la connexion |
+| 2 | Le tableau de bord d'un compte ne portant QUE les trois capacités de pilotage : **17 indicateurs chiffrés**, aucun « Non accessible », aucune référence de contrat |
+| 3 | **15 pages** parcourues, aucune référence de documentation interne |
+| 4 | Six fiches, aucun onglet « à venir » ; rentabilité calculée **avec** sa réserve ; tarifs préférentiels et historique ouverts |
+| 5 | Les quatre barres d'actions, et les **quatre PDF réellement produits** (53 à 57 Ko) |
+| 6 | Le sens du paiement divers : fiche, formulaire et liste |
+| 7 | Le champ déroulant de l'application est servi, le `<select>` natif demeure et reste hors d'atteinte du pointeur |
+| 8 | Catalogue à **178** capacités |
+
+### Pourquoi cette recette lit le HTML plutôt que de piloter un navigateur
+
+Les recettes d'interface ouvrent un navigateur et attendent le chargement
+COMPLET d'une page — polices et scripts compris. Depuis le poste de recette, le
+lien vers le réseau de diffusion de Vercel s'est dégradé au moment du
+déploiement : une police de 35 Ko n'arrivait pas en trente secondes, un morceau
+de script de 150 Ko jamais. Mesuré, répété, constaté à la fois par le navigateur
+et par `curl` — et **sans effet sur le serveur**, qui répondait, lui, en 4 à
+10 secondes.
+
+Les écrans d'ADIKOM PILOT étant rendus par le SERVEUR, le texte, les onglets,
+les chiffres et les refus sont dans le HTML avant qu'aucun script ne s'exécute.
+La recette de production les lit donc directement, avec la session d'un vrai
+compte : RLS et les capacités s'appliquent exactement comme pour un utilisateur.
+Ce qu'elle ne couvre pas — l'ouverture d'une liste déroulante sous le doigt, la
+disposition mesurée en pixels — a été éprouvé par `verify:ajustements` contre le
+**même code**, compilé par la même commande, servi localement : 95 contrôles,
+tous réussis.
+
+C'est une limite du réseau du poste, pas du déploiement, et elle est écrite ici
+plutôt que passée sous silence.
 
 ---
 

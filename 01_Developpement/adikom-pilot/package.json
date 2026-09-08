@@ -78,7 +78,8 @@
     "verify:settings": "node scripts/verify-settings.mjs",
     "db:verify:transfers": "node scripts/run-sql.mjs supabase/tests/transfers.sql",
     "verify:transfers": "node scripts/verify-transfers.mjs",
-    "verify:ajustements": "node scripts/verify-ajustements.mjs"
+    "verify:ajustements": "node scripts/verify-ajustements.mjs",
+    "verify:production": "node scripts/verify-production.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.6.1",

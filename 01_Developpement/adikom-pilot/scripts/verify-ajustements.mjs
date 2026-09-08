@@ -191,6 +191,20 @@ async function createProfile(admin, key, codes) {
   return { id, email, password, username }
 }
 
+/*
+ * POURQUOI `domcontentloaded` PLUTÔT QUE `load`.
+ *
+ * `load` attend TOUTES les sous-ressources, polices comprises. Aucune assertion
+ * de cette recette n'en dépend : elles portent sur du texte, des états et des
+ * mesures de disposition, que le document rend dès qu'il est analysé.
+ *
+ * L'attente complète, elle, dépend du lien réseau : contre la production, un
+ * fichier de police de 35 Ko a mis plus de trente secondes à parvenir depuis le
+ * poste de recette, et la recette échouait sur « navigating to /connexion » —
+ * ce qui n'apprend rien du SaaS. Chaque contrôle attend donc ce dont il a
+ * besoin, et rien de plus : les localisateurs de Playwright s'en chargent.
+ */
+
 /**
  * Ouvre une session, éventuellement sur un écran de téléphone.
  *
@@ -201,9 +215,21 @@ async function createProfile(admin, key, codes) {
  */
 async function signIn(browser, base, account, viewport = null) {
   const context = await browser.newContext(viewport ? { viewport, hasTouch: true } : {})
+
+  /*
+   * DES DÉLAIS QUI TIENNENT SUR UN LIEN LENT.
+   *
+   * Les 30 secondes par défaut de Playwright suffisent contre un serveur local
+   * et pas toujours contre la production : depuis certains réseaux, le premier
+   * octet de Vercel arrive après six secondes, et une page complète — polices
+   * comprises — dépasse le délai. La recette échouait alors sur « navigating
+   * to /connexion », ce qui n'apprend rien du SaaS.
+   */
+  context.setDefaultNavigationTimeout(120000)
+  context.setDefaultTimeout(60000)
   const page = await context.newPage()
 
-  await page.goto(`${base}/connexion`, { waitUntil: 'load' })
+  await page.goto(`${base}/connexion`, { waitUntil: 'domcontentloaded' })
   await page.waitForFunction(() => document.querySelector('#username') !== null)
   await page.fill('#username', account.username)
   await page.fill('#password', account.password)
@@ -438,7 +464,7 @@ async function main() {
 
       let clean = 0
       for (const [path, label] of PAGES) {
-        await page.goto(`${base}${path}`, { waitUntil: 'load' })
+        await page.goto(`${base}${path}`, { waitUntil: 'domcontentloaded' })
         const text = await mainText(page)
 
         const found = REFERENCES.filter((rule) => rule.pattern.test(text))
@@ -472,7 +498,7 @@ async function main() {
       ]
 
       for (const [path, label, expected] of FICHES) {
-        await page.goto(`${base}${path}`, { waitUntil: 'load' })
+        await page.goto(`${base}${path}`, { waitUntil: 'domcontentloaded' })
         const tabs = await tabLabels(page)
 
         check(!/à venir/i.test(tabs), `${label} : aucun onglet « à venir »`, tabs.slice(0, 90))
@@ -483,35 +509,35 @@ async function main() {
 
       /* --- Et chaque onglet ouvre du CONTENU, pas une page vide -------- */
 
-      await page.goto(`${base}/tiers/clients/${client.id}?onglet=reservations`, { waitUntil: 'load' })
+      await page.goto(`${base}/tiers/clients/${client.id}?onglet=reservations`, { waitUntil: 'domcontentloaded' })
       check(
         /Réservations/.test(await mainText(page)),
         'Client → Réservations : la carte s’ouvre'
       )
 
-      await page.goto(`${base}/tiers/clients/${client.id}?onglet=locations`, { waitUntil: 'load' })
+      await page.goto(`${base}/tiers/clients/${client.id}?onglet=locations`, { waitUntil: 'domcontentloaded' })
       check(/Locations/.test(await mainText(page)), 'Client → Locations : la carte s’ouvre')
 
-      await page.goto(`${base}/tiers/clients/${client.id}?onglet=documents`, { waitUntil: 'load' })
+      await page.goto(`${base}/tiers/clients/${client.id}?onglet=documents`, { waitUntil: 'domcontentloaded' })
       const clientDocs = await mainText(page)
       check(
         /Fiche client/.test(clientDocs) && /Aperçu/.test(clientDocs),
         'Client → Documents : la fiche est produisible depuis l’onglet'
       )
 
-      await page.goto(`${base}/tiers/clients/${client.id}?onglet=historique`, { waitUntil: 'load' })
+      await page.goto(`${base}/tiers/clients/${client.id}?onglet=historique`, { waitUntil: 'domcontentloaded' })
       check(
         /Historique/.test(await mainText(page)),
         'Client → Historique : le journal de la fiche s’ouvre'
       )
 
-      await page.goto(`${base}/location/locations/${rental.id}?onglet=historique`, { waitUntil: 'load' })
+      await page.goto(`${base}/location/locations/${rental.id}?onglet=historique`, { waitUntil: 'domcontentloaded' })
       check(
         /Historique/.test(await mainText(page)),
         'Location → Historique : le cycle réellement parcouru s’ouvre'
       )
 
-      await page.goto(`${base}/location/parc/${vehicle.id}?onglet=rentabilite`, { waitUntil: 'load' })
+      await page.goto(`${base}/location/parc/${vehicle.id}?onglet=rentabilite`, { waitUntil: 'domcontentloaded' })
       const profit = await mainText(page)
       check(/Marge d’exploitation/.test(profit), 'Véhicule → Rentabilité : la marge est calculée')
       check(
@@ -519,7 +545,7 @@ async function main() {
         'Et l’écran DIT que ce n’est pas une rentabilité complète'
       )
 
-      await page.goto(`${base}/location/tarification?onglet=preferentiels`, { waitUntil: 'load' })
+      await page.goto(`${base}/location/tarification?onglet=preferentiels`, { waitUntil: 'domcontentloaded' })
       check(
         /Conditions consenties aux clients/.test(await mainText(page)),
         'Tarification → Tarifs préférentiels : les conditions s’ouvrent'
@@ -547,7 +573,7 @@ async function main() {
       ]
 
       for (const [path, type, id, label] of FICHES) {
-        await page.goto(`${base}${path}`, { waitUntil: 'load' })
+        await page.goto(`${base}${path}`, { waitUntil: 'domcontentloaded' })
         const text = await mainText(page)
 
         check(/Aperçu/.test(text), `${label} : le bouton « Aperçu » est là`)
@@ -580,7 +606,7 @@ async function main() {
         p_account_id: fixtures.accountId,
       })
 
-      await page.goto(`${base}/facturation/paiements-divers/nouveau`, { waitUntil: 'load' })
+      await page.goto(`${base}/facturation/paiements-divers/nouveau`, { waitUntil: 'domcontentloaded' })
 
       const formText = await mainText(page)
       check(/Sens/.test(formText), 'Le formulaire demande le SENS du paiement')
@@ -684,7 +710,7 @@ async function main() {
         `${receipt.status()}, ${body.length} octets`
       )
 
-      await page.reload({ waitUntil: 'load' })
+      await page.reload({ waitUntil: 'domcontentloaded' })
       await page.getByRole('button', { name: 'Annuler le paiement' }).click()
       const annulation = await actUntilState(page, /L’écriture est annulée/)
       check(
@@ -712,7 +738,7 @@ async function main() {
     {
       const { context, page } = await signIn(browser, base, accounts.complet, MOBILE)
 
-      await page.goto(`${base}/facturation/paiements-divers/nouveau`, { waitUntil: 'load' })
+      await page.goto(`${base}/facturation/paiements-divers/nouveau`, { waitUntil: 'domcontentloaded' })
 
       /*
        * LE `<select>` NATIF NE REÇOIT PLUS LE DOIGT.
@@ -798,8 +824,8 @@ async function main() {
       check(overflow <= 1, 'La page ne défile pas horizontalement', `${overflow} px`)
 
       /* --- Un libellé long reste lisible ------------------------------- */
-      await page.goto(`${base}/location/tarification?onglet=preferentiels`, { waitUntil: 'load' })
-      await page.goto(`${base}/facturation/paiements-divers`, { waitUntil: 'load' })
+      await page.goto(`${base}/location/tarification?onglet=preferentiels`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`${base}/facturation/paiements-divers`, { waitUntil: 'domcontentloaded' })
 
       const filterTrigger = page.locator('[data-select-for="compte"]')
       await filterTrigger.click()
@@ -829,9 +855,9 @@ async function main() {
     {
       const { context, page } = await signIn(browser, base, accounts.complet, MOBILE)
 
-      await page.goto(`${base}/projets/${project.id}?onglet=equipe`, { waitUntil: 'load' })
+      await page.goto(`${base}/projets/${project.id}?onglet=equipe`, { waitUntil: 'domcontentloaded' })
       if (!/Personne/.test(await mainText(page))) {
-        await page.goto(`${base}/projets/${project.id}`, { waitUntil: 'load' })
+        await page.goto(`${base}/projets/${project.id}`, { waitUntil: 'domcontentloaded' })
       }
 
       const personne = page.locator('#userId')
