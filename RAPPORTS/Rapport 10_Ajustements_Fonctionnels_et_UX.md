@@ -608,7 +608,8 @@ Le jeu de démonstration est **intact** : 6 clients, 8 véhicules, 4 fournisseur
 | Commit | `5c9c1b7` — 141 fichiers, +8 335 / −878 |
 | Secrets | aucun : `.env*` reste exclu, le différentiel a été relu ligne à ligne |
 | Push GitHub | `main` → `b776523..5c9c1b7` |
-| Build Vercel | `dpl_58P2PN92MVLv49crxH1EH4oGcZR2` — **READY**, compilé en 9,3 s, 59 pages, aucun avertissement |
+| Build Vercel | **READY** — compilé en 9,3 s, 59 pages, aucun avertissement |
+| Second commit | `9b14080` — recette de production et rapport ; déploiement **READY** |
 | Production | <https://adikom-pilot.vercel.app> — la page publique annonce **178 capacités attribuables** |
 
 ### Recette de production — `npm run verify:production`
@@ -645,6 +646,12 @@ Ce qu'elle ne couvre pas — l'ouverture d'une liste déroulante sous le doigt, 
 disposition mesurée en pixels — a été éprouvé par `verify:ajustements` contre le
 **même code**, compilé par la même commande, servi localement : 95 contrôles,
 tous réussis.
+
+La tentative a été **répétée** après que le lien se fut partiellement rétabli
+(229 Ko en 25 s) : le navigateur atteint alors la page de connexion et clique,
+mais la navigation qui suit n'aboutit toujours pas en soixante secondes. Le
+serveur, lui, a répondu aux cinquante-six contrôles de la recette de production
+deux fois de suite, avant et après le dernier déploiement.
 
 C'est une limite du réseau du poste, pas du déploiement, et elle est écrite ici
 plutôt que passée sous silence.
