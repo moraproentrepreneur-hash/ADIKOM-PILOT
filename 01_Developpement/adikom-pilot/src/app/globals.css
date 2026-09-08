@@ -120,6 +120,12 @@ h4 {
   [type='button'] {
     min-height: 2.75rem;
   }
+
+  /* Une option de liste déroulante se vise au doigt comme un bouton. */
+  [data-select-option] {
+    min-height: 2.75rem;
+    align-items: center;
+  }
 }
 
 /* Un champ de moins de 16 px déclenche un zoom automatique sur iOS, qui décale

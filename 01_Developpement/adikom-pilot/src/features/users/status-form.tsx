@@ -83,7 +83,14 @@ export function StatusForm({
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <label htmlFor="status" className="block text-sm font-medium text-ink">
+          {/* Le libellé porte son identifiant : le champ déroulant s'y rattache
+              par `aria-labelledby`, le bouton qui ouvre la liste n'étant pas le
+              `<select>` que `htmlFor` désigne. */}
+          <label
+            htmlFor="status"
+            id="status-label"
+            className="block text-sm font-medium text-ink"
+          >
             Nouveau statut
           </label>
           <Select

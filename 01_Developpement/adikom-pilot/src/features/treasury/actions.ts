@@ -60,7 +60,7 @@ const ERROR_PATTERNS: readonly [RegExp, string][] = [
   ],
   [
     /fonds disponibles sont insuffisants|ne dispose que de/i,
-    'Le compte source ne dispose pas des fonds nécessaires. Le virement est bloqué (Module 06 §30).',
+    'Le compte source ne dispose pas des fonds nécessaires. Le virement est bloqué.',
   ],
   [
     /n'est pas actif|n’est plus actif/i,

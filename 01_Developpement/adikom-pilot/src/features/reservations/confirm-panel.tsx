@@ -70,7 +70,12 @@ export function ConfirmPanel({
       <FormFeedback error={state.error} success={state.success} />
 
       <div className="space-y-1.5">
-        <label htmlFor="vehicleId" className="block text-sm font-medium text-ink">
+        {/* Le libellé porte son identifiant : voir `Field`. */}
+        <label
+          htmlFor="vehicleId"
+          id="vehicleId-label"
+          className="block text-sm font-medium text-ink"
+        >
           Véhicule à engager
         </label>
         <Select

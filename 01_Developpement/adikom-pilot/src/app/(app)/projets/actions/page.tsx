@@ -80,8 +80,8 @@ export default async function ActionsPage(props: PageProps<'/projets/actions'>) 
       <Tabs items={moduleTabs('actions', { ...access, actions: true })} current="actions" />
 
       <Notice tone="info" className="mb-5">
-        Une action se crée depuis la fiche de la réunion ou de la décision dont elle découle
-        (§25). Sans origine, ce serait une tâche.
+        Une action se crée depuis la fiche de la réunion ou de la décision dont elle
+        découle. Sans origine, ce serait une tâche.
       </Notice>
 
       <form method="get" className="mb-5">

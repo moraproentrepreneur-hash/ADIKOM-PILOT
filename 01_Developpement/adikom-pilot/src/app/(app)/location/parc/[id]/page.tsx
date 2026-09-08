@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Pencil, Tags } from 'lucide-react'
+import { ArrowLeft, KeyRound, Pencil, Tags } from 'lucide-react'
 
 import {
   Badge,
@@ -9,6 +9,7 @@ import {
   BUTTON_TONES,
   Card,
   Empty,
+  EmptyState,
   InfoRow,
   PageHeader,
 } from '@/components/ui/primitives'
@@ -57,6 +58,17 @@ import {
   STATUS_TONES as MAINTENANCE_STATUS_TONES,
 } from '@/features/maintenance/data'
 import { formatPrice } from '@/features/pricing/constants'
+import {
+  displayStatus as displayRentalStatus,
+  listRentals,
+  STATUS_LABELS as RENTAL_STATUS_LABELS,
+  STATUS_TONES as RENTAL_STATUS_TONES,
+} from '@/features/rentals/data'
+import { listCustomerInvoices } from '@/features/customer-invoices/data'
+import { listImputations } from '@/features/imputations/data'
+import { getVehicleMaintenanceCosts } from '@/features/maintenance/costs-data'
+import { formatAmount } from '@/lib/money'
+import { formatPeriod } from '@/lib/dates'
 
 export const metadata: Metadata = { title: 'Fiche véhicule' }
 
@@ -90,6 +102,11 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
     canPrint,
     canIncidents,
     canMaintenance,
+    canRentals,
+    canInvoices,
+    canPayments,
+    canCosts,
+    canImputations,
   ] = await Promise.all([
     can(PERMISSIONS.FLEET_UPDATE),
     can(PERMISSIONS.FLEET_STATUS_UPDATE),
@@ -103,6 +120,18 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
     can(PERMISSIONS.FLEET_PRINT),
     can(PERMISSIONS.INCIDENTS_VIEW),
     can(PERMISSIONS.MAINTENANCE_VIEW),
+    /*
+     * Les deux onglets ouverts par cet ajustement (DEC-042 §d).
+     *
+     * « Locations » suit `rental.rentals.view`. « Rentabilité » aussi : sans les
+     * contrats du véhicule, il n'y a ni revenus à rapprocher ni période à
+     * couvrir, et l'onglet ne dirait rien de vrai.
+     */
+    can(PERMISSIONS.RENTALS_VIEW),
+    can(PERMISSIONS.CUSTOMER_INVOICES_VIEW),
+    can(PERMISSIONS.CUSTOMER_PAYMENTS_VIEW),
+    can(PERMISSIONS.MAINTENANCE_COST_VIEW),
+    can(PERMISSIONS.IMPUTATIONS_VIEW),
   ])
 
   const tabs: TabItem[] = [
@@ -132,8 +161,20 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
           },
         ]
       : []),
-    { key: 'locations', label: 'Locations', planned: true },
-    { key: 'rentabilite', label: 'Rentabilité', planned: true },
+    ...(canRentals
+      ? [
+          {
+            key: 'locations',
+            label: 'Locations',
+            href: `/location/parc/${id}?onglet=locations`,
+          },
+          {
+            key: 'rentabilite',
+            label: 'Rentabilité',
+            href: `/location/parc/${id}?onglet=rentabilite`,
+          },
+        ]
+      : []),
   ]
 
   const tab = tabs.some((item) => item.key === requestedTab && item.href) ? requestedTab : 'fiche'
@@ -216,6 +257,17 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
         <IncidentsTab vehicleId={id} />
       ) : tab === 'maintenance' ? (
         <MaintenanceTab vehicleId={id} />
+      ) : tab === 'locations' ? (
+        <RentalsTab vehicleId={id} />
+      ) : tab === 'rentabilite' ? (
+        <ProfitabilityTab
+          vehicleId={id}
+          canInvoices={canInvoices}
+          canPayments={canPayments}
+          canCosts={canCosts}
+          canImputations={canImputations}
+          canMaintenance={canMaintenance}
+        />
       ) : editing && canUpdate ? (
         <EditPanel vehicleId={id} />
       ) : (
@@ -353,6 +405,267 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
         </div>
       )}
     </>
+  )
+}
+
+/**
+ * Locations du véhicule — DEC-042 §d.
+ *
+ * La même lecture que la liste des locations, filtrée sur ce véhicule. « En
+ * retard » se dérive de l'heure de retour attendue, jamais d'un statut écrit
+ * (DEC-025 §a) : la fiche véhicule ne pose donc pas sa propre lecture du retard.
+ */
+async function RentalsTab({ vehicleId }: { vehicleId: string }) {
+  const rentals = await listRentals({ vehicleId })
+
+  return (
+    <Card
+      title="Locations"
+      description="Contrats portant sur ce véhicule, du plus récent au plus ancien."
+    >
+      {rentals.length === 0 ? (
+        <EmptyState
+          icon={KeyRound}
+          title="Aucune location"
+          description="Ce véhicule n’a encore été loué à personne."
+        />
+      ) : (
+        <ul className="divide-y divide-line">
+          {rentals.map((rental) => {
+            const shown = displayRentalStatus(rental.status, rental.expectedReturnAt)
+
+            return (
+              <li key={rental.id} className="flex flex-wrap items-center gap-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <Link
+                    href={`/location/locations/${rental.id}`}
+                    className="font-medium text-adikom-500 hover:underline tabular"
+                  >
+                    {rental.rentalNo}
+                  </Link>
+                  <p className="text-xs text-muted">
+                    {formatPeriod(rental.plannedFrom, rental.plannedTo)}
+                    {rental.clientLabel ? ` · ${rental.clientLabel}` : ''}
+                  </p>
+                </div>
+                <Badge tone={RENTAL_STATUS_TONES[shown]}>{RENTAL_STATUS_LABELS[shown]}</Badge>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+/**
+ * Rentabilité du véhicule — DEC-042 §d.
+ *
+ * LA RÈGLE EXISTE, ET ELLE EST TENUE TELLE QUELLE.
+ *
+ * `05_Regles_Metier/02_Parc_Automobile.md` §43 la pose, exemple à l'appui :
+ * « Revenus : 2 500 000 KMF. Coûts de maintenance : 550 000 KMF. » Rien de plus
+ * n'est inventé ici — ni amortissement, ni assurance, ni carburant, ni clé de
+ * répartition : aucune de ces charges n'existe dans le système, et en supposer
+ * une rendrait le résultat faux sans que personne puisse le vérifier.
+ *
+ * LE MÊME §43 POSE UN INTERDIT, ET C'EST LUI QUI COMMANDE L'ÉCRAN :
+ *
+ *   « Le système ne doit pas présenter un indicateur comme une rentabilité
+ *     COMPLÈTE si toutes les charges ne sont pas prises en compte. »
+ *
+ * L'écran parle donc de MARGE D'EXPLOITATION, et énumère en toutes lettres ce
+ * qu'elle ne couvre pas. Un chiffre honnête et borné vaut mieux qu'un chiffre
+ * flatteur qu'on prendrait pour un résultat.
+ *
+ * UNE IMPUTATION N'EST PAS UN PAIEMENT — MAIS ELLE RÉDUIT BIEN LA CHARGE
+ *
+ * CLAUDE.md §16 : ce qu'ADIKOM impute à un fournisseur ne sort pas de sa poche.
+ * Le coût NET supporté est donc « coût réel − imputé », et les deux montants
+ * restent affichés séparément : les confondre effacerait la trace de ce qui a
+ * été repris au fournisseur (§57).
+ *
+ * CE QUI N'EST PAS LISIBLE N'EST PAS COMPTÉ, ET L'ÉCRAN LE DIT
+ *
+ * Revenus, coûts et imputations relèvent de trois capacités distinctes. Il
+ * manque l'une d'elles, la marge n'est pas calculée : un « 0 » y passerait pour
+ * une charge nulle (DEC-017).
+ */
+async function ProfitabilityTab({
+  vehicleId,
+  canInvoices,
+  canPayments,
+  canCosts,
+  canImputations,
+  canMaintenance,
+}: {
+  vehicleId: string
+  canInvoices: boolean
+  canPayments: boolean
+  canCosts: boolean
+  canImputations: boolean
+  canMaintenance: boolean
+}) {
+  const rentals = await listRentals({ vehicleId })
+  const rentalIds = rentals.map((rental) => rental.id)
+
+  const maintenances = canMaintenance ? await listVehicleMaintenances(vehicleId) : []
+  const maintenanceIds = maintenances.map((maintenance) => maintenance.id)
+
+  const [invoices, costs, imputations] = await Promise.all([
+    canInvoices && rentalIds.length > 0
+      ? listCustomerInvoices({ rentalIds }, { canSeePayments: canPayments })
+      : Promise.resolve(null),
+    canCosts ? getVehicleMaintenanceCosts(vehicleId) : Promise.resolve(null),
+    canImputations && maintenanceIds.length > 0
+      ? listImputations({ maintenanceIds })
+      : Promise.resolve(canImputations ? [] : null),
+  ])
+
+  // Une facture annulée n'a jamais produit de chiffre d'affaires ; un brouillon
+  // ne reconnaît encore aucune créance (Workflow 07 §25).
+  const engaged = (invoices ?? []).filter(
+    (invoice) => invoice.status !== 'CANCELLED' && invoice.status !== 'DRAFT'
+  )
+  const revenue = invoices === null ? null : engaged.reduce((sum, i) => sum + i.total, 0)
+  const collected =
+    invoices === null || !canPayments
+      ? null
+      : engaged.reduce((sum, i) => sum + (i.paidAmount ?? 0), 0)
+
+  const imputed =
+    imputations === null
+      ? null
+      : imputations
+          .filter((imputation) => imputation.status !== 'CANCELLED')
+          .reduce((sum, imputation) => sum + imputation.amount, 0)
+
+  const netCost = costs === null || imputed === null ? null : costs.actualCost - imputed
+  const margin = revenue === null || netCost === null ? null : revenue - netCost
+
+  const unpriced = costs === null ? 0 : maintenances.length - costs.pricedCount
+  const kmf = (value: number) => formatAmount(value, { withCurrency: true })
+
+  return (
+    <div className="space-y-5">
+      <Card
+        title="Marge d’exploitation"
+        description="Revenus facturés moins le coût d’entretien réellement supporté par ADIKOM."
+      >
+        <dl>
+          <InfoRow
+            label="Revenus facturés"
+            hint="Factures émises portant une location de ce véhicule. Brouillons et annulées exclus."
+          >
+            {revenue === null ? (
+              <span className="text-xs text-muted">
+                Non calculable sans le droit de consulter les factures clients.
+              </span>
+            ) : (
+              <span className="font-medium tabular">{kmf(revenue)}</span>
+            )}
+          </InfoRow>
+
+          <InfoRow
+            label="Dont encaissé"
+            hint="Règlements validés. Un revenu facturé n’est pas un revenu reçu."
+          >
+            {collected === null ? (
+              <span className="text-xs text-muted">
+                Non calculable sans le droit de consulter les règlements.
+              </span>
+            ) : (
+              <span className="tabular">{kmf(collected)}</span>
+            )}
+          </InfoRow>
+
+          <InfoRow
+            label="Coût d’entretien réel"
+            hint="Somme des coûts réels arrêtés. Une estimation n’y entre pas."
+          >
+            {costs === null ? (
+              <span className="text-xs text-muted">
+                Non calculable sans le droit de consulter les coûts de maintenance.
+              </span>
+            ) : (
+              <span className="tabular">{kmf(costs.actualCost)}</span>
+            )}
+          </InfoRow>
+
+          <InfoRow
+            label="Imputé aux fournisseurs"
+            hint="Ce qu’ADIKOM a déduit des factures fournisseurs. Ce n’est pas un paiement reçu : c’est une charge qu’elle ne supporte pas."
+          >
+            {imputed === null ? (
+              <span className="text-xs text-muted">
+                Non calculable sans le droit de consulter les imputations.
+              </span>
+            ) : (
+              <span className="tabular">{imputed > 0 ? `− ${kmf(imputed)}` : kmf(0)}</span>
+            )}
+          </InfoRow>
+
+          <InfoRow
+            label="Coût net supporté"
+            hint="Coût réel moins les imputations."
+          >
+            {netCost === null ? (
+              <span className="text-xs text-muted">
+                Non calculable : il manque le coût ou les imputations.
+              </span>
+            ) : (
+              <span className="tabular">{kmf(netCost)}</span>
+            )}
+          </InfoRow>
+
+          <InfoRow
+            label="Marge d’exploitation"
+            hint="Revenus facturés moins le coût net. Ce n’est PAS une rentabilité complète."
+          >
+            {margin === null ? (
+              <span className="text-xs text-muted">
+                Non calculable : toutes les composantes ne sont pas lisibles avec vos droits.
+              </span>
+            ) : (
+              <span
+                className={
+                  margin < 0 ? 'font-medium text-danger tabular' : 'font-medium text-ink tabular'
+                }
+              >
+                {kmf(margin)}
+              </span>
+            )}
+          </InfoRow>
+
+          <InfoRow label="Contrats pris en compte">
+            <span className="tabular">{rentals.length}</span>
+          </InfoRow>
+        </dl>
+      </Card>
+
+      {unpriced > 0 && (
+        <Notice tone="warning">
+          {unpriced} intervention{unpriced > 1 ? 's' : ''} de ce véhicule n’
+          {unpriced > 1 ? 'ont' : 'a'} pas encore de coût réel arrêté : {unpriced > 1 ? 'elles n’entrent' : 'elle n’entre'}{' '}
+          donc pas dans le coût ci-dessus. Le chiffre est exact sur ce qui est chiffré, pas
+          complet sur ce qui reste à chiffrer.
+        </Notice>
+      )}
+
+      <Card title="Ce que ce chiffre ne couvre pas">
+        <p className="text-sm text-muted">
+          Cette marge rapproche deux grandeurs que le système connaît réellement : ce qui a été
+          facturé pour ce véhicule, et ce que son entretien a coûté à ADIKOM une fois les
+          imputations déduites.
+        </p>
+        <p className="mt-3 text-sm text-muted">
+          Elle <strong>n’est pas une rentabilité complète</strong>. N’y figurent ni
+          l’amortissement ou le loyer du véhicule, ni l’assurance, ni le carburant, ni les
+          charges générales : aucune de ces dépenses n’est enregistrée par véhicule dans
+          ADIKOM PILOT. Les présenter comme nulles donnerait un résultat flatteur et faux.
+        </p>
+      </Card>
+    </div>
   )
 }
 

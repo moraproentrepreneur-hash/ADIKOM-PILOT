@@ -74,7 +74,7 @@ export default async function ImputationsPage(props: PageProps<'/facturation/imp
 
       <Notice tone="warning" className="mb-5">
         Une imputation ne réduit un montant dû qu’une fois <strong>rattachée à une facture
-        fournisseur validée</strong> (DEC-013). Même alors, elle n’est <strong>pas un
+        fournisseur validée</strong>. Même alors, elle n’est <strong>pas un
         paiement</strong> : aucun compte n’est mouvementé.
       </Notice>
 

@@ -196,7 +196,7 @@ async function CompanyTab() {
 
         <p className="mt-4 border-t border-line pt-3 text-xs text-muted">
           Dernière modification : {formatDateTime(settings.updatedAt) ?? '—'}. Chaque changement
-          est journalisé (§43) et consultable dans le Journal d’activité.
+          est journalisé et consultable dans le Journal d’activité.
         </p>
       </Card>
 
@@ -224,7 +224,7 @@ async function CompanyTab() {
       <SectionForm
         section="coordonnees"
         title="Coordonnées"
-        description="Où joindre ADIKOM. Reprises automatiquement dans les documents (§13)."
+        description="Où joindre ADIKOM. Reprises automatiquement dans les documents."
         canUpdate={canUpdate}
         fields={[
           { name: 'address_line1', label: 'Adresse', value: text(settings.addressLine1), wide: true },
@@ -362,7 +362,7 @@ async function CompanyTab() {
       <SectionForm
         section="visuelle"
         title="Couleurs"
-        description="Employées par les documents générés. Format hexadécimal (§38)."
+        description="Employées par les documents générés. Format hexadécimal."
         canUpdate={canUpdateBranding}
         fields={[
           { name: 'color_primary', label: 'Couleur principale', value: settings.colorPrimary },
@@ -391,7 +391,7 @@ async function CompanyTab() {
         <p className="font-medium">Une modification ne réécrit pas le passé.</p>
         <p className="mt-1">
           Les nouveaux documents emploient les valeurs à jour ; les documents déjà émis conservent
-          les informations qui leur étaient associées (§46, §47).
+          les informations qui leur étaient associées.
         </p>
       </Notice>
     </div>
@@ -413,10 +413,10 @@ async function NumberingTab() {
   return (
     <div className="space-y-5">
       <Notice tone="info">
-        Les formats sont modifiables <strong>sans redéploiement</strong> (DEC-005). La génération
-        reste atomique et côté serveur : aucun doublon, aucune collision, aucune réutilisation
-        (§16). Le <strong>compteur</strong> n’est pas modifiable — un numéro déjà émis ne se
-        réutilise jamais.
+        Les formats sont modifiables <strong>sans redéploiement</strong>. La génération
+        reste atomique et côté serveur : aucun doublon, aucune collision, aucune
+        réutilisation. Le <strong>compteur</strong> n’est pas modifiable — un numéro déjà émis
+        ne se réutilise jamais.
       </Notice>
 
       <Card

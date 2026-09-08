@@ -25,7 +25,7 @@
  *      virement — ne peut pas les annuler (migration 073).
  *   8. Paiement divers : brouillon sans écriture, validation qui débite,
  *      annulation qui rend, aucune modification possible (Module 07 §43 à §47).
- *   9. Les données DEMO sont intactes, le catalogue à 171, aucun résidu.
+ *   9. Les données DEMO sont intactes, le catalogue à 178, aucun résidu.
  *
  * Utilisation :
  *   node scripts/verify-transfers.mjs [url]
@@ -868,6 +868,7 @@ async function main() {
         p_account_id: dstId,
         p_amount: 1000,
         p_paid_on: dayOffset(0),
+        p_direction: 'OUT',
         p_category: 'OTHER',
         p_beneficiary: 'X',
         p_purpose: 'Y',
@@ -905,7 +906,7 @@ async function main() {
       const { count: total } = await admin
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-      check(total === 171, 'Catalogue conforme', `${total} permissions`)
+      check(total === 178, 'Catalogue conforme', `${total} permissions`)
 
       // Le journal a bien enregistré les opérations sensibles (Module 06 §49).
       const { count: journal } = await admin

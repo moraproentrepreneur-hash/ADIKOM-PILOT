@@ -127,7 +127,7 @@ export default async function ActionDetailPage(props: PageProps<'/projets/action
                 )}
               </InfoRow>
 
-              <InfoRow label="Origine" hint="Une action découle toujours d’un moment (§25).">
+              <InfoRow label="Origine" hint="Une action découle toujours d’un moment.">
                 {origin.open ? (
                   <Link href={origin.href} className="text-adikom-500 hover:underline">
                     {action.decisionLabel ?? action.meetingLabel}
@@ -186,7 +186,7 @@ export default async function ActionDetailPage(props: PageProps<'/projets/action
 
         <div className="space-y-5">
           {canUpdate && !transformed && (
-            <Card title="Changer l’état" description="Le changement est journalisé (§31).">
+            <Card title="Changer l’état" description="Le changement est journalisé.">
               <ActionStatusForm
                 actionId={action.id}
                 allowed={ACTION_NEXT_STATUSES[action.status]}
@@ -197,7 +197,7 @@ export default async function ActionDetailPage(props: PageProps<'/projets/action
           {canUpdate && !transformed && action.status === 'TODO' && (
             <Card
               title="Transformer en tâche"
-              description="Lorsqu’un suivi détaillé est nécessaire (§25)."
+              description="Lorsqu’un suivi détaillé est nécessaire."
             >
               <TransformActionForm actionId={action.id} canCreateTask={canCreateTask} />
             </Card>

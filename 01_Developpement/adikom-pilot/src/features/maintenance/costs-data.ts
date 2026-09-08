@@ -222,3 +222,63 @@ export function nonImputableAmount(costs: MaintenanceCosts | null): number | nul
 export function linesTotal(lines: CostLine[]): number {
   return lines.reduce((total, line) => total + line.amount, 0)
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Ce qu'un véhicule a coûté en entretien — DEC-042 §d                        */
+/* -------------------------------------------------------------------------- */
+
+export type VehicleMaintenanceCosts = {
+  /** Interventions du véhicule dont le coût réel est arrêté. */
+  pricedCount: number
+  /** Σ des coûts réels arrêtés, en KMF. */
+  actualCost: number
+}
+
+/**
+ * Le coût d'entretien d'un véhicule, sur l'ensemble de ses interventions.
+ *
+ * IL NE COMPTE QUE LE COÛT RÉEL, ET SEULEMENT LORSQU'IL EST ARRÊTÉ.
+ *
+ * `estimated_cost` est une prévision : l'additionner à des coûts constatés
+ * produirait un total qui n'est ni l'un ni l'autre. Une intervention non encore
+ * chiffrée ne compte donc pas — et l'écran DIT combien il y en a, plutôt que de
+ * laisser croire qu'elles n'ont rien coûté (DEC-017).
+ *
+ * LA GARDE EST CELLE DES COÛTS.
+ *
+ * `maintenance_costs` exige `rental.maintenance.cost.view` : consulter une
+ * intervention et consulter ce qu'elle a coûté sont deux capacités (DEC-024,
+ * migration 044). Sans elle, cette lecture ne renvoie rien — l'appelant doit
+ * donc l'avoir vérifiée, et dire ce qu'il ne sait pas.
+ */
+export async function getVehicleMaintenanceCosts(
+  vehicleId: string
+): Promise<VehicleMaintenanceCosts> {
+  const supabase = await createSupabaseServerClient()
+
+  /*
+   * La jointure est INTERNE : une ligne de coût sans maintenance visible ne
+   * doit pas entrer dans la somme. `vehicle_maintenances!inner` impose au
+   * lecteur d'avoir aussi le droit de lire l'intervention elle-même.
+   */
+  const { data, error } = await supabase
+    .from('maintenance_costs')
+    .select('actual_cost, vehicle_maintenances!inner ( vehicle_id )')
+    .eq('vehicle_maintenances.vehicle_id', vehicleId)
+
+  if (error) {
+    reportQueryFailure(
+      'coûts de maintenance du véhicule',
+      error,
+      'Les coûts de maintenance n’ont pas pu être chargés.'
+    )
+  }
+
+  const rows = (data ?? []) as unknown as { actual_cost: number | null }[]
+  const priced = rows.filter((row) => row.actual_cost !== null)
+
+  return {
+    pricedCount: priced.length,
+    actualCost: priced.reduce((sum, row) => sum + (row.actual_cost ?? 0), 0),
+  }
+}

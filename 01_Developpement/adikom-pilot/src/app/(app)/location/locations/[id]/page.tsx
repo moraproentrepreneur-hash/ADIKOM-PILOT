@@ -48,6 +48,7 @@ import { ExtendPanel } from '@/features/rentals/extend-panel'
 import { ControlPanel } from '@/features/rentals/control-panel'
 import { CloseRentalPanel } from '@/features/rentals/close-panel'
 import { getInvoiceForRental } from '@/features/customer-invoices/data'
+import { EntityHistoryPanel } from '@/features/audit/history-panel'
 import {
   CUSTOMER_INVOICE_STATUS_LABELS,
   CUSTOMER_INVOICE_STATUS_TONES,
@@ -113,6 +114,15 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
   const canDeclareIncident = await can(PERMISSIONS.INCIDENTS_CREATE)
 
   /*
+   * L'onglet « Historique » LIT le journal d'activité (DEC-042 §d) : il relève
+   * donc de `users.audit.view`, et de rien d'autre. Suivre une location n'est
+   * pas consulter le journal (DEC-024) ; sans cette capacité, l'onglet
+   * disparaît plutôt que d'afficher une liste vide qui se lirait « il ne s'est
+   * rien passé » (DEC-017).
+   */
+  const canViewHistory = await can(PERMISSIONS.AUDIT_VIEW)
+
+  /*
    * LA FACTURATION EST UN AUTRE MÉTIER (DEC-024).
    *
    * Voir une location n'est pas voir sa facture, et la préparer encore moins.
@@ -143,7 +153,15 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
     { key: 'informations', label: 'Informations', href: `/location/locations/${id}` },
     { key: 'etats', label: 'États des lieux', href: `/location/locations/${id}?onglet=etats` },
     { key: 'controle', label: 'Contrôle', href: `/location/locations/${id}?onglet=controle` },
-    { key: 'historique', label: 'Historique', planned: true },
+    ...(canViewHistory
+      ? [
+          {
+            key: 'historique',
+            label: 'Historique',
+            href: `/location/locations/${id}?onglet=historique`,
+          },
+        ]
+      : []),
   ]
 
   const tab = tabs.some((item) => item.key === requestedTab && item.href)
@@ -241,7 +259,12 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
 
       <Tabs items={tabs} current={tab} />
 
-      {tab === 'etats' ? (
+      {tab === 'historique' ? (
+        <EntityHistoryPanel
+          entityId={id}
+          description="Le cycle réellement parcouru par ce contrat : changements d’état, départ, prolongation, retour, contrôle, clôture. Rien n’est reconstitué — chaque ligne est un événement journalisé."
+        />
+      ) : tab === 'etats' ? (
         <InspectionsTab rentalId={id} />
       ) : tab === 'controle' ? (
         <ControlTab
@@ -321,7 +344,7 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
           {canSeeInvoices && rental.status !== 'CANCELLED' && (
             <Card
               title="Facturation"
-              description="La créance issue de ce contrat (Workflow 07 §49)."
+              description="La créance issue de ce contrat."
             >
               {invoice ? (
                 <dl>
@@ -540,7 +563,7 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
                       : rental.status === 'TO_INVOICE'
                         ? 'Le contrôle est validé : préparez la facture client. Son émission rendra la location « Facturée ».'
                         : rental.status === 'INVOICED'
-                          ? 'La facture est émise. Le dossier peut être clôturé, même avant encaissement (Workflow 01 §42).'
+                          ? 'La facture est émise. Le dossier peut être clôturé, même avant encaissement.'
                           : rental.status === 'CLOSED'
                             ? 'Dossier clôturé. Son historique reste consultable ; l’encaissement se suit sur la facture.'
                             : 'Cette location est annulée : son historique est conservé.'}

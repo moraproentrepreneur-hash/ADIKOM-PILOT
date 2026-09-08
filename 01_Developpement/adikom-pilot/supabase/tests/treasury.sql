@@ -100,12 +100,51 @@ begin
 
   if not exists (
     select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'public' and p.proname = 'financial_account_balance' and not p.prosecdef
+    where n.nspname = 'public' and p.proname = 'financial_account_balance'
   ) then
-    raise exception 'financial_account_balance absente ou SECURITY DEFINER.';
+    raise exception 'financial_account_balance est absente : le solde n''aurait plus de source.';
   end if;
 
-  raise notice '[OK] 2. Aucun solde stocké ; il se calcule des écritures.';
+  /*
+   * ELLE EST `SECURITY DEFINER` DEPUIS LA MIGRATION 076, ET C'EST VOULU.
+   *
+   * L'arithmétique du solde a été extraite dans `account_balance_formula`, que
+   * le tableau de bord partage avec elle — une seule vérité sur un solde
+   * (DEC-042 §a). Cette fonction-là n'est exécutable NI par `anon` NI par
+   * `authenticated` : sans quoi un appelant obtiendrait un solde sans
+   * `treasury.balances.view`. Il faut donc les droits du propriétaire pour
+   * l'atteindre.
+   *
+   * Ce que `SECURITY DEFINER` lève — RLS —, la fonction le repose à la main :
+   * ses trois gardes sont vérifiées ici.
+   */
+  select array_agg(c) into v_bad
+  from unnest(array[
+    'treasury.balances.view', 'treasury.entries.view', 'treasury.accounts.view'
+  ]) c
+  where position(c in (
+    select p.prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'financial_account_balance' limit 1
+  )) = 0;
+
+  if v_bad is not null then
+    raise exception
+      '`financial_account_balance` n''exige plus : %. `SECURITY DEFINER` lèverait RLS sans rien reposer.',
+      array_to_string(v_bad, ', ');
+  end if;
+
+  -- Et l'arithmétique sans garde reste hors d'atteinte d'une session.
+  select array_agg(r) into v_bad
+  from unnest(array['anon', 'authenticated']) r
+  where has_function_privilege(r, 'public.account_balance_formula(uuid)', 'EXECUTE');
+
+  if v_bad is not null then
+    raise exception
+      '`account_balance_formula` exécutable par : %. Le solde s''obtiendrait sans capacité.',
+      array_to_string(v_bad, ', ');
+  end if;
+
+  raise notice '[OK] 2. Aucun solde stocké ; une seule arithmétique, et elle reste gardée.';
 end $$;
 
 
@@ -140,7 +179,13 @@ begin
 end $$;
 
 
--- --- 4. Fonctions : aucune SECURITY DEFINER, EXECUTE retiré à PUBLIC --------------------
+-- --- 4. Fonctions : aucune SECURITY DEFINER de commodité, EXECUTE retiré à PUBLIC -------
+--
+-- `financial_account_balance` ne figure plus dans cette liste : elle est
+-- `SECURITY DEFINER` depuis la migration 076, pour atteindre l'arithmétique
+-- partagée du solde qu'une session ne peut pas exécuter. Ce n'est pas une
+-- commodité — c'est la condition pour qu'il n'y ait qu'UNE arithmétique du
+-- solde. Le §2 vérifie que ses trois gardes reposent ce que RLS ne fait plus.
 do $$
 declare v_bad text[];
 begin
@@ -150,7 +195,7 @@ begin
     and p.proname in (
       'create_financial_account', 'update_financial_account',
       'set_financial_account_status', 'record_supplier_payment',
-      'cancel_supplier_payment', 'financial_account_balance', 'supplier_invoice_paid'
+      'cancel_supplier_payment', 'supplier_invoice_paid'
     )
     and p.prosecdef;
   if v_bad is not null then raise exception 'SECURITY DEFINER de commodité : %', v_bad; end if;
@@ -620,11 +665,11 @@ begin
   end if;
 
   select count(*) into v_total from public.permissions;
-  if v_total <> 171 then
-    raise exception 'Catalogue attendu à 171 permissions, obtenu %.', v_total;
+  if v_total <> 178 then
+    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
   end if;
 
-  raise notice '[OK] 19. Trésorerie journalisée (% entrées) ; catalogue à 171.', v_count;
+  raise notice '[OK] 19. Trésorerie journalisée (% entrées) ; catalogue à 178.', v_count;
 end $$;
 
 

@@ -227,7 +227,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projets/[id]'
                 )}
               </InfoRow>
 
-              <InfoRow label="Responsable" hint="Suit l’avancement général (§9).">
+              <InfoRow label="Responsable" hint="Suit l’avancement général.">
                 {project.ownerLabel ?? <Empty />}
               </InfoRow>
 
@@ -311,7 +311,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projets/[id]'
 
           <Card
             title="Réunions du projet"
-            description="Ce qui se planifie autour de lui (§6, §21)."
+            description="Ce qui se planifie autour de lui."
           >
             {!canReadMeetings ? (
               <Notice tone="info">
@@ -346,7 +346,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projets/[id]'
 
           <Card
             title="Décisions du projet"
-            description="Ce qui a été arrêté, et qui reste retrouvable (§6, §24)."
+            description="Ce qui a été arrêté, et qui reste retrouvable."
           >
             {!canReadDecisions ? (
               <Notice tone="info">
@@ -378,7 +378,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projets/[id]'
         </div>
 
         <div className="space-y-5">
-          <Card title="Équipe" description="Responsable, participants et observateurs (§9).">
+          <Card title="Équipe" description="Responsable, participants et observateurs.">
             <MembersPanel
               projectId={project.id}
               members={project.members}
@@ -388,7 +388,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projets/[id]'
           </Card>
 
           {canUpdate && !project.isArchived && (
-            <Card title="Changer l’état" description="Le changement est journalisé (§31).">
+            <Card title="Changer l’état" description="Le changement est journalisé.">
               <ProjectStatusForm
                 projectId={project.id}
                 allowed={PROJECT_NEXT_STATUSES[project.status]}

@@ -15,11 +15,18 @@ export const metadata: Metadata = { title: 'Nouveau paiement divers' }
 /**
  * Saisie d'un paiement divers — Module 07 §43, §44.
  *
- * LA SAISIE NE SORT AUCUN FONDS.
+ * LA SAISIE NE DÉPLACE AUCUN FONDS.
  *
  * §46 pose trois états, et le catalogue une capacité de validation distincte :
  * saisir et engager l'argent sont deux gestes, qui peuvent relever de deux
  * personnes (DEC-040).
+ *
+ * ET ELLE NE PRÉSUME PAS DU SENS (DEC-042 §b).
+ *
+ * Depuis l'ajustement du 08/09/2026, un paiement divers va dans les deux sens.
+ * Le titre et le bandeau ne parlent donc plus de « décaissement » ni de « fonds
+ * qui sortent » : le formulaire, lui, annonce l'effet exact une fois le sens
+ * choisi.
  */
 export default async function NewMiscPaymentPage() {
   await requirePermissionOrRedirect(PERMISSIONS.MISC_PAYMENTS_CREATE)
@@ -42,13 +49,13 @@ export default async function NewMiscPaymentPage() {
 
       <PageHeader
         title="Nouveau paiement divers"
-        description="Un décaissement qui ne se rattache à aucune facture client ou fournisseur."
+        description="Un encaissement ou un décaissement qui ne se rattache à aucune facture client ou fournisseur."
       />
 
       <Notice tone="info" className="mb-5">
-        Le paiement sera enregistré en <strong>brouillon</strong> : aucun fonds ne sort tant qu’il
-        n’est pas <strong>validé</strong>. Un paiement erroné ne se corrige pas — il s’annule, et
-        un paiement correct est saisi.
+        Le paiement sera enregistré en <strong>brouillon</strong> : aucun fonds ne bouge tant
+        qu’il n’est pas <strong>validé</strong>. Un paiement erroné ne se corrige pas — il
+        s’annule, et un paiement correct est saisi.
       </Notice>
 
       <Card className="max-w-3xl">

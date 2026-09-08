@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, CarFront, Lock, Pencil, Plus } from 'lucide-react'
+import { ArrowLeft, CarFront, FileText, Lock, Pencil, Plus } from 'lucide-react'
 
 import {
   Badge,
@@ -78,6 +78,8 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
     canViewImputations,
     canViewInvoices,
     canViewPayments,
+    canInvoiceDownload,
+    canInvoicePrint,
   ] = await Promise.all([
     can(PERMISSIONS.SUPPLIERS_UPDATE),
     can(PERMISSIONS.SUPPLIERS_ARCHIVE),
@@ -96,7 +98,23 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
     can(PERMISSIONS.SUPPLIER_INVOICES_VIEW),
     // LOT 6 : et pour les règlements.
     can(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW),
+    /*
+     * Les capacités documentaires de la facture fournisseur (DEC-042 §c). Elles
+     * ouvrent l'onglet « Documents » sur les pièces que le système PRODUIT au
+     * sujet de ce fournisseur — sa fiche, et ses factures.
+     */
+    can(PERMISSIONS.SUPPLIER_INVOICES_DOWNLOAD),
+    can(PERMISSIONS.SUPPLIER_INVOICES_PRINT),
   ])
+
+  /*
+   * L'onglet « Documents » n'a de sens que pour qui peut obtenir au moins une
+   * pièce : produire un document et le consulter sont deux capacités (DEC-024).
+   */
+  const canViewDocuments =
+    canDownload ||
+    canPrint ||
+    (canViewInvoices && (canInvoiceDownload || canInvoicePrint))
 
   const tabs: TabItem[] = [
     { key: 'informations', label: 'Informations', href: `/tiers/fournisseurs/${id}` },
@@ -148,7 +166,15 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
           },
         ]
       : []),
-    { key: 'documents', label: 'Documents', planned: true },
+    ...(canViewDocuments
+      ? [
+          {
+            key: 'documents',
+            label: 'Documents',
+            href: `/tiers/fournisseurs/${id}?onglet=documents`,
+          },
+        ]
+      : []),
   ]
 
   const tab = tabs.some((item) => item.key === requestedTab && item.href)
@@ -210,7 +236,17 @@ export default async function SupplierDetailPage(props: PageProps<'/tiers/fourni
 
       <Tabs items={tabs} current={tab} />
 
-      {tab === 'vehicules' ? (
+      {tab === 'documents' ? (
+        <SupplierDocumentsTab
+          supplierId={id}
+          supplierLabel={supplier.legalName}
+          canDownload={canDownload}
+          canPrint={canPrint}
+          canViewInvoices={canViewInvoices}
+          canInvoiceDownload={canInvoiceDownload}
+          canInvoicePrint={canInvoicePrint}
+        />
+      ) : tab === 'vehicules' ? (
         <VehiclesTab supplierId={id} />
       ) : tab === 'factures' ? (
         <SupplierInvoicesTab
@@ -355,7 +391,7 @@ async function SupplierInvoicesTab({
 
       <Card
         title="Totaux"
-        description="Factures non annulées de ce fournisseur (Règles fournisseurs §32)."
+        description="Factures non annulées de ce fournisseur."
       >
         <dl>
           <InfoRow label="Montant brut facturé">
@@ -384,7 +420,7 @@ async function SupplierInvoicesTab({
         </dl>
       </Card>
 
-      <Card title="Factures" description="Chaque facture reste identifiable (§33).">
+      <Card title="Factures" description="Chaque facture reste identifiable.">
         {invoices.length === 0 ? (
           <EmptyState
             icon={CarFront}
@@ -463,11 +499,11 @@ async function SupplierPaymentsTab({ supplierId }: { supplierId: string }) {
     <div className="space-y-5">
       <Notice tone="info">
         Un règlement est un <strong>décaissement réel</strong> : il fait sortir de l’argent d’un
-        compte. Il ne se confond pas avec une imputation, qui réduit la dette sans la payer
-        (Module 07 §37).
+        compte. Il ne se confond pas avec une imputation, qui réduit la dette sans la
+        payer.
       </Notice>
 
-      <Card title="Total réglé" description="Règlements validés, annulations exclues (§28).">
+      <Card title="Total réglé" description="Règlements validés, annulations exclues.">
         <dl>
           <InfoRow label="Versé à ce fournisseur">
             <span className="font-medium tabular">{formatImputationAmount(paidTotal)}</span>
@@ -555,11 +591,11 @@ async function SupplierImputationsTab({
     <div className="space-y-5">
       <Notice tone="warning">
         Une imputation ne réduit un montant dû qu’une fois <strong>rattachée à une facture
-        validée</strong> (DEC-013). Même alors, elle n’est <strong>pas un paiement</strong> :
+        validée</strong>. Même alors, elle n’est <strong>pas un paiement</strong> :
         aucun compte n’est mouvementé.
       </Notice>
 
-      <Card title="Totaux" description="Calculés depuis les opérations réellement enregistrées (§42).">
+      <Card title="Totaux" description="Calculés depuis les opérations réellement enregistrées.">
         <dl>
           <InfoRow
             label="Imputé sur des factures"
@@ -569,7 +605,7 @@ async function SupplierImputationsTab({
           </InfoRow>
           <InfoRow
             label="En attente de facture"
-            hint="Imputations validées, sans facture rattachée (§31)."
+            hint="Imputations validées, sans facture rattachée."
           >
             <span className="tabular">{formatImputationAmount(awaitingTotal)}</span>
           </InfoRow>
@@ -593,7 +629,7 @@ async function SupplierImputationsTab({
         </dl>
       </Card>
 
-      <Card title="Imputations" description="Chaque imputation reste identifiable (§22, §23).">
+      <Card title="Imputations" description="Chaque imputation reste identifiable.">
         {imputations.length === 0 ? (
           <EmptyState
             icon={CarFront}
@@ -627,6 +663,121 @@ async function SupplierImputationsTab({
                     </Badge>
                   </div>
                 </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+/**
+ * Documents du fournisseur — DEC-042 §d.
+ *
+ * CE QU'IL RASSEMBLE : LES PIÈCES QUE LE SYSTÈME PRODUIT.
+ *
+ * ADIKOM PILOT ne conserve aucun fichier joint à une fiche de tiers — aucune
+ * table, aucun dépôt, aucune capacité ne l'a jamais prévu, et l'inventer ici
+ * serait ajouter une fonctionnalité que personne n'a demandée (CLAUDE.md §29).
+ *
+ * Ce que le système A, ce sont les documents qu'il PRODUIT : la fiche du
+ * fournisseur, et chacune de ses factures — dont le PDF détaille désormais le
+ * brut, les imputations et le net à payer, séparément (CLAUDE.md §16).
+ *
+ * Les justificatifs déposés sur une IMPUTATION restent sur la fiche de
+ * l'imputation : ils fondent une déduction précise, et les détacher de leur
+ * imputation leur ferait perdre ce qu'ils expliquent.
+ */
+async function SupplierDocumentsTab({
+  supplierId,
+  supplierLabel,
+  canDownload,
+  canPrint,
+  canViewInvoices,
+  canInvoiceDownload,
+  canInvoicePrint,
+}: {
+  supplierId: string
+  supplierLabel: string
+  canDownload: boolean
+  canPrint: boolean
+  canViewInvoices: boolean
+  canInvoiceDownload: boolean
+  canInvoicePrint: boolean
+}) {
+  const invoices =
+    canViewInvoices && (canInvoiceDownload || canInvoicePrint)
+      ? await listSupplierInvoicesForSupplier(supplierId, {
+          canSeeImputations: false,
+          canSeePayments: false,
+        })
+      : []
+
+  return (
+    <div className="space-y-5">
+      <Card
+        title="Fiche fournisseur"
+        description="Le document produit à partir de cette fiche, tel qu’il sera imprimé."
+      >
+        {canDownload || canPrint ? (
+          <DocumentToolbar
+            type="fournisseurs"
+            id={supplierId}
+            label={`fiche de ${supplierLabel}`}
+            canDownload={canDownload}
+            canPrint={canPrint}
+          />
+        ) : (
+          <p className="text-xs text-muted">
+            La production de documents relève de capacités distinctes de la consultation.
+          </p>
+        )}
+      </Card>
+
+      <Card
+        title="Factures"
+        description="Chaque facture de ce fournisseur, avec son brut, ses imputations et son net à payer."
+      >
+        {!canViewInvoices ? (
+          <p className="text-xs text-muted">
+            Les factures fournisseurs relèvent du module Facturation, que vos permissions
+            n’ouvrent pas.
+          </p>
+        ) : !canInvoiceDownload && !canInvoicePrint ? (
+          <p className="text-xs text-muted">
+            Produire ou imprimer une facture relève de capacités distinctes de la consultation.
+          </p>
+        ) : invoices.length === 0 ? (
+          <EmptyState
+            icon={FileText}
+            title="Aucune facture"
+            description="Ce fournisseur n’a encore adressé aucune facture."
+          />
+        ) : (
+          <ul className="space-y-4">
+            {invoices.map((invoice) => (
+              <li key={invoice.id} className="rounded-control border border-line p-4">
+                <div className="mb-3 min-w-0">
+                  <Link
+                    href={`/facturation/fournisseurs/${invoice.id}`}
+                    className="font-medium text-adikom-500 hover:underline tabular"
+                  >
+                    {invoice.invoiceNo}
+                  </Link>
+                  <p className="text-xs text-muted">
+                    {formatDate(invoice.invoiceDate)}
+                    {invoice.externalRef ? ` · ${invoice.externalRef}` : ''}
+                  </p>
+                </div>
+
+                <DocumentToolbar
+                  type="factures-fournisseurs"
+                  id={invoice.id}
+                  label={`facture ${invoice.invoiceNo}`}
+                  canDownload={canInvoiceDownload}
+                  canPrint={canInvoicePrint}
+                />
               </li>
             ))}
           </ul>

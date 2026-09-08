@@ -17,6 +17,9 @@ import {
   MISC_PAYMENT_STATUS_LABELS,
   MISC_PAYMENT_STATUS_ORDER,
   MISC_PAYMENT_STATUS_TONES,
+  MISC_PAYMENT_DIRECTIONS,
+  MISC_PAYMENT_DIRECTION_LABELS,
+  MISC_PAYMENT_DIRECTION_TONES,
 } from '@/features/misc-payments/constants'
 
 export const metadata: Metadata = { title: 'Paiements divers' }
@@ -26,7 +29,11 @@ export const metadata: Metadata = { title: 'Paiements divers' }
  *
  * « Des paiements qui ne sont pas directement rattachés à une facture client ou
  * fournisseur » (§43). Ce n'est pas une comptabilité générale : chaque ligne
- * reste un décaissement documenté, rattaché à un compte de trésorerie.
+ * reste un mouvement documenté, rattaché à un compte de trésorerie.
+ *
+ * DEUX SENS DEPUIS DEC-042 §b : encaissement ou décaissement. La liste le montre
+ * colonne par colonne, et se filtre sur lui — on cherche rarement les deux à la
+ * fois.
  */
 export default async function MiscPaymentsPage(
   props: PageProps<'/facturation/paiements-divers'>
@@ -40,6 +47,7 @@ export default async function MiscPaymentsPage(
   const filters = {
     search: read('q'),
     accountId: read('compte'),
+    direction: read('sens'),
     category: read('categorie'),
     status: read('statut'),
     from: read('du'),
@@ -65,7 +73,7 @@ export default async function MiscPaymentsPage(
     <>
       <PageHeader
         title="Paiements divers"
-        description="Décaissements sans facture rattachée : frais, petites dépenses, prestations ponctuelles."
+        description="Encaissements et décaissements sans facture rattachée : frais, petites dépenses, prestations ponctuelles."
         actions={
           canCreate && (
             <ButtonLink href="/facturation/paiements-divers/nouveau" icon={Plus}>
@@ -85,7 +93,7 @@ export default async function MiscPaymentsPage(
       {drafts > 0 && (
         <Notice tone="info" className="mb-5">
           {drafts === 1 ? 'Un paiement attend' : `${drafts} paiements attendent`} une{' '}
-          <strong>validation</strong>. Tant qu’ils sont en brouillon, aucun fonds n’est sorti.
+          <strong>validation</strong>. Tant qu’ils sont en brouillon, aucun fonds n’a bougé.
         </Notice>
       )}
 
@@ -121,6 +129,15 @@ export default async function MiscPaymentsPage(
               {MISC_PAYMENT_CATEGORY_ORDER.map((category) => (
                 <option key={category} value={category}>
                   {MISC_PAYMENT_CATEGORY_LABELS[category]}
+                </option>
+              ))}
+            </Select>
+
+            <Select name="sens" defaultValue={filters.direction} aria-label="Filtrer par sens">
+              <option value="">Les deux sens</option>
+              {MISC_PAYMENT_DIRECTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {MISC_PAYMENT_DIRECTION_LABELS[value]}
                 </option>
               ))}
             </Select>
@@ -169,7 +186,7 @@ export default async function MiscPaymentsPage(
             description={
               hasFilters
                 ? 'Modifiez ou réinitialisez les filtres pour élargir la recherche.'
-                : 'Aucun décaissement hors facture n’a encore été enregistré.'
+                : 'Aucun mouvement hors facture n’a encore été enregistré.'
             }
             action={
               hasFilters ? (
@@ -191,7 +208,8 @@ export default async function MiscPaymentsPage(
                   <tr className="border-b border-line bg-adikom-50 text-left">
                     <th className="px-5 py-3 font-medium text-ink">Numéro</th>
                     <th className="px-5 py-3 font-medium text-ink">Date</th>
-                    <th className="px-5 py-3 font-medium text-ink">Bénéficiaire</th>
+                    <th className="px-5 py-3 font-medium text-ink">Sens</th>
+                    <th className="px-5 py-3 font-medium text-ink">Tiers</th>
                     <th className="px-5 py-3 font-medium text-ink">Catégorie</th>
                     <th className="px-5 py-3 font-medium text-ink">Compte</th>
                     <th className="px-5 py-3 font-medium text-ink">Montant</th>
@@ -214,6 +232,11 @@ export default async function MiscPaymentsPage(
                       </td>
                       <td className="px-5 py-3 text-muted tabular">
                         {formatDate(payment.paidOn)}
+                      </td>
+                      <td className="px-5 py-3">
+                        <Badge tone={MISC_PAYMENT_DIRECTION_TONES[payment.direction]}>
+                          {MISC_PAYMENT_DIRECTION_LABELS[payment.direction]}
+                        </Badge>
                       </td>
                       <td className="px-5 py-3 text-ink">
                         {payment.beneficiary}
@@ -262,9 +285,14 @@ export default async function MiscPaymentsPage(
                         {formatDate(payment.paidOn)} · {payment.beneficiary}
                       </p>
                     </div>
-                    <Badge tone={MISC_PAYMENT_STATUS_TONES[payment.status]}>
-                      {MISC_PAYMENT_STATUS_LABELS[payment.status]}
-                    </Badge>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <Badge tone={MISC_PAYMENT_DIRECTION_TONES[payment.direction]}>
+                        {MISC_PAYMENT_DIRECTION_LABELS[payment.direction]}
+                      </Badge>
+                      <Badge tone={MISC_PAYMENT_STATUS_TONES[payment.status]}>
+                        {MISC_PAYMENT_STATUS_LABELS[payment.status]}
+                      </Badge>
+                    </div>
                   </div>
 
                   <p className="mt-2 text-xs text-muted">

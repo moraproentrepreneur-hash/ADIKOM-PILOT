@@ -79,7 +79,7 @@ export function TaskForm({
           label="Projet"
           name="projectId"
           error={errors.projectId}
-          hint="Facultatif : une tâche peut être indépendante (§10)."
+          hint="Facultatif : une tâche peut être indépendante."
         >
           <Select
             name="projectId"
@@ -112,7 +112,7 @@ export function TaskForm({
 
       <FormSection
         title="Responsable et échéance"
-        description="Qui s’en charge, et pour quand (§13, §14)."
+        description="Qui s’en charge, et pour quand."
       >
         <Field
           label="Responsable"

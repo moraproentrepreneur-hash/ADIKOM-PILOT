@@ -156,7 +156,7 @@ export default async function AppointmentsPage(props: PageProps<'/projets/rendez
             description={
               hasFilters
                 ? 'Modifiez ou réinitialisez les filtres pour élargir la recherche.'
-                : 'Un rendez-vous rattaché à un tiers conserve la continuité de la relation (§27).'
+                : 'Un rendez-vous rattaché à un tiers conserve la continuité de la relation.'
             }
             action={
               hasFilters ? (

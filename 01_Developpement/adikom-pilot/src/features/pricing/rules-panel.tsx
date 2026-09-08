@@ -25,14 +25,20 @@ export function PricingRulesPanel({
   rules,
   categories,
   vehicles,
+  clients,
   clientId,
   editable,
+  preferential = false,
 }: {
   rules: PricingRuleRow[]
   categories: Option[]
   vehicles: Option[]
+  /** Clients sélectionnables — seul l'onglet « Tarifs préférentiels » en fournit. */
+  clients?: Option[]
   clientId?: string
   editable: boolean
+  /** Vue « toutes conditions consenties » : le client se choisit à la saisie. */
+  preferential?: boolean
 }) {
   const [creating, setCreating] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -47,6 +53,7 @@ export function PricingRulesPanel({
         </h3>
         <PricingRuleForm
           clientId={clientId}
+          clients={preferential ? clients : undefined}
           categories={categories}
           vehicles={vehicles}
           rule={editingRule}
@@ -63,11 +70,19 @@ export function PricingRulesPanel({
     return (
       <EmptyState
         icon={Tags}
-        title={clientId ? 'Aucune condition tarifaire' : 'Aucun tarif standard'}
+        title={
+          clientId
+            ? 'Aucune condition tarifaire'
+            : preferential
+              ? 'Aucune condition consentie'
+              : 'Aucun tarif standard'
+        }
         description={
           clientId
             ? 'Ce client se voit appliquer le tarif standard. Ajoutez une condition pour lui accorder un tarif préférentiel.'
-            : 'Aucun tarif n’est configuré. Une location ne pourra pas être valorisée tant qu’aucun tarif n’existe.'
+            : preferential
+              ? 'Aucun client ne bénéficie de condition particulière : le tarif standard s’applique à tous.'
+              : 'Aucun tarif n’est configuré. Une location ne pourra pas être valorisée tant qu’aucun tarif n’existe.'
         }
         action={
           editable ? (
@@ -163,6 +178,9 @@ export function PricingRulesPanel({
         Lorsqu’un client dispose de plusieurs conditions, le tarif le plus spécifique s’applique :
         client + véhicule, puis client + catégorie, puis client, puis les tarifs standard. À
         spécificité égale, le plus récent l’emporte.
+        {preferential
+          ? ' Un tarif déjà verrouillé sur une réservation n’est pas atteint par une modification faite ici.'
+          : ''}
       </p>
     </div>
   )

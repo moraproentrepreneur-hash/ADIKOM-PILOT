@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Banknote, Pencil, Receipt } from 'lucide-react'
+import { ArrowLeft, Banknote, CalendarCheck, FileText, KeyRound, Pencil, Receipt } from 'lucide-react'
 
 import {
   Badge,
@@ -18,7 +18,7 @@ import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { DocumentToolbar } from '@/components/ui/document-toolbar'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
-import { formatDate, formatDateTime } from '@/lib/dates'
+import { formatDate, formatDateTime, formatPeriod } from '@/lib/dates'
 import {
   getClientDetail,
   STATUS_LABELS,
@@ -39,6 +39,19 @@ import {
 } from '@/features/customer-invoices/constants'
 import { listClientPayments } from '@/features/customer-payments/data'
 import { PAYMENT_METHOD_LABELS } from '@/features/treasury/constants'
+import {
+  displayStatus as displayReservationStatus,
+  listReservations,
+  STATUS_LABELS as RESERVATION_STATUS_LABELS,
+  STATUS_TONES as RESERVATION_STATUS_TONES,
+} from '@/features/reservations/data'
+import {
+  displayStatus as displayRentalStatus,
+  listRentals,
+  STATUS_LABELS as RENTAL_STATUS_LABELS,
+  STATUS_TONES as RENTAL_STATUS_TONES,
+} from '@/features/rentals/data'
+import { EntityHistoryPanel } from '@/features/audit/history-panel'
 
 export const metadata: Metadata = { title: 'Fiche client' }
 
@@ -63,6 +76,11 @@ export default async function ClientDetailPage(props: PageProps<'/tiers/clients/
     canPrint,
     canViewInvoices,
     canViewPayments,
+    canViewReservations,
+    canViewRentals,
+    canRentalDownload,
+    canRentalPrint,
+    canViewHistory,
   ] = await Promise.all([
     can(PERMISSIONS.CLIENTS_UPDATE),
     can(PERMISSIONS.CLIENTS_ARCHIVE),
@@ -74,25 +92,42 @@ export default async function ClientDetailPage(props: PageProps<'/tiers/clients/
     // Consulter un client n'est pas consulter ses créances : l'onglet ne
     // s'ouvre qu'à qui a le droit de voir les factures (DEC-024).
     can(PERMISSIONS.CUSTOMER_INVOICES_VIEW),
-    // Et voir ses créances n'est pas voir ce qu'il a versé : Workflow 08 §32
-    // veut l'historique des règlements, il relève de sa propre capacité.
+    // Et voir ses créances n'est pas voir ce qu'il a versé : l'historique des
+    // règlements relève de sa propre capacité.
     can(PERMISSIONS.CUSTOMER_PAYMENTS_VIEW),
+    /*
+     * Les onglets ouverts par cet ajustement (DEC-042 §d). Chacun suit la
+     * capacité de SON module : consulter un client n'ouvre ni ses réservations,
+     * ni ses contrats, ni le journal (DEC-024). Sans la capacité, l'onglet
+     * DISPARAÎT — l'afficher vide certifierait qu'il n'y a rien, alors qu'on ne
+     * fait que refuser la lecture (DEC-017).
+     */
+    can(PERMISSIONS.RESERVATIONS_VIEW),
+    can(PERMISSIONS.RENTALS_VIEW),
+    can(PERMISSIONS.RENTALS_DOWNLOAD),
+    can(PERMISSIONS.RENTALS_PRINT),
+    can(PERMISSIONS.AUDIT_VIEW),
   ])
 
-  const requestedTab = searchParams.onglet
-  const tab =
-    requestedTab === 'tarification' && canViewPricing
-      ? 'tarification'
-      : requestedTab === 'factures' && canViewInvoices
-        ? 'factures'
-        : requestedTab === 'paiements' && canViewPayments
-          ? 'paiements'
-          : 'informations'
+  /*
+   * L'onglet « Documents » rassemble les pièces que le système PRODUIT au sujet
+   * de ce client : sa fiche, et les documents contractuels de ses locations.
+   * Il n'a de sens que pour qui peut en obtenir au moins une (DEC-024).
+   */
+  const canViewDocuments =
+    canDownload || canPrint || (canViewRentals && (canRentalDownload || canRentalPrint))
+
+  const requestedTab = typeof searchParams.onglet === 'string' ? searchParams.onglet : 'informations'
 
   /*
-   * Organisation documentée de la fiche (03_Modules/04_Tiers.md §8.2). Les
-   * onglets relevant des étapes 2.3 à 2.5 sont affichés inertes : la fiche
-   * annonce ce qu'elle contiendra, sans laisser croire à un écran défaillant.
+   * Organisation documentée de la fiche (03_Modules/04_Tiers.md §8.2).
+   *
+   * PLUS AUCUN ONGLET « À VENIR » — DEC-042 §d.
+   *
+   * Les six onglets annoncés inertes sont ouverts sur des données réelles.
+   * Chacun suit la capacité de son module : sans elle, il disparaît plutôt que
+   * de s'afficher vide (DEC-017) — c'est la convention déjà retenue sur la
+   * fiche fournisseur.
    */
   const tabs: TabItem[] = [
     { key: 'informations', label: 'Informations', href: `/tiers/clients/${id}` },
@@ -105,8 +140,24 @@ export default async function ClientDetailPage(props: PageProps<'/tiers/clients/
           },
         ]
       : []),
-    { key: 'reservations', label: 'Réservations', planned: true },
-    { key: 'locations', label: 'Locations', planned: true },
+    ...(canViewReservations
+      ? [
+          {
+            key: 'reservations',
+            label: 'Réservations',
+            href: `/tiers/clients/${id}?onglet=reservations`,
+          },
+        ]
+      : []),
+    ...(canViewRentals
+      ? [
+          {
+            key: 'locations',
+            label: 'Locations',
+            href: `/tiers/clients/${id}?onglet=locations`,
+          },
+        ]
+      : []),
     ...(canViewInvoices
       ? [
           {
@@ -115,7 +166,7 @@ export default async function ClientDetailPage(props: PageProps<'/tiers/clients/
             href: `/tiers/clients/${id}?onglet=factures`,
           },
         ]
-      : [{ key: 'factures', label: 'Factures', planned: true }]),
+      : []),
     ...(canViewPayments
       ? [
           {
@@ -124,10 +175,30 @@ export default async function ClientDetailPage(props: PageProps<'/tiers/clients/
             href: `/tiers/clients/${id}?onglet=paiements`,
           },
         ]
-      : [{ key: 'paiements', label: 'Paiements', planned: true }]),
-    { key: 'documents', label: 'Documents', planned: true },
-    { key: 'historique', label: 'Historique', planned: true },
+      : []),
+    ...(canViewDocuments
+      ? [
+          {
+            key: 'documents',
+            label: 'Documents',
+            href: `/tiers/clients/${id}?onglet=documents`,
+          },
+        ]
+      : []),
+    ...(canViewHistory
+      ? [
+          {
+            key: 'historique',
+            label: 'Historique',
+            href: `/tiers/clients/${id}?onglet=historique`,
+          },
+        ]
+      : []),
   ]
+
+  const tab = tabs.some((item) => item.key === requestedTab && item.href)
+    ? requestedTab
+    : 'informations'
 
   return (
     <>
@@ -274,12 +345,268 @@ export default async function ClientDetailPage(props: PageProps<'/tiers/clients/
         )
       ) : tab === 'tarification' ? (
         <PricingTab clientId={id} />
+      ) : tab === 'reservations' ? (
+        <ReservationsTab clientId={id} />
+      ) : tab === 'locations' ? (
+        <RentalsTab clientId={id} />
       ) : tab === 'paiements' ? (
         <PaymentsTab clientId={id} />
+      ) : tab === 'documents' ? (
+        <DocumentsTab
+          clientId={id}
+          clientLabel={client.displayName}
+          canDownload={canDownload}
+          canPrint={canPrint}
+          canViewRentals={canViewRentals}
+          canRentalDownload={canRentalDownload}
+          canRentalPrint={canRentalPrint}
+        />
+      ) : tab === 'historique' ? (
+        <EntityHistoryPanel
+          entityId={id}
+          description="Ce qui a été enregistré sur cette fiche client, du plus récent au plus ancien."
+        />
       ) : (
         <InvoicesTab clientId={id} />
       )}
     </>
+  )
+}
+
+/**
+ * Réservations du client — DEC-042 §d.
+ *
+ * La même lecture que la liste des réservations, filtrée sur ce client :
+ * `listReservations({ clientId })`. Aucune requête propre n'est écrite ici, et
+ * le statut affiché est celui que la liste montre — « Expirée » compris, qui se
+ * dérive de la date de départ et n'est jamais écrit en base.
+ */
+async function ReservationsTab({ clientId }: { clientId: string }) {
+  const reservations = await listReservations({ clientId })
+
+  return (
+    <Card
+      title="Réservations"
+      description="Engagements pris pour ce client, du plus récent au plus ancien."
+    >
+      {reservations.length === 0 ? (
+        <EmptyState
+          icon={CalendarCheck}
+          title="Aucune réservation"
+          description="Ce client n’a encore fait l’objet d’aucune réservation."
+        />
+      ) : (
+        <ul className="divide-y divide-line">
+          {reservations.map((reservation) => {
+            const shown = displayReservationStatus(reservation.status, reservation.startsAt)
+
+            return (
+              <li key={reservation.id} className="flex flex-wrap items-center gap-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <Link
+                    href={`/location/reservations/${reservation.id}`}
+                    className="font-medium text-adikom-500 hover:underline tabular"
+                  >
+                    {reservation.reservationNo}
+                  </Link>
+                  <p className="text-xs text-muted">
+                    {formatPeriod(reservation.startsAt, reservation.endsAt)}
+                    {reservation.vehicleLabel ? ` · ${reservation.vehicleLabel}` : ''}
+                    {!reservation.vehicleLabel && reservation.categoryLabel
+                      ? ` · ${reservation.categoryLabel}`
+                      : ''}
+                  </p>
+                </div>
+                <Badge tone={RESERVATION_STATUS_TONES[shown]}>
+                  {RESERVATION_STATUS_LABELS[shown]}
+                </Badge>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+/**
+ * Locations du client — DEC-042 §d.
+ *
+ * « En retard » se dérive de l'heure de retour attendue, jamais d'un statut
+ * écrit (DEC-025 §a) : `displayStatus` est celui de la liste des locations, et
+ * la fiche client ne pose donc pas sa propre lecture du retard.
+ */
+async function RentalsTab({ clientId }: { clientId: string }) {
+  const rentals = await listRentals({ clientId })
+
+  return (
+    <Card
+      title="Locations"
+      description="Contrats de ce client, du plus récent au plus ancien."
+    >
+      {rentals.length === 0 ? (
+        <EmptyState
+          icon={KeyRound}
+          title="Aucune location"
+          description="Aucun contrat n’a encore été ouvert pour ce client. Une location naît d’une réservation confirmée."
+        />
+      ) : (
+        <ul className="divide-y divide-line">
+          {rentals.map((rental) => {
+            const shown = displayRentalStatus(rental.status, rental.expectedReturnAt)
+
+            return (
+              <li key={rental.id} className="flex flex-wrap items-center gap-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <Link
+                    href={`/location/locations/${rental.id}`}
+                    className="font-medium text-adikom-500 hover:underline tabular"
+                  >
+                    {rental.rentalNo}
+                  </Link>
+                  <p className="text-xs text-muted">
+                    {formatPeriod(rental.plannedFrom, rental.plannedTo)}
+                    {rental.vehicleLabel ? ` · ${rental.vehicleLabel}` : ''}
+                  </p>
+                </div>
+                <Badge tone={RENTAL_STATUS_TONES[shown]}>{RENTAL_STATUS_LABELS[shown]}</Badge>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Card>
+  )
+}
+
+/**
+ * Documents du client — DEC-042 §d.
+ *
+ * CE QU'IL RASSEMBLE : LES PIÈCES QUE LE SYSTÈME PRODUIT.
+ *
+ * ADIKOM PILOT ne conserve aucun fichier joint à une fiche de tiers — aucune
+ * table, aucun dépôt, aucune capacité ne l'a jamais prévu. Inventer ce stockage
+ * ici serait ajouter une fonctionnalité que personne n'a demandée (CLAUDE.md
+ * §29).
+ *
+ * Ce que le système A, en revanche, ce sont les documents qu'il PRODUIT au sujet
+ * de ce client : sa fiche, et les trois pièces contractuelles de chacune de ses
+ * locations. Cet onglet les rassemble en un seul endroit, plutôt que d'obliger à
+ * ouvrir chaque contrat pour retrouver un PV de retour.
+ *
+ * CHAQUE BOUTON SUIT SA CAPACITÉ.
+ *
+ * La fiche client relève de `parties.clients.download` / `.print` ; les pièces
+ * de location de `rental.rentals.download` / `.print` (DEC-024). Et la route
+ * documentaire refuse d'elle-même un mode non autorisé : la barre n'est qu'un
+ * confort.
+ */
+async function DocumentsTab({
+  clientId,
+  clientLabel,
+  canDownload,
+  canPrint,
+  canViewRentals,
+  canRentalDownload,
+  canRentalPrint,
+}: {
+  clientId: string
+  clientLabel: string
+  canDownload: boolean
+  canPrint: boolean
+  canViewRentals: boolean
+  canRentalDownload: boolean
+  canRentalPrint: boolean
+}) {
+  const rentals =
+    canViewRentals && (canRentalDownload || canRentalPrint)
+      ? await listRentals({ clientId })
+      : []
+
+  return (
+    <div className="space-y-5">
+      <Card
+        title="Fiche client"
+        description="Le document produit à partir de cette fiche, tel qu’il sera imprimé."
+      >
+        {canDownload || canPrint ? (
+          <DocumentToolbar
+            type="clients"
+            id={clientId}
+            label={`fiche de ${clientLabel}`}
+            canDownload={canDownload}
+            canPrint={canPrint}
+          />
+        ) : (
+          <p className="text-xs text-muted">
+            La production de documents relève de capacités distinctes de la consultation.
+          </p>
+        )}
+      </Card>
+
+      <Card
+        title="Pièces des locations"
+        description="Contrat, bon de départ et procès-verbal de retour de chaque contrat de ce client."
+      >
+        {!canViewRentals ? (
+          <p className="text-xs text-muted">
+            Les pièces contractuelles relèvent du module Locations, que vos permissions
+            n’ouvrent pas.
+          </p>
+        ) : !canRentalDownload && !canRentalPrint ? (
+          <p className="text-xs text-muted">
+            Produire ou imprimer une pièce de location relève de capacités distinctes de la
+            consultation.
+          </p>
+        ) : rentals.length === 0 ? (
+          <EmptyState
+            icon={FileText}
+            title="Aucune pièce"
+            description="Ce client n’a aucun contrat de location, et donc aucune pièce contractuelle."
+          />
+        ) : (
+          <ul className="space-y-4">
+            {rentals.map((rental) => (
+              <li key={rental.id} className="rounded-control border border-line p-4">
+                <div className="mb-3 min-w-0">
+                  <Link
+                    href={`/location/locations/${rental.id}`}
+                    className="font-medium text-adikom-500 hover:underline tabular"
+                  >
+                    {rental.rentalNo}
+                  </Link>
+                  <p className="text-xs text-muted">
+                    {formatPeriod(rental.plannedFrom, rental.plannedTo)}
+                    {rental.vehicleLabel ? ` · ${rental.vehicleLabel}` : ''}
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  {(
+                    [
+                      ['contrats', 'Contrat de location'],
+                      ['departs', 'Bon de départ'],
+                      ['retours', 'Procès-verbal de retour'],
+                    ] as const
+                  ).map(([type, label]) => (
+                    <div key={type} className="flex flex-col gap-2">
+                      <p className="text-xs font-medium text-ink">{label}</p>
+                      <DocumentToolbar
+                        type={type}
+                        id={rental.id}
+                        label={`${label.toLowerCase()} ${rental.rentalNo}`}
+                        canDownload={canRentalDownload}
+                        canPrint={canRentalPrint}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
   )
 }
 
@@ -313,13 +640,13 @@ async function InvoicesTab({ clientId }: { clientId: string }) {
     <div className="space-y-5">
       <Card
         title="Historique financier"
-        description="Calculé à partir des factures enregistrées (Workflow 07 §51)."
+        description="Calculé à partir des factures enregistrées."
       >
         <dl>
           <InfoRow label="Total facturé" hint="Factures émises, hors brouillons et annulations.">
             <span className="font-medium tabular">{formatAmount(billed)}</span>
           </InfoRow>
-          <InfoRow label="Total encaissé" hint="Règlements validés (Workflow 08 §32).">
+          <InfoRow label="Total encaissé" hint="Règlements validés.">
             {collected === null ? (
               <span className="text-muted">
                 Votre compte ne peut pas consulter les règlements.
@@ -343,7 +670,7 @@ async function InvoicesTab({ clientId }: { clientId: string }) {
         </dl>
       </Card>
 
-      <Card title="Factures" description="Créances d’ADIKOM sur ce client (§50).">
+      <Card title="Factures" description="Créances d’ADIKOM sur ce client.">
         {invoices.length === 0 ? (
           <EmptyState
             icon={Receipt}
@@ -420,10 +747,10 @@ async function PaymentsTab({ clientId }: { clientId: string }) {
     <div className="space-y-5">
       <Card
         title="Encaissements"
-        description="Argent réellement reçu de ce client (Workflow 08 §3, §32)."
+        description="Argent réellement reçu de ce client."
       >
         <dl>
-          <InfoRow label="Total encaissé" hint="Règlements validés seulement (§28).">
+          <InfoRow label="Total encaissé" hint="Règlements validés seulement.">
             <span className="font-medium tabular">{formatAmount(collected)}</span>
           </InfoRow>
           <InfoRow label="Nombre de règlements">

@@ -65,7 +65,7 @@ export function CreateImputationPanel({
     return (
       <Notice tone="warning">
         Ce véhicule n’est mis à disposition par aucun fournisseur : la dépense reste à la charge
-        d’ADIKOM (Workflow 06 §4). Aucune imputation n’est possible.
+        d’ADIKOM. Aucune imputation n’est possible.
       </Notice>
     )
   }
@@ -81,7 +81,7 @@ export function CreateImputationPanel({
         name="supplierId"
         required
         error={errors.supplierId}
-        hint="Le fournisseur du véhicule, ou l’un de ceux qui l’ont fourni (Workflow 06 §33)."
+        hint="Le fournisseur du véhicule, ou l’un de ceux qui l’ont fourni."
       >
         <Select name="supplierId" defaultValue={current?.id ?? ''} error={errors.supplierId}>
           <option value="">À désigner</option>
@@ -113,7 +113,7 @@ export function CreateImputationPanel({
         name="justification"
         required
         error={errors.justification}
-        hint="Pourquoi ce montant est-il déduit ? La réponse doit rester retrouvable (§11)."
+        hint="Pourquoi ce montant est-il déduit ? La réponse doit rester retrouvable."
       >
         <Textarea
           name="justification"
@@ -346,7 +346,7 @@ export function ImputationDocumentPanel({ imputationId }: { imputationId: string
 
       <p className="text-xs text-muted">
         Un justificatif ne s’attache qu’à une imputation <strong>en préparation</strong> : une
-        fois validée, la pièce qui la fonde ne change plus (§39).
+        fois validée, la pièce qui la fonde ne change plus.
       </p>
 
       <SubmitButton label="Joindre le justificatif" icon={Paperclip} pendingLabel="Dépôt…" />

@@ -202,7 +202,7 @@ export default async function TaskDetailPage(props: PageProps<'/projets/taches/[
 
         <div className="space-y-5">
           {canUpdate || canClose ? (
-            <Card title="Changer l’état" description="Le changement est journalisé (§31).">
+            <Card title="Changer l’état" description="Le changement est journalisé.">
               <TaskStatusForm
                 taskId={task.id}
                 allowed={TASK_NEXT_STATUSES[task.status]}

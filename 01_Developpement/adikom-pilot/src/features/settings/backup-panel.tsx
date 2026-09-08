@@ -411,7 +411,7 @@ function ResetCard() {
 
         <Notice tone="info">
           Les <strong>compteurs de numérotation</strong> ne reculent pas : un numéro déjà émis ne se
-          réutilise jamais (§16). Les prochaines fiches reprendront la série là où elle s’est
+          réutilise jamais. Les prochaines fiches reprendront la série là où elle s’est
           arrêtée.
         </Notice>
 

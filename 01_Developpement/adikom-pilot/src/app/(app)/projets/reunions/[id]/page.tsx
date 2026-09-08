@@ -211,7 +211,7 @@ export default async function MeetingDetailPage(props: PageProps<'/projets/reuni
 
               <InfoRow label="Lieu">{meeting.location ?? <Empty />}</InfoRow>
 
-              <InfoRow label="Responsable" hint="Qui la conduit (§21).">
+              <InfoRow label="Responsable" hint="Qui la conduit.">
                 {meeting.ownerLabel ?? <Empty />}
               </InfoRow>
 
@@ -240,7 +240,7 @@ export default async function MeetingDetailPage(props: PageProps<'/projets/reuni
 
           <Card
             title="Ordre du jour"
-            description="Les points à traiter (§21). La préparation se suit en tâches (§22)."
+            description="Les points à traiter. La préparation se suit en tâches."
           >
             {meeting.agenda ? (
               <p className="whitespace-pre-line text-sm text-ink">{meeting.agenda}</p>
@@ -261,7 +261,7 @@ export default async function MeetingDetailPage(props: PageProps<'/projets/reuni
             description={
               meeting.minutesRecordedAt
                 ? `Enregistré le ${formatDateTime(meeting.minutesRecordedAt)}.`
-                : 'Ce qui s’est dit, une fois la réunion tenue (§23).'
+                : 'Ce qui s’est dit, une fois la réunion tenue.'
             }
           >
             {canReport ? (
@@ -283,7 +283,7 @@ export default async function MeetingDetailPage(props: PageProps<'/projets/reuni
 
           <Card
             title="Décisions prises"
-            description="Ce que la réunion a arrêté (§24)."
+            description="Ce que la réunion a arrêté."
             actions={
               canCreateDecision && canReadDecisions ? (
                 <ButtonLink
@@ -332,7 +332,7 @@ export default async function MeetingDetailPage(props: PageProps<'/projets/reuni
 
           <Card
             title="Actions à effectuer"
-            description="Ce qu’il reste à faire à la suite de cette réunion (§25)."
+            description="Ce qu’il reste à faire à la suite de cette réunion."
           >
             {!canReadActions ? (
               <Notice tone="info">
@@ -392,7 +392,7 @@ export default async function MeetingDetailPage(props: PageProps<'/projets/reuni
         </div>
 
         <div className="space-y-5">
-          <Card title="Participants" description="Qui y prend part (§21).">
+          <Card title="Participants" description="Qui y prend part.">
             <ParticipantsPanel
               kind={{ field: 'meetingId', id: meeting.id }}
               ownerId={meeting.ownerId}
@@ -403,7 +403,7 @@ export default async function MeetingDetailPage(props: PageProps<'/projets/reuni
           </Card>
 
           {(canUpdate || canReport) && (
-            <Card title="Changer l’état" description="Le changement est journalisé (§31).">
+            <Card title="Changer l’état" description="Le changement est journalisé.">
               <MeetingStatusForm
                 meetingId={meeting.id}
                 allowed={PLANNING_NEXT_STATUSES[meeting.status]}

@@ -473,10 +473,20 @@ begin
     raise exception 'Une tâche terminée est annoncée en retard.';
   end if;
 
-  -- Aucune famille de projet autre que ces deux-là.
+  /*
+   * Aucune famille de projet en dehors des quatre déclarées.
+   *
+   * Le LOT 12 n'en connaissait que deux — les tâches. Le LOT 13 a ouvert le
+   * calendrier et ajouté « réunion à venir » et « rendez-vous à venir »
+   * (Module 03 §38, migration 059) : cette recette, écrite avant, ne les
+   * connaissait pas et échouait dès qu'une réunion de démonstration tombait
+   * dans la fenêtre de veille. La recette du LOT 13 les liste, elle, depuis
+   * toujours. La liste est alignée sur la sienne.
+   */
   if exists (
     select 1 from public.notifications_watch() w
-    where w.source = 'projects' and w.kind not in ('TASK_DUE', 'TASK_LATE')
+    where w.source = 'projects'
+      and w.kind not in ('TASK_DUE', 'TASK_LATE', 'MEETING_SOON', 'APPOINTMENT_SOON')
   ) then
     raise exception 'Une famille de notification a été inventée pour les projets.';
   end if;
@@ -682,8 +692,8 @@ declare
   v_tasks int;
 begin
   select count(*) into v_total from public.permissions;
-  if v_total <> 171 then
-    raise exception 'Catalogue attendu à 171 permissions, obtenu %.', v_total;
+  if v_total <> 178 then
+    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
   end if;
 
   select count(*) into v_tasks
@@ -707,7 +717,7 @@ begin
     raise exception 'Une capacité a été créée d''office pour les tâches (DEC-024).';
   end if;
 
-  raise notice '[OK] 20. Catalogue à 171 ; quatre capacités de tâches, aucune de plus.';
+  raise notice '[OK] 20. Catalogue à 178 ; quatre capacités de tâches, aucune de plus.';
 end $$;
 
 

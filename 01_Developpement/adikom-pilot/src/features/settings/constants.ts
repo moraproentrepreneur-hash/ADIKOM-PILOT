@@ -44,7 +44,7 @@ export const SECTIONS: readonly SectionDefinition[] = [
   {
     key: 'coordonnees',
     title: 'Coordonnées',
-    description: 'Où joindre ADIKOM. Reprises automatiquement dans les documents (§13).',
+    description: 'Où joindre ADIKOM. Reprises automatiquement dans les documents.',
     viewPermission: null,
     updatePermission: PERMISSIONS.SETTINGS_COMPANY_UPDATE,
   },
@@ -73,7 +73,7 @@ export const SECTIONS: readonly SectionDefinition[] = [
     key: 'banque',
     title: 'Banque',
     description:
-      'Coordonnées bancaires officielles destinées aux documents. Les comptes réellement mouvementés relèvent de Banques & Caisses (§37).',
+      'Coordonnées bancaires officielles destinées aux documents. Les comptes réellement mouvementés relèvent de Banques & Caisses.',
     viewPermission: PERMISSIONS.SETTINGS_BANK_VIEW,
     updatePermission: PERMISSIONS.SETTINGS_BANK_UPDATE,
   },

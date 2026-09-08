@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/primitives'
 import { cn } from '@/lib/utils'
 import { Notice } from '@/components/ui/feedback'
+import { DocumentToolbar } from '@/components/ui/document-toolbar'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate, formatDateTime, formatPeriod } from '@/lib/dates'
@@ -48,16 +49,21 @@ export default async function ReservationDetailPage(
   const justCreated = searchParams.cree === '1'
   const justSaved = searchParams.enregistre === '1'
 
-  const [canUpdate, canConfirm, canCancel, canSeeAmounts, canConvert] = await Promise.all([
-    can(PERMISSIONS.RESERVATIONS_UPDATE),
-    can(PERMISSIONS.RESERVATIONS_CONFIRM),
-    can(PERMISSIONS.RESERVATIONS_CANCEL),
-    // DEC-024 : le montant verrouillé est une information distincte.
-    can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
-    // Créer une location est une capacité du module Locations, pas des
-    // réservations : c'est bien `rental.rentals.create` qui l'ouvre.
-    can(PERMISSIONS.RENTALS_CREATE),
-  ])
+  const [canUpdate, canConfirm, canCancel, canSeeAmounts, canConvert, canDownload, canPrint] =
+    await Promise.all([
+      can(PERMISSIONS.RESERVATIONS_UPDATE),
+      can(PERMISSIONS.RESERVATIONS_CONFIRM),
+      can(PERMISSIONS.RESERVATIONS_CANCEL),
+      // DEC-024 : le montant verrouillé est une information distincte.
+      can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
+      // Créer une location est une capacité du module Locations, pas des
+      // réservations : c'est bien `rental.rentals.create` qui l'ouvre.
+      can(PERMISSIONS.RENTALS_CREATE),
+      // DEC-024 : produire la confirmation de réservation et l'imprimer sont
+      // deux capacités distinctes de la consultation (DEC-042 §c).
+      can(PERMISSIONS.RESERVATIONS_DOWNLOAD),
+      can(PERMISSIONS.RESERVATIONS_PRINT),
+    ])
 
   const shown = displayStatus(reservation.status, reservation.startsAt)
   const isOpen = reservation.status === 'DRAFT' || reservation.status === 'PENDING'
@@ -94,15 +100,24 @@ export default async function ReservationDetailPage(
         title={reservation.clientLabel}
         description={reservation.reservationNo}
         actions={
-          canUpdate && isOpen && !editing ? (
-            <Link
-              href={`/location/reservations/${id}?mode=edition`}
-              className={cn(BUTTON_BASE, BUTTON_TONES.secondary)}
-            >
-              <Pencil className="size-4" aria-hidden />
-              Modifier
-            </Link>
-          ) : undefined
+          <>
+            <DocumentToolbar
+              type="reservations"
+              id={id}
+              label={`confirmation ${reservation.reservationNo}`}
+              canDownload={canDownload}
+              canPrint={canPrint}
+            />
+            {canUpdate && isOpen && !editing && (
+              <Link
+                href={`/location/reservations/${id}?mode=edition`}
+                className={cn(BUTTON_BASE, BUTTON_TONES.secondary)}
+              >
+                <Pencil className="size-4" aria-hidden />
+                Modifier
+              </Link>
+            )}
+          </>
         }
       />
 

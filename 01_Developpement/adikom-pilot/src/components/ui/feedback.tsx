@@ -96,12 +96,15 @@ export function SubmitButton({
   icon: Icon,
   tone = 'primary',
   disabled,
+  className,
 }: {
   label: string
   pendingLabel?: string
   icon?: LucideIcon
   tone?: 'primary' | 'secondary' | 'danger'
   disabled?: boolean
+  /** Largeur ou marge propres au contexte — le reste vient du Design System. */
+  className?: string
 }) {
   const { pending } = useFormStatus()
 
@@ -109,7 +112,7 @@ export function SubmitButton({
     <button
       type="submit"
       disabled={pending || disabled}
-      className={cn(BUTTON_BASE, BUTTON_TONES[tone])}
+      className={cn(BUTTON_BASE, BUTTON_TONES[tone], className)}
     >
       {pending ? (
         <LoaderCircle className="size-4 shrink-0 animate-spin" aria-hidden />

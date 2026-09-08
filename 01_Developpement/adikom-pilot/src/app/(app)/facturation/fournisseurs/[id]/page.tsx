@@ -1,10 +1,21 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Banknote, BarChart3, Receipt } from 'lucide-react'
+import { ArrowLeft, Banknote, BarChart3, Pencil, Receipt } from 'lucide-react'
 
-import { Badge, Card, Empty, EmptyState, InfoRow, PageHeader } from '@/components/ui/primitives'
+import {
+  Badge,
+  BUTTON_BASE,
+  BUTTON_TONES,
+  Card,
+  Empty,
+  EmptyState,
+  InfoRow,
+  PageHeader,
+} from '@/components/ui/primitives'
+import { cn } from '@/lib/utils'
 import { Notice } from '@/components/ui/feedback'
+import { DocumentToolbar } from '@/components/ui/document-toolbar'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate, formatDateTime } from '@/lib/dates'
@@ -84,6 +95,8 @@ export default async function SupplierInvoiceDetailPage(
     canPay,
     canCancelPayment,
     canSeeAccounts,
+    canDownload,
+    canPrint,
   ] = await Promise.all([
     can(PERMISSIONS.SUPPLIER_INVOICES_UPDATE),
     can(PERMISSIONS.SUPPLIER_INVOICES_VALIDATE),
@@ -95,6 +108,10 @@ export default async function SupplierInvoiceDetailPage(
     can(PERMISSIONS.SUPPLIER_PAYMENTS_CREATE),
     can(PERMISSIONS.SUPPLIER_PAYMENTS_CANCEL),
     can(PERMISSIONS.ACCOUNTS_VIEW),
+    // DEC-024 : produire la facture en PDF et l'imprimer sont deux capacités
+    // distinctes de la consultation, attribuables séparément (DEC-042 §c).
+    can(PERMISSIONS.SUPPLIER_INVOICES_DOWNLOAD),
+    can(PERMISSIONS.SUPPLIER_INVOICES_PRINT),
   ])
 
   const invoice = await getSupplierInvoiceDetail(id, { canSeeImputations, canSeePayments })
@@ -143,11 +160,33 @@ export default async function SupplierInvoiceDetailPage(
         title={formatAmount(invoice.grossAmount) ?? '—'}
         description={`${invoice.invoiceNo} · ${invoice.supplierLabel ?? 'Fournisseur non communiqué'}`}
         actions={
-          <Badge tone={SUPPLIER_INVOICE_STATUS_TONES[shown]}>
-            {SUPPLIER_INVOICE_STATUS_LABELS[shown]}
-          </Badge>
+          <>
+            <DocumentToolbar
+              type="factures-fournisseurs"
+              id={id}
+              label={`facture ${invoice.invoiceNo}`}
+              canDownload={canDownload}
+              canPrint={canPrint}
+            />
+            {canUpdate && editable && (
+              <a
+                href="#modifier"
+                className={cn(BUTTON_BASE, BUTTON_TONES.secondary)}
+              >
+                <Pencil className="size-4 shrink-0" aria-hidden />
+                Modifier
+              </a>
+            )}
+          </>
         }
       />
+
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <Badge tone={SUPPLIER_INVOICE_STATUS_TONES[shown]}>
+          {SUPPLIER_INVOICE_STATUS_LABELS[shown]}
+        </Badge>
+        <span className="text-sm text-muted tabular">{invoice.invoiceNo}</span>
+      </div>
 
       {shown === 'OVERDUE' && (
         <Notice tone="warning" className="mb-5">
@@ -160,7 +199,7 @@ export default async function SupplierInvoiceDetailPage(
         <div className="space-y-5 lg:col-span-2">
           <Card
             title="Montants"
-            description="Brut, imputé et net à payer restent séparés (Module 07 §57)."
+            description="Brut, imputé et net à payer restent séparés."
           >
             <dl>
               <InfoRow label="Montant brut" hint="Somme des lignes de la facture.">
@@ -169,7 +208,7 @@ export default async function SupplierInvoiceDetailPage(
 
               <InfoRow
                 label="Total imputé"
-                hint="Imputations « Imputée » rattachées à cette facture (DEC-013)."
+                hint="Imputations « Imputée » rattachées à cette facture."
               >
                 {invoice.imputedAmount === null ? (
                   <span className="text-muted">
@@ -190,7 +229,7 @@ export default async function SupplierInvoiceDetailPage(
                 )}
               </InfoRow>
 
-              <InfoRow label="Total réglé" hint="Règlements validés (Workflow 08 §21).">
+              <InfoRow label="Total réglé" hint="Règlements validés.">
                 {invoice.paidAmount === null ? (
                   <span className="text-muted">
                     Votre compte ne peut pas consulter les règlements.
@@ -216,7 +255,7 @@ export default async function SupplierInvoiceDetailPage(
 
           <Card
             title="Lignes"
-            description="Leur somme fait le montant brut (Règles finance §8)."
+            description="Leur somme fait le montant brut."
           >
             {lines.length === 0 ? (
               <EmptyState
@@ -252,7 +291,7 @@ export default async function SupplierInvoiceDetailPage(
           {canSeeImputations ? (
             <Card
               title="Imputations portées par cette facture"
-              description="Pourquoi le montant dû a été réduit (Module 07 §39)."
+              description="Pourquoi le montant dû a été réduit."
             >
               {imputations === null || imputations.length === 0 ? (
                 <EmptyState
@@ -261,7 +300,7 @@ export default async function SupplierInvoiceDetailPage(
                   description={
                     acceptsImputations(invoice.status)
                       ? 'Une imputation se rattache depuis sa propre fiche, une fois validée.'
-                      : 'Seule une facture validée peut recevoir une imputation (Workflow 06 §32).'
+                      : 'Seule une facture validée peut recevoir une imputation.'
                   }
                 />
               ) : (
@@ -320,7 +359,7 @@ export default async function SupplierInvoiceDetailPage(
           {canSeePayments ? (
             <Card
               title="Règlements"
-              description="Décaissements réels, distincts des imputations (Module 07 §37)."
+              description="Décaissements réels, distincts des imputations."
             >
               {payments === null || payments.length === 0 ? (
                 <EmptyState
@@ -406,7 +445,7 @@ export default async function SupplierInvoiceDetailPage(
               <InfoRow label="Numéro ADIKOM">
                 <span className="tabular">{invoice.invoiceNo}</span>
               </InfoRow>
-              <InfoRow label="Référence du fournisseur" hint="Numéro porté par le document reçu (§30).">
+              <InfoRow label="Référence du fournisseur" hint="Numéro porté par le document reçu.">
                 {invoice.externalRef ?? <Empty />}
               </InfoRow>
               <InfoRow label="Fournisseur">
@@ -464,8 +503,13 @@ export default async function SupplierInvoiceDetailPage(
             </Card>
           )}
 
+          {/* L'ancre du bouton « Modifier » de la barre d'actions. */}
           {canUpdate && editable && (
-            <Card title="Modifier" description="Tant que la facture n’est pas validée.">
+            <Card
+              id="modifier"
+              title="Modifier"
+              description="Tant que la facture n’est pas validée."
+            >
               <EditSupplierInvoicePanel
                 invoiceId={id}
                 invoiceDate={invoice.invoiceDate}
@@ -483,7 +527,7 @@ export default async function SupplierInvoiceDetailPage(
           )}
 
           {canValidate && invoice.status === 'PENDING' && (
-            <Card title="Valider" description="Reconnaître la dette (Module 07 §31).">
+            <Card title="Valider" description="Reconnaître la dette.">
               <ValidateSupplierInvoicePanel invoiceId={id} />
             </Card>
           )}

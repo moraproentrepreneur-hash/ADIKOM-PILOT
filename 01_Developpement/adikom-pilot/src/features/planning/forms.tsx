@@ -176,14 +176,14 @@ export function MeetingForm({
 
         <OwnerField
           label="Responsable"
-          hint="Qui la conduit (§21)."
+          hint="Qui la conduit."
           users={users}
           defaultValue={meeting?.ownerId}
           error={errors.ownerId}
         />
       </FormSection>
 
-      <FormSection title="Quand et où" description="Date, heure, durée et lieu (§21).">
+      <FormSection title="Quand et où" description="Date, heure, durée et lieu.">
         <Field label="Date et heure" name="startsAt" required error={errors.startsAt}>
           <Input
             name="startsAt"
@@ -208,7 +208,7 @@ export function MeetingForm({
 
       <FormSection
         title="Ordre du jour"
-        description="Les points à traiter (§21). La préparation, elle, se suit en tâches (§22)."
+        description="Les points à traiter. La préparation, elle, se suit en tâches."
       >
         <Field label="Ordre du jour" name="agenda" error={errors.agenda} wide>
           <Textarea
@@ -299,7 +299,7 @@ export function AppointmentForm({
 
       <FormFeedback error={state.error} success={state.success} className="mb-5" />
 
-      <FormSection title="Rendez-vous" description="Son objet, et qui s’en charge (§26).">
+      <FormSection title="Rendez-vous" description="Son objet, et qui s’en charge.">
         <Field label="Objet" name="subject" required error={errors.subject} wide>
           <Input
             name="subject"
@@ -312,7 +312,7 @@ export function AppointmentForm({
 
         <OwnerField
           label="Responsable"
-          hint="Qui s’y rend (§26)."
+          hint="Qui s’y rend."
           users={users}
           defaultValue={appointment?.ownerId}
           error={errors.ownerId}
@@ -329,7 +329,7 @@ export function AppointmentForm({
         </Field>
       </FormSection>
 
-      <FormSection title="Quand" description="Date, heure et durée (§26).">
+      <FormSection title="Quand" description="Date, heure et durée.">
         <Field label="Date et heure" name="startsAt" required error={errors.startsAt}>
           <Input
             name="startsAt"
@@ -347,7 +347,7 @@ export function AppointmentForm({
 
       <FormSection
         title="Personne ou organisation concernée"
-        description="Le tiers enregistré (§27), et la personne rencontrée."
+        description="Le tiers enregistré, et la personne rencontrée."
       >
         <Field
           label="Type de tiers"
@@ -397,7 +397,7 @@ export function AppointmentForm({
           label="Personne rencontrée"
           name="externalContact"
           error={errors.externalContact}
-          hint="Un nom qui n’est pas enregistré dans ADIKOM PILOT (§26)."
+          hint="Un nom qui n’est pas enregistré dans ADIKOM PILOT."
           wide
         >
           <Input
@@ -410,7 +410,7 @@ export function AppointmentForm({
         </Field>
       </FormSection>
 
-      <FormSection title="Notes" description="Ce qu’il faut préparer, ou ce qui s’est dit (§26).">
+      <FormSection title="Notes" description="Ce qu’il faut préparer, ou ce qui s’est dit.">
         <Field label="Notes" name="notes" error={errors.notes} wide>
           <Textarea
             name="notes"
@@ -476,12 +476,12 @@ export function DecisionForm({
 
       <Notice tone="info" className="mb-5">
         Une décision enregistrée ne se supprime pas. Elle reste consultable pour que rien
-        d’important ne se perde dans des échanges informels (§24).
+        d’important ne se perde dans des échanges informels.
       </Notice>
 
       <FormSection
         title="La décision"
-        description="Ce qui a été décidé, et dans quel contexte (§24)."
+        description="Ce qui a été décidé, et dans quel contexte."
       >
         <Field label="Titre" name="title" required error={errors.title} wide>
           <Input
@@ -537,7 +537,7 @@ export function DecisionForm({
 
         <OwnerField
           label="Responsable"
-          hint="Qui répond de son application (§24)."
+          hint="Qui répond de son application."
           users={users}
           defaultValue={decision?.ownerId}
           error={errors.ownerId}

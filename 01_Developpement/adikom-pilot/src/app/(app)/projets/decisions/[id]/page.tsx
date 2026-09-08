@@ -136,7 +136,7 @@ export default async function DecisionDetailPage(props: PageProps<'/projets/deci
 
       {justCreated && (
         <Notice tone="success" className="mb-5">
-          La décision a été enregistrée. Ajoutez-y les actions qui en découlent (§25).
+          La décision a été enregistrée. Ajoutez-y les actions qui en découlent.
         </Notice>
       )}
       {justSaved && (
@@ -147,7 +147,7 @@ export default async function DecisionDetailPage(props: PageProps<'/projets/deci
 
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
-          <Card title="La décision" description="Telle qu’elle a été prise (§24).">
+          <Card title="La décision" description="Telle qu’elle a été prise.">
             <p className="whitespace-pre-line text-sm text-ink">{decision.statement}</p>
           </Card>
 
@@ -161,7 +161,7 @@ export default async function DecisionDetailPage(props: PageProps<'/projets/deci
 
           <Card
             title="Actions résultantes"
-            description="Ce qu’il faut faire pour que la décision s’applique (§25)."
+            description="Ce qu’il faut faire pour que la décision s’applique."
           >
             {!canReadActions ? (
               <Notice tone="info">
@@ -228,7 +228,7 @@ export default async function DecisionDetailPage(props: PageProps<'/projets/deci
                 <span className="tabular">{formatDate(decision.decidedOn)}</span>
               </InfoRow>
 
-              <InfoRow label="Responsable" hint="Qui répond de son application (§24).">
+              <InfoRow label="Responsable" hint="Qui répond de son application.">
                 {decision.ownerLabel ?? <Empty />}
               </InfoRow>
 
@@ -275,7 +275,7 @@ export default async function DecisionDetailPage(props: PageProps<'/projets/deci
           <Card title="Conservation">
             <p className="text-sm text-muted">
               Une décision enregistrée ne se supprime pas : elle reste consultable pour que rien
-              d’important ne se perde (§24, §48). Une correction est journalisée, avec l’état
+              d’important ne se perde. Une correction est journalisée, avec l’état
               précédent.
             </p>
           </Card>

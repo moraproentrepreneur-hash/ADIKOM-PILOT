@@ -21,10 +21,38 @@ import type { Period } from './period'
  *
  * AUCUNE RÈGLE MÉTIER N'EST RÉÉCRITE ICI.
  *
- * Les sommes viennent des fonctions de la migration 055, qui appellent
+ * Les sommes viennent des fonctions des migrations 055 et 076, qui appellent
  * elles-mêmes celles des factures. Les listes viennent des modules. Le tableau
  * de bord ne connaît donc aucune arithmétique qui lui soit propre : il
  * assemble, il n'invente pas.
+ *
+ * UN CHIFFRE AGRÉGÉ N'EST PAS UN ACCÈS AU MODULE — DEC-042 §a
+ *
+ * C'est le changement du 08/09/2026, et c'est une décision métier.
+ *
+ * Jusqu'ici, chaque indicateur exigeait la capacité du module qu'il résume :
+ * sans `rental.rentals.view`, la carte « Retours en retard » affichait « Non
+ * accessible » au lieu d'un nombre. ADIKOM a tranché : le tableau de bord est
+ * une vue de pilotage GÉNÉRAL. Un collaborateur qui n'ouvre pas le module
+ * Locations peut avoir besoin de savoir qu'il existe trois retours en retard,
+ * pour en informer la personne qui en répond.
+ *
+ * La distinction qui rend cela sûr tient en une ligne :
+ *
+ *   VOIR UN NOMBRE AGRÉGÉ    ≠    ACCÉDER AUX DONNÉES DU MODULE
+ *
+ * Les fonctions de la migration 076 ne rendent que des NOMBRES, et exigent
+ * `dashboard.view` — plus `dashboard.fleet.view` ou `dashboard.financial.view`
+ * selon la section. Elles ne rendent jamais une ligne, un nom, une
+ * immatriculation.
+ *
+ * CE QUI RESTE GOUVERNÉ PAR LA CAPACITÉ DU MODULE
+ *
+ * Tout ce qui NOMME : la liste des retards (client, véhicule, référence), les
+ * échéances de documents (véhicule, pièce), la liste des comptes financiers
+ * (libellé, banque, solde individuel). Ces trois-là passent toujours par la
+ * capacité de leur module, sous RLS, et l'écran continue de dire ce qu'il ne
+ * peut pas montrer.
  *
  * TROIS RÉPONSES, JAMAIS DEUX — Module 01 §25, §26, §27
  *
@@ -32,10 +60,9 @@ import type { Period } from './period'
  *   `denied`  la capacité manque, et l'écran le DIT ;
  *   `error`   la donnée n'a pas pu être chargée, et l'écran le dit aussi.
  *
- * Un zéro ne dit aucune de ces trois choses. « 0 facture impayée » est une
- * bonne nouvelle ; « je n'ai pas le droit de compter les factures » n'en est
- * pas une (DEC-017). Et §26 l'ajoute : le système « ne doit pas afficher de
- * données inventées pour masquer une erreur de chargement ».
+ * Un zéro ne dit aucune de ces trois choses (DEC-017). Le refus reste donc
+ * possible — il ne frappe simplement plus un utilisateur au seul motif qu'il
+ * n'ouvre pas le module d'origine.
  *
  * POURQUOI CHAQUE INDICATEUR EST ISOLÉ
  *
@@ -50,13 +77,10 @@ import type { Period } from './period'
 /* -------------------------------------------------------------------------- */
 
 /*
- * `Figure` et ses deux outils vivent désormais dans `@/lib/pilotage/figure` :
- * les statistiques et les rapports de facturation (LOT 11) posent la même
- * question — un chiffre, un refus nommé, ou un échec dit — et la recopier en
- * aurait fait deux vérités (CLAUDE.md §37).
- *
- * Le type reste réexporté ici : c'est sous ce nom que l'écran du tableau de
- * bord le connaît depuis le LOT 9.
+ * `Figure` et ses deux outils vivent dans `@/lib/pilotage/figure` : les
+ * statistiques et les rapports de facturation posent la même question — un
+ * chiffre, un refus nommé, ou un échec dit — et la recopier en aurait fait deux
+ * vérités (CLAUDE.md §37).
  */
 export type { Figure }
 
@@ -67,10 +91,10 @@ const attempt = <T,>(scope: string, read: () => Promise<T>) =>
 /**
  * Un indicateur : d'abord les capacités, ensuite seulement la lecture.
  *
- * Les fonctions de la migration 055 REFUSENT lorsqu'une capacité manque — c'est
- * la garantie serveur, et elle reste seule maîtresse. Vérifier avant d'appeler
- * n'y ajoute aucune sécurité : cela permet seulement de DIRE laquelle manque,
- * au lieu d'afficher une erreur de chargement pour un refus de droit.
+ * Les fonctions du pilotage REFUSENT lorsqu'une capacité manque — c'est la
+ * garantie serveur, et elle reste seule maîtresse. Vérifier avant d'appeler n'y
+ * ajoute aucune sécurité : cela permet seulement de DIRE laquelle manque, au
+ * lieu d'afficher une erreur de chargement pour un refus de droit.
  */
 const gated = <T,>(scope: string, codes: PermissionCode[], read: () => Promise<T>) =>
   gatedIn(`tableau de bord · ${scope}`, codes, read)
@@ -104,17 +128,11 @@ export type Outstanding = {
   overdueAmount: number
 }
 
-export type Treasury = {
-  accounts: FinancialAccount[]
-  /** Σ des soldes. Tous sont lisibles, sinon l'indicateur entier est refusé. */
-  total: number
-}
-
 export type Activity = {
-  clients: Figure<number>
-  reservations: Figure<number>
-  rentals: Figure<number>
-  invoices: Figure<number>
+  clients: number
+  reservations: number
+  rentals: number
+  invoices: number
 }
 
 export type Dashboard = {
@@ -126,8 +144,16 @@ export type Dashboard = {
   collected: Figure<number>
   receivables: Figure<Outstanding>
   payables: Figure<Outstanding>
-  treasury: Figure<Treasury>
-  activity: Activity
+  /** Σ des soldes des comptes actifs — un total, jamais une liste. */
+  treasuryTotal: Figure<number>
+  /**
+   * Le DÉTAIL par compte : libellé, nature, solde individuel.
+   *
+   * Une liste nomme. Elle reste donc gouvernée par les capacités de Banques &
+   * Caisses, contrairement au total qui les résume (DEC-042 §a).
+   */
+  treasuryAccounts: Figure<FinancialAccount[]>
+  activity: Figure<Activity>
   lateRentals: Figure<RentalListItem[]>
   expiringDocuments: Figure<ExpiringDocument[]>
   maintenanceRunning: Figure<number>
@@ -157,29 +183,6 @@ const EMPTY_FLEET: FleetOverview = {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Comptages simples — sous RLS, et jamais sans sa capacité                   */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Un comptage exact, sans transporter une seule ligne.
- *
- * `head: true` ne renvoie que le nombre. Sous RLS, il vaut 0 pour qui n'a pas
- * le droit de lire la table — raison pour laquelle il n'est jamais appelé sans
- * que la capacité ait été vérifiée par `gated`.
- */
-async function countRows(
-  table: string,
-  build: (
-    query: ReturnType<Awaited<ReturnType<typeof createSupabaseServerClient>>['from']>
-  ) => PromiseLike<{ count: number | null; error: { message: string } | null }>
-): Promise<number> {
-  const supabase = await createSupabaseServerClient()
-  const { count, error } = await build(supabase.from(table))
-  if (error) throw new Error(`${table} : ${error.message}`)
-  return count ?? 0
-}
-
-/* -------------------------------------------------------------------------- */
 /*  Le tableau de bord                                                         */
 /* -------------------------------------------------------------------------- */
 
@@ -187,18 +190,11 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
   const supabase = await createSupabaseServerClient()
 
   const {
+    DASHBOARD_VIEW,
     DASHBOARD_FINANCIAL_VIEW,
     DASHBOARD_FLEET_VIEW,
     RENTALS_VIEW,
-    RESERVATIONS_VIEW,
     FLEET_VIEW,
-    MAINTENANCE_VIEW,
-    CLIENTS_VIEW,
-    CUSTOMER_INVOICES_VIEW,
-    CUSTOMER_PAYMENTS_VIEW,
-    SUPPLIER_INVOICES_VIEW,
-    SUPPLIER_PAYMENTS_VIEW,
-    IMPUTATIONS_VIEW,
     ACCOUNTS_VIEW,
     BALANCES_VIEW,
     ENTRIES_VIEW,
@@ -219,7 +215,8 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
     collected,
     receivables,
     payables,
-    treasury,
+    treasuryTotal,
+    treasuryAccounts,
     activity,
     lateRentals,
     expiringDocuments,
@@ -227,7 +224,7 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
     unreadNotifications,
     quickActions,
   ] = await Promise.all([
-    gated<Operations>('exploitation', [RENTALS_VIEW], async () => {
+    gated<Operations>('exploitation', [DASHBOARD_VIEW], async () => {
       const { data, error } = await supabase.rpc('dashboard_operations')
       if (error) throw new Error(error.message)
       const row = (data as RawOperations[] | null)?.[0]
@@ -241,7 +238,7 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
       }
     }),
 
-    gated<Reservations>('réservations', [RESERVATIONS_VIEW], async () => {
+    gated<Reservations>('réservations', [DASHBOARD_VIEW], async () => {
       const { data, error } = await supabase.rpc('dashboard_reservations', {
         p_days: UPCOMING_DAYS,
       })
@@ -253,7 +250,7 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
       }
     }),
 
-    gated<FleetOverview>('parc', [DASHBOARD_FLEET_VIEW, FLEET_VIEW], async () => {
+    gated<FleetOverview>('parc', [DASHBOARD_FLEET_VIEW], async () => {
       const { data, error } = await supabase.rpc('dashboard_fleet')
       if (error) throw new Error(error.message)
       const overview = { ...EMPTY_FLEET }
@@ -265,85 +262,80 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
       return overview
     }),
 
-    gated<number>(
-      'facturé',
-      [DASHBOARD_FINANCIAL_VIEW, CUSTOMER_INVOICES_VIEW],
-      async () => {
-        const { data, error } = await supabase.rpc('dashboard_customer_invoiced', {
-          p_from: period.from,
-          p_to: period.to,
-        })
-        if (error) throw new Error(error.message)
-        return Number(data ?? 0)
-      }
-    ),
-
-    gated<number>(
-      'encaissé',
-      [DASHBOARD_FINANCIAL_VIEW, CUSTOMER_PAYMENTS_VIEW],
-      async () => {
-        const { data, error } = await supabase.rpc('dashboard_customer_collected', {
-          p_from: period.from,
-          p_to: period.to,
-        })
-        if (error) throw new Error(error.message)
-        return Number(data ?? 0)
-      }
-    ),
-
-    gated<Outstanding>(
-      'créances',
-      [DASHBOARD_FINANCIAL_VIEW, CUSTOMER_INVOICES_VIEW, CUSTOMER_PAYMENTS_VIEW],
-      async () => {
-        const { data, error } = await supabase.rpc('dashboard_customer_receivables')
-        if (error) throw new Error(error.message)
-        return toOutstanding((data as RawOutstanding[] | null)?.[0])
-      }
-    ),
-
-    gated<Outstanding>(
-      'dettes fournisseurs',
-      [
-        DASHBOARD_FINANCIAL_VIEW,
-        SUPPLIER_INVOICES_VIEW,
-        IMPUTATIONS_VIEW,
-        SUPPLIER_PAYMENTS_VIEW,
-      ],
-      async () => {
-        const { data, error } = await supabase.rpc('dashboard_supplier_payables')
-        if (error) throw new Error(error.message)
-        return toOutstanding((data as RawOutstanding[] | null)?.[0])
-      }
-    ),
-
-    /*
-     * Les soldes ne passent pas par une fonction du LOT 9 : ils en ont déjà
-     * une, `financial_account_balance`, qui exige `balances.view` ET
-     * `entries.view` depuis la migration 050. La reproduire ici créerait une
-     * seconde vérité sur le solde d'un compte.
-     */
-    gated<Treasury>(
-      'trésorerie',
-      [DASHBOARD_FINANCIAL_VIEW, ACCOUNTS_VIEW, BALANCES_VIEW, ENTRIES_VIEW],
-      async () => {
-        const accounts = await listFinancialAccounts(
-          { status: 'ACTIVE' },
-          { canSeeBalances: true }
-        )
-        return {
-          accounts,
-          total: accounts.reduce((acc, account) => acc + (account.balance ?? 0), 0),
-        }
-      }
-    ),
-
-    loadActivity(period, {
-      clients: CLIENTS_VIEW,
-      reservations: RESERVATIONS_VIEW,
-      rentals: RENTALS_VIEW,
-      invoices: CUSTOMER_INVOICES_VIEW,
+    gated<number>('facturé', [DASHBOARD_FINANCIAL_VIEW], async () => {
+      const { data, error } = await supabase.rpc('dashboard_customer_invoiced', {
+        p_from: period.from,
+        p_to: period.to,
+      })
+      if (error) throw new Error(error.message)
+      return Number(data ?? 0)
     }),
 
+    gated<number>('encaissé', [DASHBOARD_FINANCIAL_VIEW], async () => {
+      const { data, error } = await supabase.rpc('dashboard_customer_collected', {
+        p_from: period.from,
+        p_to: period.to,
+      })
+      if (error) throw new Error(error.message)
+      return Number(data ?? 0)
+    }),
+
+    gated<Outstanding>('créances', [DASHBOARD_FINANCIAL_VIEW], async () => {
+      const { data, error } = await supabase.rpc('dashboard_customer_receivables')
+      if (error) throw new Error(error.message)
+      return toOutstanding((data as RawOutstanding[] | null)?.[0])
+    }),
+
+    gated<Outstanding>('dettes fournisseurs', [DASHBOARD_FINANCIAL_VIEW], async () => {
+      const { data, error } = await supabase.rpc('dashboard_supplier_payables')
+      if (error) throw new Error(error.message)
+      return toOutstanding((data as RawOutstanding[] | null)?.[0])
+    }),
+
+    /*
+     * Le TOTAL des soldes — un nombre, sous la capacité du pilotage.
+     *
+     * `dashboard_treasury_total` et `financial_account_balance` partagent la
+     * même arithmétique (`account_balance_formula`, migration 076) : le total
+     * du tableau de bord et le solde d'une fiche ne peuvent pas diverger.
+     */
+    gated<number>('trésorerie', [DASHBOARD_FINANCIAL_VIEW], async () => {
+      const { data, error } = await supabase.rpc('dashboard_treasury_total')
+      if (error) throw new Error(error.message)
+      return Number(data ?? 0)
+    }),
+
+    /*
+     * Le DÉTAIL par compte reste sous les trois capacités de Banques & Caisses :
+     * `financial_account_balance` les exige depuis la migration 050, et l'écran
+     * ne peut pas être moins exigeant que la base sans mentir sur le motif.
+     */
+    gated<FinancialAccount[]>(
+      'comptes financiers',
+      [ACCOUNTS_VIEW, BALANCES_VIEW, ENTRIES_VIEW],
+      () => listFinancialAccounts({ status: 'ACTIVE' }, { canSeeBalances: true })
+    ),
+
+    gated<Activity>('activité', [DASHBOARD_VIEW], async () => {
+      const { data, error } = await supabase.rpc('dashboard_activity', {
+        p_from: period.from,
+        p_to: period.to,
+      })
+      if (error) throw new Error(error.message)
+      const row = (data as RawActivity[] | null)?.[0]
+      return {
+        clients: row?.clients ?? 0,
+        reservations: row?.reservations ?? 0,
+        rentals: row?.rentals ?? 0,
+        invoices: row?.invoices ?? 0,
+      }
+    }),
+
+    /*
+     * La liste NOMINATIVE des retards — client, véhicule, référence de contrat.
+     * Elle nomme : elle reste sous `rental.rentals.view`, sous RLS. Le NOMBRE de
+     * retards, lui, figure dans `operations.late` et s'affiche toujours.
+     */
     gated<RentalListItem[]>('retards', [RENTALS_VIEW], async () => {
       const rows = await listRentals({ status: 'LATE' })
       return rows
@@ -370,21 +362,20 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
       )
     })(),
 
-    gated<number>('maintenances', [MAINTENANCE_VIEW], () =>
-      countRows('vehicle_maintenances', (query) =>
-        query
-          .select('id', { count: 'exact', head: true })
-          .in('status', ['PLANNED', 'TO_DIAGNOSE', 'IN_PROGRESS', 'ON_HOLD'])
-      )
-    ),
+    gated<number>('maintenances', [DASHBOARD_VIEW], async () => {
+      const { data, error } = await supabase.rpc('dashboard_maintenance_open')
+      if (error) throw new Error(error.message)
+      return Number(data ?? 0)
+    }),
 
     /*
      * Le compteur du Centre de notifications — Module 02 §33.
      *
-     * « Le tableau de bord peut afficher le nombre de notifications non lues. »
-     * Il n'en calcule aucune : le chiffre vient de `notifications_summary()`
-     * (migration 056), la même fonction que le centre lui-même. Un second
-     * comptage produirait deux vérités sur le même nombre.
+     * Il garde SA capacité, et c'est le seul indicateur du tableau de bord dans
+     * ce cas. Une notification n'est pas une donnée d'entreprise : c'est le
+     * courrier PERSONNEL de l'utilisateur, calculé sur ses propres droits. Un
+     * compte qui ne peut pas ouvrir le Centre n'a aucune notification à
+     * compter — le chiffre n'existerait pour personne (DEC-042 §a).
      */
     gated<number>('notifications', [NOTIFICATIONS_VIEW], async () => {
       const { data, error } = await supabase.rpc('notifications_summary')
@@ -405,7 +396,8 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
     collected,
     receivables,
     payables,
-    treasury,
+    treasuryTotal,
+    treasuryAccounts,
     activity,
     lateRentals,
     expiringDocuments,
@@ -413,51 +405,6 @@ export async function loadDashboard(period: Period): Promise<Dashboard> {
     unreadNotifications,
     quickActions,
   }
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Activité de la période — Module 01 §6                                      */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Ce qui est NÉ pendant la période, à la date de création.
- *
- * C'est bien un flux, et non un stock : « nouveaux clients » compte des
- * créations, pas des clients actifs. Les bornes sont des jours civils ; la
- * borne haute est donc portée au lendemain, exclu, pour englober la journée
- * entière quel que soit le fuseau de l'horodatage.
- */
-async function loadActivity(
-  period: Period,
-  codes: {
-    clients: PermissionCode
-    reservations: PermissionCode
-    rentals: PermissionCode
-    invoices: PermissionCode
-  }
-): Promise<Activity> {
-  const from = `${period.from}T00:00:00+03:00`
-  const to = `${nextDay(period.to)}T00:00:00+03:00`
-
-  const created = (table: string) => () =>
-    countRows(table, (query) =>
-      query.select('id', { count: 'exact', head: true }).gte('created_at', from).lt('created_at', to)
-    )
-
-  const [clients, reservations, rentals, invoices] = await Promise.all([
-    gated<number>('nouveaux clients', [codes.clients], created('clients')),
-    gated<number>('nouvelles réservations', [codes.reservations], created('reservations')),
-    gated<number>('nouvelles locations', [codes.rentals], created('rentals')),
-    gated<number>('nouvelles factures', [codes.invoices], created('customer_invoices')),
-  ])
-
-  return { clients, reservations, rentals, invoices }
-}
-
-/** Le lendemain d'un jour civil `YYYY-MM-DD`, sans arithmétique de fuseau. */
-function nextDay(day: string): string {
-  const [year, month, date] = day.split('-').map(Number)
-  return new Date(Date.UTC(year, month - 1, date + 1)).toISOString().slice(0, 10)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -497,6 +444,13 @@ type RawReservations = {
 type RawFleet = {
   status: string
   vehicle_count: number
+}
+
+type RawActivity = {
+  clients: number
+  reservations: number
+  rentals: number
+  invoices: number
 }
 
 type RawOutstanding = {

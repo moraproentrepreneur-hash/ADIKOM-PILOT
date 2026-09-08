@@ -42,22 +42,50 @@ export const DEMO = 'DEMO'
  * la même chose, et la dit quel que soit le jeu de données — donc encore
  * demain.
  */
+/** Un décompte, réessayé : un aléa réseau ne vaut pas une empreinte fausse. */
+async function countMarked(admin, table, column, scope) {
+  let last = null
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const result = await admin
+      .from(table)
+      .select('id', { count: 'exact', head: true })
+      .like(column, '%DEMO%')
+
+    if (!result.error && typeof result.count === 'number') return result.count
+
+    last = result
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 500 * attempt))
+  }
+
+  throw new Error(
+    `L'empreinte du jeu de démonstration n'a pas pu être prise (${scope}) : ` +
+      `${last?.error?.message || 'décompte absent'}, après trois essais. ` +
+      'La recette ne démarre pas : elle ne saurait pas ce qu’elle a laissé.'
+  )
+}
+
 export async function demoFootprint(admin) {
   const [clients, vehicles, suppliers, supplierInvoices, imputations] = await Promise.all([
-    admin.from('clients').select('id', { count: 'exact', head: true }).like('legal_name', '%DEMO%'),
-    admin.from('vehicles').select('id', { count: 'exact', head: true }).like('model', '%DEMO%'),
-    admin.from('suppliers').select('id', { count: 'exact', head: true }).like('legal_name', '%DEMO%'),
-    admin.from('supplier_invoices').select('id', { count: 'exact', head: true }).like('notes', '%DEMO%'),
-    admin.from('imputations').select('id', { count: 'exact', head: true }).like('justification', '%DEMO%'),
+    countMarked(admin, 'clients', 'legal_name', 'clients'),
+    countMarked(admin, 'vehicles', 'model', 'véhicules'),
+    countMarked(admin, 'suppliers', 'legal_name', 'fournisseurs'),
+    countMarked(admin, 'supplier_invoices', 'notes', 'factures fournisseurs'),
+    countMarked(admin, 'imputations', 'justification', 'imputations'),
   ])
 
-  return {
-    clients: clients.count ?? 0,
-    vehicles: vehicles.count ?? 0,
-    suppliers: suppliers.count ?? 0,
-    supplierInvoices: supplierInvoices.count ?? 0,
-    imputations: imputations.count ?? 0,
-  }
+  /*
+   * UNE EMPREINTE QUI N'A PAS PU ÊTRE PRISE N'EST PAS UNE EMPREINTE DE ZÉRO.
+   *
+   * Un décompte peut échouer — un aléa réseau suffit —, et `count` revient
+   * alors `null`. Ramené à 0 en silence, il faisait échouer la recette à la
+   * comparaison FINALE, plusieurs minutes plus tard, sous un intitulé qui
+   * accuse la fonctionnalité éprouvée : « les clients DEMO sont intacts —
+   * 6 / 0 au départ ». Le défaut était ailleurs, et il était ici.
+   *
+   * `countMarked` réessaie, puis échoue TOUT DE SUITE en nommant sa cause.
+   */
+  return { clients, vehicles, suppliers, supplierInvoices, imputations }
 }
 
 /**

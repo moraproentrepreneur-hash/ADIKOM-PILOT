@@ -588,12 +588,23 @@ async function main() {
 
       await page.fill('input[name="newEnd"]', localTarget)
       await submitForm(page, 'Prolonger la location')
-      await page.waitForTimeout(3000)
 
-      check(
-        (await page.getByText('déjà engagée', { exact: false }).count()) >= 1,
-        'L’utilisateur lit une cause, pas une indisponibilité muette'
-      )
+      /*
+       * ATTENDRE LE MESSAGE, NON UN DÉLAI.
+       *
+       * Trois secondes suffisent sur une machine reposée et pas sur une autre :
+       * la recette échouait alors sur « l'utilisateur lit une cause », alors que
+       * la cause s'affichait un instant plus tard. Le motif est guetté jusqu'à
+       * son apparition, et l'attente ne dure jamais plus qu'il ne faut.
+       */
+      const refus = await page
+        .getByText('déjà engagée', { exact: false })
+        .first()
+        .waitFor({ state: 'visible', timeout: 30000 })
+        .then(() => true)
+        .catch(() => false)
+
+      check(refus, 'L’utilisateur lit une cause, pas une indisponibilité muette')
 
       // Libérer le blocage : la prolongation adjacente redevient possible.
       await admin

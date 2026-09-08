@@ -139,9 +139,9 @@ export function LogoPanel({
 
         <Notice tone="info">
           Les documents générés (factures, contrats) emploient le{' '}
-          <strong>fichier officiel embarqué</strong> dans l’application, et non ce logo. Le
-          `Module 09` §6 prévoit explicitement cet usage « lorsque cette fonctionnalité sera
-          développée ».
+          <strong>fichier officiel embarqué</strong> dans l’application, et non ce logo. Ce
+          logo sert à l’identité visuelle de l’interface ; son emploi dans les documents est
+          prévu pour une étape ultérieure.
         </Notice>
       </div>
     </Card>

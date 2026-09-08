@@ -212,6 +212,17 @@ export type ProjectFilters = {
   status?: string
   priority?: string
   ownerId?: string
+  /**
+   * Le TIERS concerné — un projet peut porter sur un client, un fournisseur ou
+   * un partenaire (§28). Les trois voies sont exclusives : un projet ne se
+   * rattache qu'à un seul tiers.
+   *
+   * C'est ce qui permet à la fiche d'un partenaire de montrer ce qui se fait
+   * avec lui, sans qu'aucun rattachement nouveau soit inventé (DEC-042 §d).
+   */
+  clientId?: string
+  supplierId?: string
+  partnerId?: string
   /** Les projets rangés restent consultables, mais ne s'affichent qu'à la demande (§48). */
   archived?: boolean
 }
@@ -229,6 +240,9 @@ export async function listProjects(filters: ProjectFilters = {}): Promise<Projec
   if (filters.status) query = query.eq('status', filters.status)
   if (filters.priority) query = query.eq('priority', filters.priority)
   if (filters.ownerId) query = query.eq('owner_id', filters.ownerId)
+  if (filters.clientId) query = query.eq('client_id', filters.clientId)
+  if (filters.supplierId) query = query.eq('supplier_id', filters.supplierId)
+  if (filters.partnerId) query = query.eq('partner_id', filters.partnerId)
   query = query.eq('is_archived', filters.archived === true)
 
   const { data, error } = await query

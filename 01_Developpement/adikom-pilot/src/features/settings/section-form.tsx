@@ -207,7 +207,7 @@ export function PreferencesSection({
             <p className="mt-1">
               Ce changement s’applique aux <strong>nouveaux</strong> documents et opérations. Les
               montants déjà enregistrés ne sont pas convertis et conservent leur contexte
-              d’origine (§46, §57).
+              d’origine.
             </p>
             <label className="mt-3 flex items-start gap-2.5 text-sm">
               <input

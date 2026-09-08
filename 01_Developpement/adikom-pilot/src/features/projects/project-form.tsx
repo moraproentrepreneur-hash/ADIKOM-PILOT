@@ -137,7 +137,7 @@ export function ProjectForm({
           hint={
             users.length <= 1
               ? 'La liste des utilisateurs n’est pas accessible avec vos droits (users.users.view).'
-              : 'La personne chargée de suivre l’avancement général (§9).'
+              : 'La personne chargée de suivre l’avancement général.'
           }
         >
           <Select name="ownerId" defaultValue={project?.ownerId ?? ''} error={errors.ownerId}>
@@ -155,7 +155,7 @@ export function ProjectForm({
           label="Priorité"
           name="priority"
           error={errors.priority}
-          hint="Tout n’est pas urgent : la priorité ne sert qu’à distinguer (§8)."
+          hint="Tout n’est pas urgent : la priorité ne sert qu’à distinguer."
         >
           <Select name="priority" defaultValue={project?.priority ?? 'NORMAL'} error={errors.priority}>
             {PRIORITIES.map((value) => (
@@ -189,7 +189,7 @@ export function ProjectForm({
 
       <FormSection
         title="Tiers concerné"
-        description="Facultatif. Un projet peut concerner un client, un fournisseur ou un partenaire (§28)."
+        description="Facultatif. Un projet peut concerner un client, un fournisseur ou un partenaire."
       >
         {availableTypes.length === 0 ? (
           <div className="sm:col-span-2">

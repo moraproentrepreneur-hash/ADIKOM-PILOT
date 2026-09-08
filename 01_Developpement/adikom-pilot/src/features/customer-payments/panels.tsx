@@ -87,7 +87,7 @@ export function RecordCustomerPaymentPanel({
         name="accountId"
         required
         error={errors.accountId}
-        hint="Banque ou caisse où entre l’argent (Workflow 08 §13, §46)."
+        hint="Banque ou caisse où entre l’argent."
       >
         <Select name="accountId" defaultValue="" error={errors.accountId}>
           <option value="">À désigner</option>
@@ -119,7 +119,7 @@ export function RecordCustomerPaymentPanel({
           name="receivedOn"
           required
           error={errors.receivedOn}
-          hint="Date réelle de l’encaissement, distincte de celle de la facture (§11)."
+          hint="Date réelle de l’encaissement, distincte de celle de la facture."
         >
           <Input name="receivedOn" type="date" defaultValue={today} error={errors.receivedOn} />
         </Field>
@@ -137,7 +137,7 @@ export function RecordCustomerPaymentPanel({
         <Field
           label="Référence externe"
           name="externalRef"
-          hint="Numéro de virement, de chèque ou de bordereau (§16)."
+          hint="Numéro de virement, de chèque ou de bordereau."
         >
           <Input name="externalRef" placeholder="VIR-2026-0042" />
         </Field>

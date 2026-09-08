@@ -63,8 +63,8 @@ declare
 begin
   select count(*)::int into v_total from public.permissions;
 
-  if v_total <> 171 then
-    raise exception 'Le catalogue compte % capacités, 171 attendues.', v_total;
+  if v_total <> 178 then
+    raise exception 'Le catalogue compte % capacités, 178 attendues.', v_total;
   end if;
 
   select count(*)::int into v_lot
@@ -90,7 +90,7 @@ begin
     raise exception 'Une capacité a été créée pour une fonctionnalité que le lot ne livre pas.';
   end if;
 
-  raise notice '[OK] 1. Catalogue à 171 : le lot n''en crée aucune, et ses six existent.';
+  raise notice '[OK] 1. Catalogue à 178 : le lot n''en crée aucune, et ses six existent.';
 end $$;
 
 

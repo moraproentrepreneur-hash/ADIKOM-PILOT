@@ -136,7 +136,7 @@ export default async function ImputationDetailPage(
                 <span className="tabular">{imputation.imputationNo}</span>
               </InfoRow>
 
-              <InfoRow label="Montant imputé" hint="Montant effectivement imputé (§37).">
+              <InfoRow label="Montant imputé" hint="Montant effectivement imputé.">
                 <span className="font-medium tabular">{formatAmount(imputation.amount)}</span>
               </InfoRow>
 
@@ -150,7 +150,7 @@ export default async function ImputationDetailPage(
                 {IMPUTATION_STATUS_EFFECT[imputation.status]}
               </InfoRow>
 
-              <InfoRow label="Justification" hint="Pourquoi ce montant est déduit (§11).">
+              <InfoRow label="Justification" hint="Pourquoi ce montant est déduit.">
                 {imputation.justification}
               </InfoRow>
 
@@ -162,7 +162,7 @@ export default async function ImputationDetailPage(
 
           <Card
             title="Chaîne de traçabilité"
-            description="Imputation → Maintenance → Véhicule → Fournisseur (§34, §39)."
+            description="Imputation → Maintenance → Véhicule → Fournisseur."
           >
             <dl>
               <InfoRow label="Maintenance">
@@ -224,7 +224,7 @@ export default async function ImputationDetailPage(
               <InfoRow label="Facture fournisseur" hint="DEC-013 : sans elle, aucun montant dû n’est réduit.">
                 {imputation.supplierInvoiceId === null ? (
                   <span className="text-muted">
-                    Aucune — l’imputation est en attente de facture (Workflow 06 §31).
+                    Aucune — l’imputation est en attente de facture.
                   </span>
                 ) : imputation.supplierInvoiceNo === null ? (
                   <span className="text-muted">
@@ -242,7 +242,7 @@ export default async function ImputationDetailPage(
             </dl>
           </Card>
 
-          <Card title="Justificatifs" description="Pièces qui fondent la déduction (§35).">
+          <Card title="Justificatifs" description="Pièces qui fondent la déduction.">
             {documents.length === 0 ? (
               <EmptyState
                 icon={Paperclip}
@@ -295,12 +295,12 @@ export default async function ImputationDetailPage(
             </dl>
             <p className="mt-4 border-t border-line pt-4 text-xs text-muted">
               Qui a créé, qui a validé, qui a annulé : le journal d’audit conserve l’avant, l’après
-              et l’auteur de chaque écriture (§48, §50).
+              et l’auteur de chaque écriture.
             </p>
           </Card>
 
           {canUpdate && imputation.status === 'DRAFT' && (
-            <Card title="Modifier" description="Tant que l’imputation n’est pas validée (§38).">
+            <Card title="Modifier" description="Tant que l’imputation n’est pas validée.">
               <EditImputationPanel
                 imputationId={id}
                 amount={imputation.amount}
@@ -326,7 +326,7 @@ export default async function ImputationDetailPage(
           {canValidate && imputation.status === 'TO_VALIDATE' && (
             <Card
               title="Valider"
-              description="Contrôler et approuver la déduction (§16)."
+              description="Contrôler et approuver la déduction."
             >
               <ValidateImputationPanel imputationId={id} />
             </Card>
@@ -335,7 +335,7 @@ export default async function ImputationDetailPage(
           {canUpdate && awaiting && canSeeInvoices && (
             <Card
               title="Rattacher à une facture"
-              description="Le seul acte qui réduise un montant dû (DEC-013)."
+              description="Le seul acte qui réduise un montant dû."
             >
               <AttachImputationPanel
                 imputationId={id}
@@ -361,7 +361,7 @@ export default async function ImputationDetailPage(
           {canUpdate && imputation.status === 'IMPUTED' && imputation.supplierInvoiceId && (
             <Card
               title="Détacher de la facture"
-              description="Procédure contrôlée de correction (Workflow 06 §39)."
+              description="Procédure contrôlée de correction."
             >
               <DetachImputationPanel
                 imputationId={id}
@@ -371,7 +371,7 @@ export default async function ImputationDetailPage(
           )}
 
           {canCancel && isCancellable(imputation.status) && (
-            <Card title="Annuler" description="L’historique est conservé (§40).">
+            <Card title="Annuler" description="L’historique est conservé.">
               <CancelImputationPanel imputationId={id} />
             </Card>
           )}

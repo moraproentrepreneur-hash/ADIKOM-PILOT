@@ -113,13 +113,19 @@ export const PERMISSIONS = {
   RESERVATIONS_CONFIRM: 'rental.reservations.confirm',
   RESERVATIONS_CANCEL: 'rental.reservations.cancel',
   // DEC-024 : exporter n'est pas inclus dans « voir ».
-  //
-  // Pas de `.download` ni de `.print` ici : aucun document de réservation
-  // n'existe. Une réservation n'est pas une pièce remise au client — les
-  // documents contractuels sont rattachés à la LOCATION. Déclarer ces deux
-  // capacités laissait croire qu'on pouvait les attribuer ; elles ont été
-  // retirées du catalogue le 26/08/2026 (migration 037).
   RESERVATIONS_EXPORT: 'rental.reservations.export',
+  /*
+   * Ces deux capacités ont été retirées le 26/08/2026 (migration 037) faute de
+   * document à produire — une permission qui ne débloque rien ne s'attribue pas
+   * (CLAUDE.md §19 bis).
+   *
+   * ADIKOM a demandé cette pièce le 08/09/2026 (DEC-042 §c) : une CONFIRMATION
+   * DE RÉSERVATION, remise au client, portant l'engagement. Le motif du retrait
+   * tombe avec le fait qui le fondait ; les codes reviennent à l'identique,
+   * puisqu'ils n'ont jamais changé de sens (migration 078).
+   */
+  RESERVATIONS_DOWNLOAD: 'rental.reservations.download',
+  RESERVATIONS_PRINT: 'rental.reservations.print',
 
   RENTALS_VIEW: 'rental.rentals.view',
   RENTALS_CREATE: 'rental.rentals.create',
@@ -206,6 +212,13 @@ export const PERMISSIONS = {
   CUSTOMER_INVOICES_ISSUE: 'billing.customer_invoices.issue',
   CUSTOMER_INVOICES_CANCEL: 'billing.customer_invoices.cancel',
   CUSTOMER_INVOICES_EXPORT: 'billing.customer_invoices.export',
+  /*
+   * `print` existe depuis la migration 007 et attendait son document ;
+   * `download` l'accompagne depuis la migration 078 (DEC-042 §c). Les deux
+   * s'attribuent séparément : imprimer une facture au comptoir et en emporter
+   * le fichier ne sont pas le même geste.
+   */
+  CUSTOMER_INVOICES_DOWNLOAD: 'billing.customer_invoices.download',
   CUSTOMER_INVOICES_PRINT: 'billing.customer_invoices.print',
   CUSTOMER_PAYMENTS_VIEW: 'billing.customer_payments.view',
   CUSTOMER_PAYMENTS_CREATE: 'billing.customer_payments.create',
@@ -220,6 +233,8 @@ export const PERMISSIONS = {
   SUPPLIER_INVOICES_VALIDATE: 'billing.supplier_invoices.validate',
   SUPPLIER_INVOICES_CANCEL: 'billing.supplier_invoices.cancel',
   SUPPLIER_INVOICES_EXPORT: 'billing.supplier_invoices.export',
+  SUPPLIER_INVOICES_DOWNLOAD: 'billing.supplier_invoices.download',
+  SUPPLIER_INVOICES_PRINT: 'billing.supplier_invoices.print',
   SUPPLIER_PAYMENTS_VIEW: 'billing.supplier_payments.view',
   SUPPLIER_PAYMENTS_CREATE: 'billing.supplier_payments.create',
   SUPPLIER_PAYMENTS_CANCEL: 'billing.supplier_payments.cancel',
@@ -238,6 +253,13 @@ export const PERMISSIONS = {
   MISC_PAYMENTS_CREATE: 'billing.misc_payments.create',
   MISC_PAYMENTS_VALIDATE: 'billing.misc_payments.validate',
   MISC_PAYMENTS_CANCEL: 'billing.misc_payments.cancel',
+  /*
+   * Le reçu d'un paiement divers (DEC-042 §c). Le LOT 17 avait écarté toute
+   * capacité documentaire ici, faute de pièce à produire — elle existe
+   * désormais, et un encaissement divers appelle un reçu remis au payeur.
+   */
+  MISC_PAYMENTS_DOWNLOAD: 'billing.misc_payments.download',
+  MISC_PAYMENTS_PRINT: 'billing.misc_payments.print',
 
   // --- Utilisateurs & Groupes ------------------------------------------------
   USERS_VIEW: 'users.users.view',

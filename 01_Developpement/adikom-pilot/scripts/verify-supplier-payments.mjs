@@ -220,6 +220,34 @@ async function writeAsUser(account, url, anonKey, operation, supplierId, payment
 /*  Recette                                                                    */
 /* -------------------------------------------------------------------------- */
 
+/** Combien de fournisseurs porte le jeu de démonstration, à cet instant. */
+async function countDemoSuppliers(admin) {
+  const { count, error } = await admin
+    .from('suppliers')
+    .select('id', { count: 'exact', head: true })
+    .like('legal_name', 'FOURNISSEUR DEMO%')
+
+  if (error || typeof count !== 'number') {
+    throw new Error(`Empreinte des fournisseurs DEMO illisible : ${error?.message ?? 'absente'}.`)
+  }
+  return count
+}
+
+/** Combien de coordonnées de règlement y sont rattachées. */
+async function countDemoPaymentDetails(admin) {
+  const { data, error } = await admin
+    .from('supplier_payment_details')
+    .select('id, suppliers ( legal_name )')
+
+  if (error) {
+    throw new Error(`Empreinte des coordonnées DEMO illisible : ${error.message}.`)
+  }
+
+  return (data ?? []).filter((row) =>
+    String(row.suppliers?.legal_name ?? '').startsWith('FOURNISSEUR DEMO')
+  ).length
+}
+
 async function main() {
   loadEnvFile()
 
@@ -235,6 +263,22 @@ async function main() {
 
   const accounts = {}
   let supplierId = null
+
+  /*
+   * L'EMPREINTE DU JEU DE DÉMONSTRATION, PRISE AVANT TOUTE ÉCRITURE.
+   *
+   * Le contrôle final vérifiait « les TROIS fournisseurs DEMO » et « AUCUNE
+   * coordonnée de règlement sur un fournisseur DEMO ». Ni l'un ni l'autre
+   * n'était la règle : la règle est que la recette ne touche à rien qui ne lui
+   * appartienne. Les deux nombres ont cessé d'être vrais dès que la
+   * démonstration s'est étoffée — quatre fournisseurs, deux coordonnées —, et
+   * la recette échouait pour une raison qui n'était pas un défaut du SaaS.
+   *
+   * Une empreinte prise sur place dit la même chose, et la dit encore demain.
+   */
+  const demoSuppliers0 = await countDemoSuppliers(admin)
+  const demoDetails0 = await countDemoPaymentDetails(admin)
+
   const browser = await chromium.launch()
 
   try {
@@ -600,29 +644,18 @@ async function main() {
     console.log('DONNÉES DEMO\n')
 
     {
-      const { data: demo } = await admin
-        .from('suppliers')
-        .select('supplier_no, legal_name')
-        .like('legal_name', 'FOURNISSEUR DEMO%')
-        .order('supplier_no')
+      const demoSuppliers = await countDemoSuppliers(admin)
+      const demoDetails = await countDemoPaymentDetails(admin)
 
       check(
-        (demo ?? []).length === 3,
-        'Les trois fournisseurs DEMO sont intacts',
-        (demo ?? []).map((s) => s.supplier_no).join(', ')
+        demoSuppliers === demoSuppliers0,
+        'Les fournisseurs DEMO sont intacts',
+        `${demoSuppliers} / ${demoSuppliers0} au départ`
       )
-
-      const { data: demoPayments } = await admin
-        .from('supplier_payment_details')
-        .select('id, supplier_id, suppliers ( legal_name )')
-
-      const onDemo = (demoPayments ?? []).filter((p) =>
-        String(p.suppliers?.legal_name ?? '').startsWith('FOURNISSEUR DEMO')
-      )
-
       check(
-        onDemo.length === 0,
-        'Aucune coordonnée de règlement fictive sur les fournisseurs DEMO'
+        demoDetails === demoDetails0,
+        'Aucune coordonnée de règlement n’a été ajoutée ni retirée sur un fournisseur DEMO',
+        `${demoDetails} / ${demoDetails0} au départ`
       )
     }
   } finally {

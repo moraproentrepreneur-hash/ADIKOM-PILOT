@@ -135,7 +135,7 @@ export default async function MyItemsPage() {
       )}
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Card title="Mes tâches" description="Celles qui vous sont attribuées (§36).">
+        <Card title="Mes tâches" description="Celles qui vous sont attribuées.">
           {!access.tasks ? (
             <Notice tone="info">
               Vos tâches ne vous sont pas accessibles — permission{' '}
@@ -219,7 +219,7 @@ export default async function MyItemsPage() {
 
         <Card
           title="Mes réunions"
-          description="Celles que vous conduisez ou auxquelles vous êtes convoqué (§36)."
+          description="Celles que vous conduisez ou auxquelles vous êtes convoqué."
         >
           {!access.meetings ? (
             <Notice tone="info">
@@ -259,7 +259,7 @@ export default async function MyItemsPage() {
 
         <Card
           title="Mes rendez-vous"
-          description="Ceux dont vous êtes responsable ou auxquels vous participez (§36)."
+          description="Ceux dont vous êtes responsable ou auxquels vous participez."
         >
           {!access.appointments ? (
             <Notice tone="info">
@@ -299,7 +299,7 @@ export default async function MyItemsPage() {
 
         <Card
           title="Mes actions"
-          description="Ce qui vous a été confié à la suite d’une réunion ou d’une décision (§25)."
+          description="Ce qui vous a été confié à la suite d’une réunion ou d’une décision."
           className="lg:col-span-2"
         >
           {!access.actions ? (

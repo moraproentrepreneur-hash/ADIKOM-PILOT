@@ -623,17 +623,23 @@ async function main() {
         /Non accessible/.test(text),
         'Les montants sont annoncés inaccessibles, pas affichés à zéro'
       )
+
+      /*
+       * LE TOTAL EST REFUSÉ, LE DÉTAIL NE L'EST PAS — DEC-042 §a.
+       *
+       * Ce profil détient les trois capacités de Banques & Caisses : la LISTE
+       * des comptes lui est donc ouverte, avec leurs soldes. Ce qui lui manque,
+       * c'est la SYNTHÈSE du pilotage — et c'est elle, et elle seule, qui est
+       * annoncée inaccessible. La séparation posée par l'ajustement se lit
+       * exactement là.
+       */
       check(
-        !/Total disponible/.test(text),
-        'Aucun solde de trésorerie n’est totalisé'
+        /Total disponible/.test(text),
+        'La ligne du total existe, et porte le refus plutôt qu’un chiffre'
       )
       check(
         !/facture\(s\) client\(s\) en retard/.test(text),
         'Aucune alerte financière ne fuit par les alertes'
-      )
-      check(
-        /ne sont donc pas absentes : elles ne sont pas mesurées/.test(text),
-        'Et l’écran explique pourquoi certaines alertes manquent'
       )
       check(
         /retour\(s\) en retard/.test(text),
@@ -645,21 +651,85 @@ async function main() {
 
     /* ------------------------------------------------------------------ */
     console.log('\n──────────────────────────────────────────────────────────────')
-    console.log('9 — `dashboard.view` SEULE : LA PAGE EST FERMÉE, ET LE DIT (§33.12)\n')
+    console.log('9 — `dashboard.view` SEULE : LES CHIFFRES, PAS LES DÉTAILS (DEC-042 §a)\n')
 
     {
+      /*
+       * C'EST LE CONTRÔLE CENTRAL DE L'AJUSTEMENT DU 08/09/2026.
+       *
+       * Ce compte ne détient QUE `dashboard.view`. Il n'ouvre aucun module :
+       * ni les locations, ni les réservations, ni les clients, ni la
+       * facturation. Jusqu'ici, son tableau de bord n'affichait que des
+       * « Non accessible ».
+       *
+       * ADIKOM a tranché : les indicateurs AGRÉGÉS s'affichent. Un
+       * collaborateur doit pouvoir lire « 3 retours en retard » pour en
+       * informer la personne qui en répond.
+       *
+       * Ce que cette section éprouve, dans les deux sens :
+       *
+       *   · les CHIFFRES sont là — et ce sont de vrais chiffres, lus sur
+       *     l'ensemble des données, pas des zéros de RLS ;
+       *   · les DÉTAILS ne le sont pas — aucune référence de contrat, aucun
+       *     nom de client, aucun compte financier ne transparaît ;
+       *   · les capacités du PILOTAGE, elles, continuent de manquer et d'être
+       *     nommées : `dashboard.view` n'ouvre ni le parc ni la finance.
+       */
       const { context, page } = await signIn(browser, base, accounts.nu)
       const text = await mainText(page)
 
       check(
-        /Il n’est pas vide : il est fermé/.test(text),
-        'L’écran dit qu’il est fermé, et non que l’entreprise est vide'
+        /Activité de location/.test(text),
+        'Les indicateurs d’exploitation s’affichent sans `rental.rentals.view`'
+      )
+
+      // Un vrai chiffre, et non un refus : la carte porte sa valeur.
+      const running = await page
+        .locator('[data-kpi="Locations en cours"] [data-kpi-value]')
+        .count()
+      check(running === 1, 'La carte « Locations en cours » porte une valeur')
+
+      const late = await page
+        .locator('[data-kpi="Retours en retard"] [data-kpi-value]')
+        .first()
+        .getAttribute('data-kpi-value')
+      check(
+        Number(late) >= 1,
+        'Le retard créé par la recette est COMPTÉ, sans accès aux locations',
+        `${late} retard(s)`
+      )
+
+      const clients = await page
+        .locator('[data-kpi="Nouveaux clients"] [data-kpi-value]')
+        .count()
+      check(
+        clients === 1,
+        'L’activité de la période est comptée sans `parties.clients.view`'
+      )
+
+      /* --- ET RIEN DU DÉTAIL NE PASSE ---------------------------------- */
+      check(
+        !/LOC-\d/.test(text),
+        'Aucune référence de contrat n’apparaît : la liste des retards reste fermée'
       )
       check(
-        !/Total disponible/.test(text) && !/véhicule\(s\) au parc/.test(text),
-        'Aucun chiffre n’est affiché'
+        !new RegExp(MARK).test(text),
+        'Aucun nom de client ni de véhicule de recette ne transparaît'
       )
-      check(/Non accessible/.test(text), 'Chaque indicateur nomme ce qui lui manque')
+      check(
+        !/Total disponible/.test(text) || /Non accessible/.test(text),
+        'Le total de trésorerie n’est pas chiffré sans `dashboard.financial.view`'
+      )
+
+      /* --- LES CAPACITÉS DU PILOTAGE MANQUENT, ET SONT NOMMÉES --------- */
+      check(
+        /dashboard\.financial\.view/.test(text),
+        'La capacité financière manquante est nommée (DEC-017)'
+      )
+      check(
+        /dashboard\.fleet\.view/.test(text),
+        'La capacité du parc manquante est nommée : `dashboard.view` n’ouvre pas tout'
+      )
       check(
         !/Actions rapides/.test(text),
         'Aucune action rapide n’est proposée : il n’en détient aucune'
@@ -704,7 +774,7 @@ async function main() {
       const { count: total } = await admin
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-      check(total === 171, 'Catalogue conforme', `${total} permissions`)
+      check(total === 178, 'Catalogue conforme', `${total} permissions`)
     }
   } finally {
     await browser.close()

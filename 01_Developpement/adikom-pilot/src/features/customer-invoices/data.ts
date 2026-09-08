@@ -126,6 +126,14 @@ export type CustomerInvoiceFilters = {
   status?: string
   clientId?: string
   rentalId?: string
+  /**
+   * Plusieurs locations à la fois — celles d'un véhicule.
+   *
+   * Une facture ne porte pas de véhicule : elle porte une LOCATION, qui en porte
+   * un (Workflow 07 §49). Les revenus d'un véhicule se lisent donc par le lot de
+   * ses contrats, sans qu'aucun raccourci soit ajouté au modèle.
+   */
+  rentalIds?: string[]
   /** Période sur la date de facture (§54). */
   from?: string
   to?: string
@@ -261,6 +269,7 @@ export async function listCustomerInvoices(
 
   if (filters.clientId) query = query.eq('client_id', filters.clientId)
   if (filters.rentalId) query = query.eq('rental_id', filters.rentalId)
+  if (filters.rentalIds) query = query.in('rental_id', filters.rentalIds)
   if (filters.from) query = query.gte('invoice_date', filters.from)
   if (filters.to) query = query.lte('invoice_date', filters.to)
 

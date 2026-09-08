@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, CarFront, Pencil } from 'lucide-react'
+import { ArrowLeft, CarFront, FolderKanban, Pencil } from 'lucide-react'
 
 import { Badge, Card, Empty, EmptyState, InfoRow, PageHeader } from '@/components/ui/primitives'
 import { Notice } from '@/components/ui/feedback'
@@ -24,15 +24,33 @@ import {
   STATUS_LABELS as VEHICLE_STATUS_LABELS,
   STATUS_TONES as VEHICLE_STATUS_TONES,
 } from '@/features/fleet/data'
+import { listProjects } from '@/features/projects/data'
+import {
+  PROJECT_STATUS_LABELS,
+  PROJECT_STATUS_TONES,
+  PRIORITY_LABELS,
+} from '@/features/projects/constants'
+import { EntityHistoryPanel } from '@/features/audit/history-panel'
 
 export const metadata: Metadata = { title: 'Fiche partenaire' }
 
 /**
  * Fiche partenaire — consultation et modification.
  *
- * Les onglets relevant du module Partenariats sont annoncés inertes : la fiche
- * dit ce qu'elle contiendra sans laisser croire à un écran défaillant
- * (03_Modules/04_Tiers.md §11).
+ * PLUS AUCUN ONGLET « À VENIR » — DEC-042 §d.
+ *
+ * Trois des quatre onglets inertes s'ouvrent sur des données qui EXISTENT :
+ *
+ *   · « Projets »    — un projet peut porter sur un partenaire (`partner_id`,
+ *                       Module 03 §28) ;
+ *   · « Documents »  — la fiche partenaire est produite en PDF depuis le LOT 3 ;
+ *   · « Historique » — le journal d'activité consigne chaque écriture.
+ *
+ * Le quatrième, « Conditions », est RETIRÉ. Aucune table, aucune colonne, aucune
+ * capacité ne décrit les conditions d'un partenariat : le modèle n'existe pas.
+ * L'inventer aurait été fabriquer une fonctionnalité vide, ce que l'ajustement
+ * interdit expressément. La carte « Périmètre actuel » le dit déjà en toutes
+ * lettres, et c'est plus honnête qu'un onglet qui ne montrerait rien.
  */
 export default async function PartnerDetailPage(props: PageProps<'/tiers/partenaires/[id]'>) {
   await requirePermissionOrRedirect(PERMISSIONS.PARTNERS_VIEW)
@@ -48,7 +66,15 @@ export default async function PartnerDetailPage(props: PageProps<'/tiers/partena
   const justCreated = searchParams.cree === '1'
   const justSaved = searchParams.enregistre === '1'
 
-  const [canUpdate, canArchive, canViewFleet, canDownload, canPrint] = await Promise.all([
+  const [
+    canUpdate,
+    canArchive,
+    canViewFleet,
+    canDownload,
+    canPrint,
+    canViewProjects,
+    canViewHistory,
+  ] = await Promise.all([
     can(PERMISSIONS.PARTNERS_UPDATE),
     // DEC-024 : archiver est une capacité distincte de modifier. Un utilisateur
     // peut légitimement corriger une fiche sans avoir le droit de la retirer
@@ -59,6 +85,13 @@ export default async function PartnerDetailPage(props: PageProps<'/tiers/partena
     // distinctes de la consultation, attribuables séparément.
     can(PERMISSIONS.PARTNERS_DOWNLOAD),
     can(PERMISSIONS.PARTNERS_PRINT),
+    /*
+     * Consulter un partenaire n'ouvre ni les projets ni le journal (DEC-024).
+     * Sans la capacité, l'onglet DISPARAÎT : l'afficher vide certifierait qu'il
+     * n'y a rien, alors qu'on ne fait que refuser la lecture (DEC-017).
+     */
+    can(PERMISSIONS.PROJECTS_VIEW),
+    can(PERMISSIONS.AUDIT_VIEW),
   ])
 
   const tabs: TabItem[] = [
@@ -72,10 +105,33 @@ export default async function PartnerDetailPage(props: PageProps<'/tiers/partena
           },
         ]
       : []),
-    { key: 'conditions', label: 'Conditions', planned: true },
-    { key: 'projets', label: 'Projets', planned: true },
-    { key: 'documents', label: 'Documents', planned: true },
-    { key: 'historique', label: 'Historique', planned: true },
+    ...(canViewProjects
+      ? [
+          {
+            key: 'projets',
+            label: 'Projets',
+            href: `/tiers/partenaires/${id}?onglet=projets`,
+          },
+        ]
+      : []),
+    ...(canDownload || canPrint
+      ? [
+          {
+            key: 'documents',
+            label: 'Documents',
+            href: `/tiers/partenaires/${id}?onglet=documents`,
+          },
+        ]
+      : []),
+    ...(canViewHistory
+      ? [
+          {
+            key: 'historique',
+            label: 'Historique',
+            href: `/tiers/partenaires/${id}?onglet=historique`,
+          },
+        ]
+      : []),
   ]
 
   const tab = tabs.some((item) => item.key === requestedTab && item.href)
@@ -138,6 +194,26 @@ export default async function PartnerDetailPage(props: PageProps<'/tiers/partena
 
       {tab === 'vehicules' ? (
         <VehiclesTab partnerId={id} />
+      ) : tab === 'projets' ? (
+        <ProjectsTab partnerId={id} />
+      ) : tab === 'documents' ? (
+        <Card
+          title="Fiche partenaire"
+          description="Le document produit à partir de cette fiche, tel qu’il sera imprimé. Il reprend l’identité du partenaire et les véhicules qu’il met à disposition."
+        >
+          <DocumentToolbar
+            type="partenaires"
+            id={id}
+            label={`fiche de ${partner.legalName}`}
+            canDownload={canDownload}
+            canPrint={canPrint}
+          />
+        </Card>
+      ) : tab === 'historique' ? (
+        <EntityHistoryPanel
+          entityId={id}
+          description="Ce qui a été enregistré sur cette fiche partenaire, du plus récent au plus ancien."
+        />
       ) : editing && canUpdate ? (
         <Card className="max-w-4xl">
           <PartnerForm mode="edit" partner={partner} />
@@ -236,6 +312,56 @@ export default async function PartnerDetailPage(props: PageProps<'/tiers/partena
         </div>
       )}
     </>
+  )
+}
+
+/**
+ * Projets menés avec ce partenaire — DEC-042 §d.
+ *
+ * Le rattachement passe par `projects.partner_id` (Module 03 §28) : aucune
+ * relation n'est créée ici, la fiche lit celle qui existe. Les projets RANGÉS
+ * n'y figurent pas, comme partout ailleurs (§48) — ils restent consultables
+ * depuis le module Projets.
+ */
+async function ProjectsTab({ partnerId }: { partnerId: string }) {
+  const projects = await listProjects({ partnerId })
+
+  return (
+    <Card
+      title="Projets"
+      description="Ce qui se conduit avec ce partenaire. Les projets rangés ne figurent pas ici."
+    >
+      {projects.length === 0 ? (
+        <EmptyState
+          icon={FolderKanban}
+          title="Aucun projet"
+          description="Aucun projet en cours ne concerne ce partenaire. Le rattachement se fait à la création du projet."
+        />
+      ) : (
+        <ul className="divide-y divide-line">
+          {projects.map((project) => (
+            <li key={project.id} className="flex flex-wrap items-center gap-3 py-3">
+              <div className="min-w-0 flex-1">
+                <Link
+                  href={`/projets/${project.id}`}
+                  className="font-medium text-adikom-500 hover:underline"
+                >
+                  {project.name}
+                </Link>
+                <p className="text-xs text-muted">
+                  {project.ownerLabel ? `Responsable : ${project.ownerLabel}` : 'Sans responsable'}
+                  {project.dueOn ? ` · échéance ${formatDate(project.dueOn)}` : ''}
+                </p>
+              </div>
+              <Badge>{PRIORITY_LABELS[project.priority]}</Badge>
+              <Badge tone={PROJECT_STATUS_TONES[project.status]}>
+                {PROJECT_STATUS_LABELS[project.status]}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   )
 }
 

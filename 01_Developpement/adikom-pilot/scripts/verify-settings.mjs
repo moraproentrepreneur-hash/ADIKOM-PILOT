@@ -869,7 +869,7 @@ async function main() {
       const { count: catalogue } = await admin
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-      check(catalogue === 171, 'Catalogue à 171 capacités', String(catalogue))
+      check(catalogue === 178, 'Catalogue à 178 capacités', String(catalogue))
 
       const { count: settingsCaps } = await admin
         .from('permissions')

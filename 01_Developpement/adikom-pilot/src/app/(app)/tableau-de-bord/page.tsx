@@ -61,7 +61,18 @@ const kmf = (value: number) => formatAmount(value, { withCurrency: true })
  * eux-mêmes ; chaque carte renvoie vers l'écran où le geste se fait. Aucun
  * indicateur n'est stocké : tout est refait à la lecture.
  *
- * CE QUE L'UTILISATEUR VOIT DÉPEND DE CE QU'IL A LE DROIT DE VOIR (§27).
+ * LES CHIFFRES S'AFFICHENT ; LES DÉTAILS RESTENT PROTÉGÉS — DEC-042 §a
+ *
+ * Les indicateurs agrégés ne dépendent plus des capacités des modules qu'ils
+ * résument : `dashboard.view` ouvre l'exploitation, `dashboard.fleet.view` le
+ * parc, `dashboard.financial.view` la finance. Un collaborateur qui n'ouvre pas
+ * le module Locations lit donc « 3 retours en retard », et peut en informer la
+ * personne qui en répond.
+ *
+ * Ce qui NOMME reste gouverné par la capacité du module : la liste des retards,
+ * les échéances de documents, le détail des comptes financiers. Et chaque lien
+ * « Voir le détail » mène à un écran qui vérifie de nouveau sa capacité : le
+ * chiffre ne déverrouille aucune porte.
  *
  * Les sections ne sont pas seulement masquées : les fonctions qui les
  * alimentent REFUSENT côté serveur (§28). Masquer une carte n'est pas une
@@ -142,7 +153,7 @@ export default async function DashboardPage(props: PageProps<'/tableau-de-bord'>
           <Kpi
             label="Retours en retard"
             figure={pick(board.operations, (o) => o.late)}
-            hint="Échéance de retour dépassée. Aucun frais n’est calculé (DEC-008)."
+            hint="Échéance de retour dépassée. Aucun frais n’est calculé."
             href="/location/locations?statut=LATE"
             level="urgent"
           />
@@ -230,53 +241,78 @@ export default async function DashboardPage(props: PageProps<'/tableau-de-bord'>
           />
         </div>
 
+        {/*
+          BANQUES & CAISSES — le total et le détail ne suivent pas la même règle.
+
+          Le TOTAL est un indicateur de pilotage : il ne nomme aucun compte, et
+          s'affiche donc sous `dashboard.financial.view` comme les autres sommes.
+
+          Le DÉTAIL nomme — libellé, banque, solde individuel, et un lien vers la
+          fiche du compte. Il reste gouverné par les trois capacités de Banques &
+          Caisses (DEC-042 §a). Quand elles manquent, la carte ne dit pas « non
+          accessible » : elle montre le total, et renvoie le détail au module.
+        */}
         <div className="mt-3">
           <Card
             title="Banques &amp; Caisses"
             description="Soldes des comptes actifs — solde initial, entrées et sorties validées."
           >
-            {board.treasury.state === 'denied' && <Denied missing={board.treasury.missing} />}
-            {board.treasury.state === 'error' && <LoadError what="Les soldes" />}
-            {board.treasury.state === 'ok' &&
-              (board.treasury.value.accounts.length === 0 ? (
+            {board.treasuryAccounts.state === 'ok' ? (
+              board.treasuryAccounts.value.length === 0 ? (
                 <EmptyState
                   icon={Wallet}
                   title="Aucun compte actif"
                   description="Les règlements supposent un compte bancaire ou une caisse ouverte."
                 />
               ) : (
-                <>
-                  <ul className="space-y-2">
-                    {board.treasury.value.accounts.map((account) => (
-                      <li key={account.id}>
-                        <Link
-                          href={`/tresorerie/comptes/${account.id}`}
-                          className="flex flex-col gap-1 rounded-control border border-line p-3 transition-colors hover:border-adikom-300 sm:flex-row sm:items-center sm:justify-between"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-ink">
-                              {account.label}
-                            </p>
-                            <p className="truncate text-xs text-muted">
-                              {ACCOUNT_KIND_LABELS[account.kind]}
-                              {account.institution ? ` · ${account.institution}` : ''}
-                            </p>
-                          </div>
-                          <span className="shrink-0 text-sm font-medium text-ink tabular">
-                            {kmf(account.balance ?? 0)}
-                          </span>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-3 flex items-center justify-between border-t border-line pt-3 text-sm">
-                    <span className="font-medium text-ink">Total disponible</span>
-                    <span className="font-display font-semibold text-ink tabular">
-                      {kmf(board.treasury.value.total)}
-                    </span>
-                  </p>
-                </>
-              ))}
+                <ul className="space-y-2">
+                  {board.treasuryAccounts.value.map((account) => (
+                    <li key={account.id}>
+                      <Link
+                        href={`/tresorerie/comptes/${account.id}`}
+                        className="flex flex-col gap-1 rounded-control border border-line p-3 transition-colors hover:border-adikom-300 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-ink">
+                            {account.label}
+                          </p>
+                          <p className="truncate text-xs text-muted">
+                            {ACCOUNT_KIND_LABELS[account.kind]}
+                            {account.institution ? ` · ${account.institution}` : ''}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-sm font-medium text-ink tabular">
+                          {kmf(account.balance ?? 0)}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )
+            ) : board.treasuryAccounts.state === 'error' ? (
+              <LoadError what="Le détail des comptes" />
+            ) : (
+              <p className="text-xs text-muted">
+                Le détail compte par compte se consulte dans{' '}
+                <strong>Banques &amp; Caisses</strong>.
+              </p>
+            )}
+
+            <p className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3 text-sm">
+              <span className="font-medium text-ink">Total disponible</span>
+              {board.treasuryTotal.state === 'ok' ? (
+                <span
+                  data-kpi-value={board.treasuryTotal.value}
+                  className="font-display font-semibold text-ink tabular"
+                >
+                  {kmf(board.treasuryTotal.value)}
+                </span>
+              ) : board.treasuryTotal.state === 'denied' ? (
+                <Denied missing={board.treasuryTotal.missing} />
+              ) : (
+                <LoadError what="Le total disponible" />
+              )}
+            </p>
           </Card>
         </div>
       </section>
@@ -287,10 +323,26 @@ export default async function DashboardPage(props: PageProps<'/tableau-de-bord'>
           Activité {describePeriod(period)}
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Kpi label="Nouveaux clients" figure={board.activity.clients} />
-          <Kpi label="Nouvelles réservations" figure={board.activity.reservations} />
-          <Kpi label="Nouvelles locations" figure={board.activity.rentals} />
-          <Kpi label="Nouvelles factures clients" figure={board.activity.invoices} />
+          <Kpi
+            label="Nouveaux clients"
+            figure={pick(board.activity, (a) => a.clients)}
+            hint="Fiches créées sur la période."
+          />
+          <Kpi
+            label="Nouvelles réservations"
+            figure={pick(board.activity, (a) => a.reservations)}
+            hint="Engagements enregistrés sur la période."
+          />
+          <Kpi
+            label="Nouvelles locations"
+            figure={pick(board.activity, (a) => a.rentals)}
+            hint="Contrats ouverts sur la période."
+          />
+          <Kpi
+            label="Nouvelles factures clients"
+            figure={pick(board.activity, (a) => a.invoices)}
+            hint="Factures préparées ou émises sur la période."
+          />
         </div>
       </section>
 
@@ -318,12 +370,13 @@ export default async function DashboardPage(props: PageProps<'/tableau-de-bord'>
 /* -------------------------------------------------------------------------- */
 
 /**
- * `dashboard.view` seule n'ouvre rien.
+ * Le cas, devenu rare, où rien ne s'ouvre.
  *
- * C'est voulu : la capacité autorise l'écran, pas les données qu'il résume
- * (DEC-024). Un utilisateur qui n'aurait qu'elle verrait une page entièrement
- * verrouillée — il faut donc le lui DIRE, plutôt que de le laisser croire que
- * l'entreprise n'a aucune activité.
+ * `dashboard.view` ouvre désormais l'exploitation, les réservations, l'activité
+ * et les maintenances (DEC-042 §a) : un utilisateur qui atteint cet écran voit
+ * donc presque toujours quelque chose. Ce bandeau subsiste pour le cas où TOUTES
+ * les lectures échouent — refus résiduel ou panne —, afin de ne pas laisser
+ * croire que l'entreprise n'a aucune activité (DEC-017).
  */
 function ClosedNotice({ board }: { board: Dashboard }) {
   const sections: Figure<unknown>[] = [
@@ -334,11 +387,9 @@ function ClosedNotice({ board }: { board: Dashboard }) {
     board.collected,
     board.receivables,
     board.payables,
-    board.treasury,
-    board.activity.clients,
-    board.activity.reservations,
-    board.activity.rentals,
-    board.activity.invoices,
+    board.treasuryTotal,
+    board.treasuryAccounts,
+    board.activity,
     board.lateRentals,
     board.expiringDocuments,
     board.maintenanceRunning,
@@ -351,7 +402,9 @@ function ClosedNotice({ board }: { board: Dashboard }) {
     <Notice tone="warning" className="mb-6">
       Vous accédez au tableau de bord, mais aucun des indicateurs qu’il présente ne vous est
       ouvert. Il n’est pas vide : il est fermé. Demandez à votre administrateur les permissions
-      des modules que vous devez suivre.
+      du pilotage — <code className="tabular">dashboard.view</code>,{' '}
+      <code className="tabular">dashboard.fleet.view</code> et{' '}
+      <code className="tabular">dashboard.financial.view</code>.
     </Notice>
   )
 }
@@ -477,14 +530,13 @@ function Alerts({ board }: { board: Dashboard }) {
     )
   }
 
-  const blocked = [
-    board.operations,
-    board.receivables,
-    board.payables,
-    board.expiringDocuments,
-    board.fleet,
-    board.maintenanceRunning,
-  ].filter((section) => section.state !== 'ok')
+  /*
+   * Les sources d'alerte qui NOMMENT : elles seules peuvent encore manquer pour
+   * un motif de droit (DEC-042 §a). Les compteurs, eux, s'affichent.
+   */
+  const blocked = [board.lateRentals, board.expiringDocuments].filter(
+    (section) => section.state !== 'ok'
+  )
 
   return (
     <section aria-labelledby="alertes" className="mb-6">
@@ -501,7 +553,7 @@ function Alerts({ board }: { board: Dashboard }) {
             description={
               blocked.length === 0
                 ? `Aucun retard, aucune échéance dépassée, aucun document expirant sous ${DOCUMENT_HORIZON_DAYS} jours.`
-                : 'Aucune alerte parmi les données qui vous sont accessibles. D’autres sources ne le sont pas.'
+                : 'Aucune alerte à signaler. Le détail nominatif de certaines d’entre elles relève de modules que vos permissions n’ouvrent pas.'
             }
           />
         ) : (
@@ -514,9 +566,9 @@ function Alerts({ board }: { board: Dashboard }) {
 
         {blocked.length > 0 && (
           <p className="mt-3 border-t border-line pt-3 text-xs text-muted">
-            Certaines sources d’alerte ne sont pas lisibles avec vos permissions — retards,
-            échéances de factures, documents de véhicule ou maintenances selon les cas. Les
-            alertes correspondantes ne sont donc pas absentes : elles ne sont pas mesurées.
+            Les compteurs ci-dessus sont complets. Le détail nominatif de certaines alertes —
+            quelles locations sont en retard, quels documents de véhicule expirent — relève des
+            modules concernés, que vos permissions n’ouvrent pas.
           </p>
         )}
       </Card>

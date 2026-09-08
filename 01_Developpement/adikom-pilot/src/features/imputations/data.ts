@@ -124,6 +124,14 @@ export type ImputationFilters = {
   status?: string
   supplierId?: string
   maintenanceId?: string
+  /**
+   * Plusieurs maintenances à la fois — celles d'un véhicule.
+   *
+   * La rentabilité d'un véhicule a besoin de savoir ce que les fournisseurs ont
+   * repris à leur charge sur l'ensemble de ses interventions. Interroger chaque
+   * maintenance une par une ferait autant d'allers-retours que d'interventions.
+   */
+  maintenanceIds?: string[]
   /** Imputations portées par une facture donnée (Workflow 06 §22, §24). */
   supplierInvoiceId?: string
   /** Filtre dérivé (§31) : validée et sans facture rattachée. */
@@ -149,6 +157,7 @@ export async function listImputations(
   if (filters.status) query = query.eq('status', filters.status)
   if (filters.supplierId) query = query.eq('supplier_id', filters.supplierId)
   if (filters.maintenanceId) query = query.eq('maintenance_id', filters.maintenanceId)
+  if (filters.maintenanceIds) query = query.in('maintenance_id', filters.maintenanceIds)
   if (filters.supplierInvoiceId) {
     query = query.eq('supplier_invoice_id', filters.supplierInvoiceId)
   }

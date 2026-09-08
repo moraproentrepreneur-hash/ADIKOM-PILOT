@@ -89,7 +89,7 @@ export function CreateSupplierInvoicePanel({
           label="Référence du fournisseur"
           name="externalRef"
           error={errors.externalRef}
-          hint="Numéro porté par le document reçu (§30). Unique pour ce fournisseur : une même facture ne s’enregistre pas deux fois."
+          hint="Numéro porté par le document reçu. Unique pour ce fournisseur : une même facture ne s’enregistre pas deux fois."
         >
           <Input name="externalRef" placeholder="FRN-2026-0042" error={errors.externalRef} />
         </Field>
@@ -418,7 +418,7 @@ export function AttachImputationPanel({
         name="invoiceId"
         required
         error={errors.invoiceId}
-        hint="Seule une facture validée du même fournisseur peut recevoir cette imputation (§24, §32)."
+        hint="Seule une facture validée du même fournisseur peut recevoir cette imputation."
       >
         <Select name="invoiceId" defaultValue="" error={errors.invoiceId}>
           <option value="">À désigner</option>

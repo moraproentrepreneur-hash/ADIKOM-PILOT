@@ -5,6 +5,7 @@ import { ArrowLeft, History } from 'lucide-react'
 
 import { Badge, Card, Empty, EmptyState, InfoRow, PageHeader } from '@/components/ui/primitives'
 import { Notice } from '@/components/ui/feedback'
+import { DocumentToolbar } from '@/components/ui/document-toolbar'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate, formatDateTime } from '@/lib/dates'
@@ -23,19 +24,28 @@ import {
 } from '@/features/misc-payments/panels'
 import {
   MISC_PAYMENT_CATEGORY_LABELS,
-  MISC_PAYMENT_STATUS_HINTS,
+  MISC_PAYMENT_DIRECTION_LABELS,
+  MISC_PAYMENT_DIRECTION_TONES,
+  MISC_PAYMENT_PARTY_LABELS,
   MISC_PAYMENT_STATUS_LABELS,
   MISC_PAYMENT_STATUS_TONES,
+  miscPaymentStatusHint,
 } from '@/features/misc-payments/constants'
 
 export const metadata: Metadata = { title: 'Paiement divers' }
 
 /**
- * Fiche d'un paiement divers — Module 07 §44 à §47.
+ * Fiche d'un paiement divers.
  *
- * §45 : « Le système doit générer ou référencer l'écriture financière
- * correspondante. » Elle est donc présentée ici, avec son sens et son état :
- * un paiement validé sans écriture visible serait un décaissement invérifiable.
+ * L'écriture financière produite est présentée ici, avec son sens et son état :
+ * un paiement validé sans écriture visible serait un mouvement invérifiable.
+ *
+ * TOUT S'ACCORDE AU SENS — DEC-042 §b
+ *
+ * Encaissement ou décaissement : le bandeau, l'effet annoncé, le nom de l'autre
+ * partie et le libellé du compte changent avec lui. Un écran qui parlerait de
+ * « compte débité » sur un encaissement dirait le contraire de ce qui s'est
+ * passé.
  */
 export default async function MiscPaymentDetailPage(
   props: PageProps<'/facturation/paiements-divers/[id]'>
@@ -46,10 +56,14 @@ export default async function MiscPaymentDetailPage(
   const searchParams = await props.searchParams
   const justCreated = searchParams.cree === '1'
 
-  const [canValidate, canCancel, canSeeEntries] = await Promise.all([
+  const [canValidate, canCancel, canSeeEntries, canDownload, canPrint] = await Promise.all([
     can(PERMISSIONS.MISC_PAYMENTS_VALIDATE),
     can(PERMISSIONS.MISC_PAYMENTS_CANCEL),
     can(PERMISSIONS.ENTRIES_VIEW),
+    // DEC-024 : produire un document et l'imprimer sont deux capacités
+    // distinctes de la consultation, attribuables séparément.
+    can(PERMISSIONS.MISC_PAYMENTS_DOWNLOAD),
+    can(PERMISSIONS.MISC_PAYMENTS_PRINT),
   ])
 
   const payment = await getMiscPayment(id)
@@ -61,6 +75,7 @@ export default async function MiscPaymentDetailPage(
 
   const isDraft = payment.status === 'DRAFT'
   const isValidated = payment.status === 'VALIDATED'
+  const entree = payment.direction === 'IN'
 
   return (
     <>
@@ -83,24 +98,51 @@ export default async function MiscPaymentDetailPage(
         title={payment.paymentNo}
         description={`${formatAmount(payment.amount)} · ${payment.beneficiary}`}
         actions={
-          <Badge tone={MISC_PAYMENT_STATUS_TONES[payment.status]}>
-            {MISC_PAYMENT_STATUS_LABELS[payment.status]}
-          </Badge>
+          <DocumentToolbar
+            type="paiements-divers"
+            id={id}
+            label={`reçu ${payment.paymentNo}`}
+            canDownload={canDownload}
+            canPrint={canPrint}
+          />
         }
       />
 
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <Badge tone={MISC_PAYMENT_DIRECTION_TONES[payment.direction]}>
+          {MISC_PAYMENT_DIRECTION_LABELS[payment.direction]}
+        </Badge>
+        <Badge tone={MISC_PAYMENT_STATUS_TONES[payment.status]}>
+          {MISC_PAYMENT_STATUS_LABELS[payment.status]}
+        </Badge>
+      </div>
+
       <Notice tone={isDraft ? 'warning' : isValidated ? 'success' : 'info'} className="mb-5">
-        {MISC_PAYMENT_STATUS_HINTS[payment.status]}
+        {miscPaymentStatusHint(payment.status, payment.direction)}
       </Notice>
 
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
           <Card
             title="Paiement"
-            description="Un décaissement sans facture, documenté par son bénéficiaire et son motif (§43, §44)."
+            description="Un mouvement sans facture rattachée, documenté par son sens, son tiers et son motif."
           >
             <dl>
-              <InfoRow label="Bénéficiaire">{payment.beneficiary}</InfoRow>
+              <InfoRow
+                label="Sens"
+                hint={
+                  entree
+                    ? 'Une entrée de trésorerie : le solde du compte augmente.'
+                    : 'Une sortie de trésorerie : le solde du compte diminue.'
+                }
+              >
+                <Badge tone={MISC_PAYMENT_DIRECTION_TONES[payment.direction]}>
+                  {MISC_PAYMENT_DIRECTION_LABELS[payment.direction]}
+                </Badge>
+              </InfoRow>
+              <InfoRow label={MISC_PAYMENT_PARTY_LABELS[payment.direction]}>
+                {payment.beneficiary}
+              </InfoRow>
               <InfoRow label="Catégorie">
                 {MISC_PAYMENT_CATEGORY_LABELS[payment.category]}
               </InfoRow>
@@ -109,7 +151,10 @@ export default async function MiscPaymentDetailPage(
                 <span className="font-medium tabular">{formatAmount(payment.amount)}</span>
               </InfoRow>
               <InfoRow label="Date du paiement">{formatDate(payment.paidOn)}</InfoRow>
-              <InfoRow label="Compte source" hint="Débité à la validation (§45).">
+              <InfoRow
+                label="Compte"
+                hint={entree ? 'Crédité à la validation.' : 'Débité à la validation.'}
+              >
                 {payment.accountLabel ? (
                   <Link
                     href={`/tresorerie/comptes/${payment.accountId}`}
@@ -131,7 +176,11 @@ export default async function MiscPaymentDetailPage(
           {canSeeEntries ? (
             <Card
               title="Écriture produite"
-              description="Une sortie du montant payé, sur le compte source (§45)."
+              description={
+                entree
+                  ? 'Une entrée du montant reçu, sur le compte désigné.'
+                  : 'Une sortie du montant payé, sur le compte désigné.'
+              }
             >
               {entries === null || entries.length === 0 ? (
                 <EmptyState
@@ -207,11 +256,16 @@ export default async function MiscPaymentDetailPage(
           {isDraft && canValidate && (
             <Card
               title="Valider"
-              description="C’est ce geste qui fait sortir les fonds (§45)."
+              description={
+                entree
+                  ? 'C’est ce geste qui fait entrer les fonds.'
+                  : 'C’est ce geste qui fait sortir les fonds.'
+              }
             >
               <ValidateMiscPaymentPanel
                 paymentId={payment.id}
                 amount={payment.amount}
+                direction={payment.direction}
                 accountLabel={payment.accountLabel}
               />
             </Card>
@@ -220,11 +274,12 @@ export default async function MiscPaymentDetailPage(
           {payment.status !== 'CANCELLED' && canCancel && (
             <Card
               title="Annuler"
-              description="Rien n’est supprimé : la trace du paiement demeure (§47)."
+              description="Rien n’est supprimé : la trace du paiement demeure."
             >
               <CancelMiscPaymentPanel
                 paymentId={payment.id}
                 amount={payment.amount}
+                direction={payment.direction}
                 validated={isValidated}
               />
             </Card>

@@ -109,8 +109,8 @@ declare
   v_missing text[];
 begin
   select count(*) into v_total from public.permissions;
-  if v_total <> 171 then
-    raise exception 'Le catalogue compte % capacités, 171 attendues.', v_total;
+  if v_total <> 178 then
+    raise exception 'Le catalogue compte % capacités, 178 attendues.', v_total;
   end if;
 
   select array_agg(c) into v_missing
@@ -134,7 +134,7 @@ begin
     raise exception 'Capacité non prévue créée : le catalogue a été surchargé.';
   end if;
 
-  raise notice '[OK] 2. Catalogue à 171 : la lecture des virements est créée, rien d''autre.';
+  raise notice '[OK] 2. Catalogue à 178 : la lecture des virements est créée, rien d''autre.';
 end $$;
 
 
@@ -616,42 +616,64 @@ begin
   select * into r from recette_vir;
 
   begin
-    perform public.create_misc_payment(r.src, 0, current_date, 'ADMIN_FEE', 'Trésor public', 'Taxe');
+    perform public.create_misc_payment(r.src, 0, current_date, 'OUT', 'ADMIN_FEE', 'Trésor public', 'Taxe');
     raise exception 'Un paiement de montant nul a été accepté.';
   exception when check_violation then ok := ok + 1;
   end;
 
   begin
-    perform public.create_misc_payment(r.src, 5000, null, 'ADMIN_FEE', 'Trésor public', 'Taxe');
+    perform public.create_misc_payment(r.src, 5000, null, 'OUT', 'ADMIN_FEE', 'Trésor public', 'Taxe');
     raise exception 'Un paiement sans date a été accepté.';
   exception when check_violation then ok := ok + 1;
   end;
 
   -- §43 : « suffisamment documenté » — bénéficiaire et motif obligatoires.
   begin
-    perform public.create_misc_payment(r.src, 5000, current_date, 'ADMIN_FEE', '   ', 'Taxe');
+    perform public.create_misc_payment(r.src, 5000, current_date, 'OUT', 'ADMIN_FEE', '   ', 'Taxe');
     raise exception 'Un paiement sans bénéficiaire a été accepté.';
   exception when check_violation then ok := ok + 1;
   end;
 
   begin
-    perform public.create_misc_payment(r.src, 5000, current_date, 'ADMIN_FEE', 'Trésor public', '');
+    perform public.create_misc_payment(r.src, 5000, current_date, 'OUT', 'ADMIN_FEE', 'Trésor public', '');
     raise exception 'Un paiement sans motif a été accepté.';
   exception when check_violation then ok := ok + 1;
   end;
 
   -- §10 : compte archivé.
   begin
-    perform public.create_misc_payment(r.autre, 5000, current_date, 'ADMIN_FEE', 'Trésor public', 'Taxe');
+    perform public.create_misc_payment(r.autre, 5000, current_date, 'OUT', 'ADMIN_FEE', 'Trésor public', 'Taxe');
     raise exception 'Un paiement depuis un compte archivé a été accepté.';
   exception when check_violation then ok := ok + 1;
   end;
 
-  if ok <> 5 then
-    raise exception 'Cinq refus attendus à la saisie d''un paiement divers, % obtenus.', ok;
+  /*
+   * DEC-042 §b : le SENS est obligatoire.
+   *
+   * Le déduire d'un défaut reviendrait à décider en silence qu'un paiement est
+   * une sortie — et un encaissement saisi ainsi diminuerait le compte qu'il
+   * devait augmenter.
+   */
+  begin
+    perform public.create_misc_payment(r.src, 5000, current_date, null, 'ADMIN_FEE', 'Trésor public', 'Taxe');
+    raise exception 'Un paiement sans sens a été accepté.';
+  exception when check_violation then ok := ok + 1;
+  end;
+
+  -- Et l'ancienne signature, sans sens, ne doit plus exister.
+  if exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'create_misc_payment'
+      and pg_get_function_identity_arguments(p.oid) not like '%treasury_direction%'
+  ) then
+    raise exception 'L''ancienne signature de `create_misc_payment` subsiste : le sens serait devinable.';
   end if;
 
-  raise notice '[OK] 12. Montant, date, bénéficiaire, motif et compte archivé : cinq refus.';
+  if ok <> 6 then
+    raise exception 'Six refus attendus à la saisie d''un paiement divers, % obtenus.', ok;
+  end if;
+
+  raise notice '[OK] 12. Montant, date, bénéficiaire, motif, compte archivé et SENS : six refus.';
 end $$;
 
 
@@ -666,7 +688,7 @@ begin
   select * into r from recette_vir;
 
   v_id := public.create_misc_payment(
-    r.src, 45000, current_date, 'SMALL_EXPENSE', 'Quincaillerie Moroni',
+    r.src, 45000, current_date, 'OUT', 'SMALL_EXPENSE', 'Quincaillerie Moroni',
     'Fournitures d''atelier', 'BON-77', 'Recette'
   );
   update recette_vir set misc = v_id;
@@ -675,6 +697,10 @@ begin
 
   if m.status <> 'DRAFT' then
     raise exception 'Un paiement divers devrait naître en brouillon, obtenu %.', m.status;
+  end if;
+
+  if m.direction <> 'OUT' then
+    raise exception 'Le sens saisi n''a pas été conservé : % au lieu de OUT.', m.direction;
   end if;
 
   if m.payment_no not like 'REG-%' then
@@ -717,6 +743,19 @@ begin
   exception when check_violation then ok := ok + 1;
   end;
 
+  /*
+   * DEC-042 §b : le sens est FIGÉ.
+   *
+   * L'inverser après validation retournerait un mouvement de trésorerie sans
+   * qu'aucune écriture ne l'explique : le solde deviendrait faux de deux fois
+   * le montant.
+   */
+  begin
+    update public.misc_payments set direction = 'IN' where id = r.misc;
+    raise exception 'Le sens d''un paiement divers a pu être inversé.';
+  exception when check_violation then ok := ok + 1;
+  end;
+
   -- Migration 074 : §43 — une documentation réécrivable ne documente rien.
   begin
     update public.misc_payments set external_ref = 'REF réécrite' where id = r.misc;
@@ -743,8 +782,8 @@ begin
   exception when check_violation then ok := ok + 1;
   end;
 
-  if ok <> 6 then
-    raise exception 'Six refus attendus sur le brouillon, % obtenus.', ok;
+  if ok <> 7 then
+    raise exception 'Sept refus attendus sur le brouillon, % obtenus.', ok;
   end if;
 
   if has_table_privilege('authenticated', 'public.misc_payments', 'DELETE') then
@@ -759,7 +798,7 @@ begin
     raise exception 'Le déclencheur d''interdiction de suppression est absent.';
   end if;
 
-  raise notice '[OK] 14. Montant, compte, bénéficiaire, référence, écriture anticipée, INSERT validé : six refus, et la suppression est fermée.';
+  raise notice '[OK] 14. Montant, compte, bénéficiaire, SENS, référence, écriture anticipée, INSERT validé : sept refus, et la suppression est fermée.';
 end $$;
 
 
@@ -814,7 +853,7 @@ begin
   -- Validé par PATCH direct, sans écriture.
   begin
     v_id := public.create_misc_payment(
-      r.src, 7000, current_date, 'OTHER', 'PATCH direct', 'Contournement'
+      r.src, 7000, current_date, 'OUT', 'OTHER', 'PATCH direct', 'Contournement'
     );
     update public.misc_payments
        set status = 'VALIDATED', validated_at = now()
@@ -840,12 +879,19 @@ begin
   end;
   set constraints all deferred;
 
-  -- Un paiement divers est une SORTIE : l'entrée est refusée immédiatement.
+  /*
+   * L'écriture reprend le SENS DU PAIEMENT — DEC-042 §b.
+   *
+   * Ce paiement-ci est un décaissement : une entrée qui s'en réclamerait
+   * augmenterait le compte que l'opération devait diminuer. Le déclencheur
+   * d'origine compare désormais au sens porté par le paiement, et non plus à
+   * une constante.
+   */
   begin
     insert into public.treasury_entries
       (account_id, entry_date, direction, kind, amount, misc_payment_id)
     values (r.src, current_date, 'IN', 'MISC_PAYMENT', 45000, r.misc);
-    raise exception 'Une entrée de paiement divers a été acceptée.';
+    raise exception 'Une écriture de sens contraire au paiement a été acceptée.';
   exception when check_violation then ok := ok + 1;
   end;
 
@@ -862,7 +908,93 @@ begin
     raise exception 'Quatre refus attendus sur la cohérence, % obtenus.', ok;
   end if;
 
-  raise notice '[OK] 16. Paiement sans écriture, écriture surnuméraire, sens inversé, double origine : quatre refus.';
+  raise notice '[OK] 16. Paiement sans écriture, écriture surnuméraire, sens contraire, double origine : quatre refus.';
+end $$;
+
+
+-- --- 16 bis. UN PAIEMENT DIVERS PEUT ÊTRE UN ENCAISSEMENT — DEC-042 §b ------------
+--
+-- Le LOT 17 ne connaissait que le décaissement. ADIKOM a tranché : un paiement
+-- divers va dans les deux sens.
+--
+-- Ce que cette section éprouve, de bout en bout :
+--
+--   · le sens est conservé à la saisie ;
+--   · la validation produit UNE écriture d'ENTRÉE, du montant reçu ;
+--   · le solde du compte AUGMENTE — c'est là que la différence se voit ;
+--   · l'annulation le fait redescendre, et l'écriture reste, marquée annulée.
+do $$
+declare
+  r        recette_vir%rowtype;
+  v_id     uuid;
+  m        public.misc_payments%rowtype;
+  v_avant  bigint;
+  v_apres  bigint;
+  v_cnt    int;
+  v_ok     int;
+begin
+  select * into r from recette_vir;
+
+  v_avant := public.financial_account_balance(r.src);
+
+  v_id := public.create_misc_payment(
+    r.src, 30000, current_date, 'IN', 'OTHER', 'Assureur Comores',
+    'Remboursement de franchise', 'AVIS-42', 'Recette encaissement'
+  );
+
+  select * into m from public.misc_payments where id = v_id;
+
+  if m.direction <> 'IN' then
+    raise exception 'Le sens ENTRÉE n''a pas été conservé : %.', m.direction;
+  end if;
+
+  -- Un brouillon ne déplace rien, quel que soit son sens.
+  if public.financial_account_balance(r.src) <> v_avant then
+    raise exception 'Un encaissement en brouillon a déjà mouvementé le compte.';
+  end if;
+
+  perform public.validate_misc_payment(v_id);
+
+  select count(*),
+         count(*) filter (where direction = 'IN' and account_id = r.src and amount = 30000)
+    into v_cnt, v_ok
+  from public.treasury_entries
+  where misc_payment_id = v_id and status = 'VALIDATED';
+
+  if v_cnt <> 1 or v_ok <> 1 then
+    raise exception
+      'Un encaissement divers validé porte UNE entrée du montant reçu. Obtenu % / %.', v_cnt, v_ok;
+  end if;
+
+  v_apres := public.financial_account_balance(r.src);
+  if v_apres <> v_avant + 30000 then
+    raise exception
+      'Le solde devait augmenter de 30 000 : % avant, % après.', v_avant, v_apres;
+  end if;
+
+  -- Le sens contraire est refusé pour un encaissement aussi.
+  begin
+    insert into public.treasury_entries
+      (account_id, entry_date, direction, kind, amount, misc_payment_id)
+    values (r.src, current_date, 'OUT', 'MISC_PAYMENT', 30000, v_id);
+    raise exception 'Une sortie adossée à un encaissement a été acceptée.';
+  exception when check_violation then null;
+  end;
+
+  perform public.cancel_misc_payment(v_id, 'Recette — annulation d''un encaissement');
+
+  if public.financial_account_balance(r.src) <> v_avant then
+    raise exception
+      'Le solde devait redescendre à % après annulation, obtenu %.',
+      v_avant, public.financial_account_balance(r.src);
+  end if;
+
+  select count(*) into v_cnt from public.treasury_entries where misc_payment_id = v_id;
+  if v_cnt <> 1 then
+    raise exception 'L''historique doit rester : 1 écriture attendue, %.', v_cnt;
+  end if;
+
+  raise notice '[OK] 16 bis. Encaissement : entrée de 30 000, solde augmenté puis rendu, trace conservée.';
 end $$;
 
 

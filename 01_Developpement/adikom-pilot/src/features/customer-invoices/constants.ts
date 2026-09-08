@@ -120,9 +120,9 @@ export const LINE_KIND_ORDER: CustomerInvoiceLineKind[] = [
 
 export const LINE_KIND_HELP: Record<CustomerInvoiceLineKind, string> = {
   RENTAL: 'La prestation de location elle-même, au tarif verrouillé du contrat.',
-  SERVICE: 'Prestation ajoutée à la location (§14).',
-  FEE: 'Frais validé : retard, carburant, dommage, équipement manquant (§15).',
-  DISCOUNT: 'Se SOUSTRAIT du total. Le montant reste positif : c’est la nature qui porte le sens (§24).',
+  SERVICE: 'Prestation ajoutée à la location.',
+  FEE: 'Frais validé : retard, carburant, dommage, équipement manquant.',
+  DISCOUNT: 'Se SOUSTRAIT du total. Le montant reste positif : c’est la nature qui porte le sens.',
 }
 
 /** Une réduction se soustrait ; tout le reste s'ajoute. */

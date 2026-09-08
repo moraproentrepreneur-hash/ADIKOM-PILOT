@@ -406,9 +406,9 @@ async function main() {
       })
       const perms = await mainText(page)
       check(
-        perms.includes('Ce groupe accorde') && perms.includes('sur 171'),
+        perms.includes('Ce groupe accorde') && perms.includes('sur 178'),
         'L’onglet Permissions présente le catalogue complet',
-        '171 capacités'
+        '178 capacités'
       )
       check(
         perms.includes('Consultation seule'),
@@ -824,7 +824,7 @@ async function main() {
       const { count: catalogue } = await admin
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-      check(catalogue === 171, 'Le catalogue reste à 171 capacités', `${catalogue}`)
+      check(catalogue === 178, 'Le catalogue reste à 178 capacités', `${catalogue}`)
 
       // Les données DEMO sont intactes.
       const apres = await referentialFootprint(admin)
@@ -887,7 +887,7 @@ async function main() {
       })
 
       const onglet = await mainText(page)
-      check(onglet.includes('sur 171'), 'L’arborescence présente le catalogue complet')
+      check(onglet.includes('sur 178'), 'L’arborescence présente le catalogue complet')
       check(
         onglet.includes('Refusé (groupe)'),
         'Un refus hérité d’un groupe reste nommé comme tel (§48)'

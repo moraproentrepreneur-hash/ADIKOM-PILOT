@@ -576,7 +576,7 @@ async function main() {
     const { count: permsAfter } = await admin
       .from('permissions')
       .select('*', { count: 'exact', head: true })
-    check(permsAfter === 171, 'Le catalogue des permissions est intact', `${permsAfter} permissions`)
+    check(permsAfter === 178, 'Le catalogue des permissions est intact', `${permsAfter} permissions`)
 
     const { count: settingsAfter } = await admin
       .from('company_settings')

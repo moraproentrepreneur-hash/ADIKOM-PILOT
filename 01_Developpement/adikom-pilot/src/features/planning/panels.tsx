@@ -148,7 +148,7 @@ export function MinutesForm({
         name="minutes"
         required
         error={errors.minutes}
-        hint="Sujets abordés, informations importantes, suites à donner (§23). Les décisions et les actions s’enregistrent séparément, pour être retrouvées."
+        hint="Sujets abordés, informations importantes, suites à donner. Les décisions et les actions s’enregistrent séparément, pour être retrouvées."
       >
         <Textarea
           name="minutes"
@@ -162,7 +162,7 @@ export function MinutesForm({
       {recordedAt && (
         <p className="text-xs text-muted">
           Un compte rendu est déjà enregistré. L’enregistrer de nouveau le remplace, et le
-          changement est journalisé (§31).
+          changement est journalisé.
         </p>
       )}
 

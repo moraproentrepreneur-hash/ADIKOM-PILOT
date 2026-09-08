@@ -5,18 +5,28 @@ import { cn } from '@/lib/utils'
 /**
  * Onglets d'une fiche.
  *
- * Les onglets non livrés restent visibles mais inertes, avec la mention « à
- * venir » : l'utilisateur voit ce que la fiche contiendra sans jamais croire
- * qu'un écran vide est un écran cassé. C'est la convention déjà retenue pour la
- * barre latérale, conservée ici pour ne pas inventer un second vocabulaire.
+ * PLUS AUCUN ONGLET « À VENIR » — DEC-042 §d.
+ *
+ * Ces onglets savaient s'afficher inertes, avec la mention « à venir » : la
+ * fiche annonçait ainsi ce qu'elle contiendrait. C'était juste tant que des
+ * pans du SaaS restaient à livrer ; ce ne l'est plus. ADIKOM a demandé que ces
+ * onglets deviennent opérationnels, et ils le sont.
+ *
+ * La mention est donc RETIRÉE plutôt que laissée inutilisée : disponible, elle
+ * reviendrait un jour dans une fiche, et l'utilisateur retrouverait la promesse
+ * dont on vient de le débarrasser.
+ *
+ * UN ONGLET QUI N'EST PAS OUVERT N'EST PAS AFFICHÉ.
+ *
+ * C'est la règle que les fiches appliquent désormais : sans la capacité du
+ * module concerné, l'onglet DISPARAÎT. L'afficher vide certifierait qu'il n'y a
+ * rien à voir, alors qu'on ne fait que refuser la lecture (DEC-017).
  */
 
 export type TabItem = {
   key: string
   label: string
   href?: string
-  /** Onglet prévu par la documentation mais relevant d'une étape ultérieure. */
-  planned?: boolean
 }
 
 export function Tabs({
@@ -32,17 +42,15 @@ export function Tabs({
     <div className="mb-5 border-b border-line">
       <nav className="-mb-px flex gap-1 overflow-x-auto" aria-label={label}>
         {items.map((item) =>
-          item.planned || !item.href ? (
+          !item.href ? (
+            // Filet : un onglet sans destination ne mène nulle part, et le
+            // rendre cliquable proposerait une porte qui n'existe pas.
             <span
               key={item.key}
               aria-disabled
-              title="Fonctionnalité prévue par une étape ultérieure"
-              className="flex shrink-0 cursor-not-allowed items-center gap-1.5 border-b-2 border-transparent px-4 py-2.5 text-sm font-medium text-muted/60"
+              className="shrink-0 border-b-2 border-transparent px-4 py-2.5 text-sm font-medium text-muted/60"
             >
               {item.label}
-              <span className="rounded-badge bg-canvas px-1.5 py-0.5 text-[0.625rem] font-medium text-muted">
-                à venir
-              </span>
             </span>
           ) : (
             <Link

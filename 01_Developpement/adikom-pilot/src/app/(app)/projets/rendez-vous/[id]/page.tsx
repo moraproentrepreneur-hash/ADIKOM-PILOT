@@ -192,7 +192,7 @@ export default async function AppointmentDetailPage(
 
               <InfoRow label="Lieu">{appointment.location ?? <Empty />}</InfoRow>
 
-              <InfoRow label="Tiers concerné" hint="La continuité de la relation (§27).">
+              <InfoRow label="Tiers concerné" hint="La continuité de la relation.">
                 {appointment.partyLabel ? (
                   partyHref ? (
                     <Link href={partyHref} className="text-adikom-500 hover:underline">
@@ -218,7 +218,7 @@ export default async function AppointmentDetailPage(
             </dl>
           </Card>
 
-          <Card title="Notes" description="Ce qu’il faut préparer, ou ce qui s’est dit (§26).">
+          <Card title="Notes" description="Ce qu’il faut préparer, ou ce qui s’est dit.">
             {appointment.notes ? (
               <p className="whitespace-pre-line text-sm text-ink">{appointment.notes}</p>
             ) : (
@@ -228,7 +228,7 @@ export default async function AppointmentDetailPage(
         </div>
 
         <div className="space-y-5">
-          <Card title="Participants" description="Qui s’y rend (§26).">
+          <Card title="Participants" description="Qui s’y rend.">
             <ParticipantsPanel
               kind={{ field: 'appointmentId', id: appointment.id }}
               ownerId={appointment.ownerId}
@@ -239,7 +239,7 @@ export default async function AppointmentDetailPage(
           </Card>
 
           {canUpdate && (
-            <Card title="Changer l’état" description="Le changement est journalisé (§31).">
+            <Card title="Changer l’état" description="Le changement est journalisé.">
               <AppointmentStatusForm
                 appointmentId={appointment.id}
                 allowed={PLANNING_NEXT_STATUSES[appointment.status]}

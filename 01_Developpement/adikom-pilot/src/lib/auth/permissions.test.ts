@@ -115,22 +115,54 @@ describe('catalogue des permissions', () => {
   })
 
   /**
-   * Une capacité retirée ne revient pas par la petite porte.
+   * Une capacité documentaire suppose un document — et elle en a un.
    *
-   * `rental.reservations.download` et `.print` n'ont jamais eu de document à
-   * produire : une réservation n'est pas une pièce remise au client. Les
-   * réintroduire — dans une migration ou dans les constantes — rendrait de
-   * nouveau attribuable un droit qui ne débloque rien.
+   * `rental.reservations.download` et `.print` ont été RETIRÉES le 26/08/2026
+   * (migration 037) avec ce motif : aucun document de réservation n'existait, et
+   * une permission qui ne débloque rien ne doit pas être attribuable
+   * (CLAUDE.md §19 bis). Un test veillait à ce qu'elles ne reviennent pas.
    *
-   * Le contrôle porte sur les DEUX côtés : le catalogue reconstitué et le
-   * TypeScript. Les deux tests de parité ci-dessus ne le remplaceraient pas —
-   * ils passeraient très bien si ces codes revenaient des deux côtés à la fois.
+   * ADIKOM a demandé cette pièce le 08/09/2026 (DEC-042 §c) : une confirmation
+   * de réservation remise au client. Le motif du retrait est tombé avec le fait
+   * qui le fondait, et la migration 078 les rétablit.
+   *
+   * LE TEST NE DISPARAÎT PAS, IL CHANGE D'OBJET.
+   *
+   * Ce qu'il gardait n'était pas « ces deux codes n'existent pas » mais « aucune
+   * capacité documentaire n'est attribuable sans document ». C'est cela qu'il
+   * vérifie désormais, pour TOUTES : chaque `.download` et chaque `.print` du
+   * catalogue doit correspondre à une entrée du registre des documents.
    */
-  it('ne réintroduit pas les capacités documentaires sans objet', () => {
-    const retirees = ['rental.reservations.download', 'rental.reservations.print']
+  it('chaque capacité documentaire correspond à un document réel', () => {
+    const registry = readFileSync(
+      resolve(import.meta.dirname, '../documents/registry.ts'),
+      'utf8'
+    )
 
-    expect(retirees.filter((code) => catalogCodes.includes(code))).toEqual([])
-    expect(retirees.filter((code) => tsCodes.includes(code))).toEqual([])
+    const documentaires = catalogCodes.filter(
+      (code) => code.endsWith('.download') || code.endsWith('.print')
+    )
+
+    expect(documentaires.length).toBeGreaterThan(0)
+
+    /*
+     * Le registre désigne ses permissions par leur NOM de constante
+     * (`PERMISSIONS.CLIENTS_DOWNLOAD`), jamais par leur code : c'est donc le nom
+     * qu'il faut y chercher, retrouvé par lecture inverse du catalogue TS.
+     */
+    const nameOf = new Map(
+      Object.entries(PERMISSIONS).map(([name, code]) => [code as string, name])
+    )
+
+    const orphelines = documentaires.filter((code) => {
+      const name = nameOf.get(code)
+      return !name || !registry.includes(`PERMISSIONS.${name}`)
+    })
+
+    expect(
+      orphelines,
+      `Ces capacités ne débloqueraient aucun document : ${orphelines.join(', ')}`
+    ).toEqual([])
   })
 
   it('respecte la convention de nommage module.menu[.sousmenu].action', () => {

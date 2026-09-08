@@ -75,6 +75,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-039 | Paramètres — Entreprise & Numérotation — LOT 16 | Arbitrages et défauts de sécurité | Appliquée — **ouvre le Module 09** | 2026-09-05 |
 | DEC-040 | Virement interne & Paiements divers — LOT 17 | Arbitrages, capacité et **deux défauts préexistants** | Appliquée — **achève les Modules 06 et 07** | 2026-09-06 |
 | DEC-041 | Sauvegarde, réinitialisation et restauration — LOT 18 | Capacités, sécurité et exploitation | Appliquée — **complète le Module 09** | 2026-09-06 |
+| DEC-042 | Ajustements fonctionnels et UX du SaaS | Arbitrages ADIKOM, capacités et sécurité | Appliquée — **révise DEC-032 et le retrait de la migration 037** | 2026-09-08 |
 
 ---
 
@@ -4038,6 +4039,372 @@ Récapitulatif des points nécessitant une réponse métier. Aucun automatisme c
 27. **DEC-039 §d** — Les documents générés doivent-ils employer le **logo téléversé** plutôt que le fichier officiel embarqué ? Le lot enregistre le logo (§39) et l'affiche en aperçu ; les factures et contrats continuent d'employer le fichier embarqué, comme §6 le prévoit. Basculer suppose d'accepter qu'un PDF dépende du stockage au moment où l'utilisateur clique — le moteur documentaire l'évite délibérément —, et de décider ce qu'il advient si le fichier est absent ou illisible : un document sans logo, ou un document refusé ? *La règle absolue n° 13 (CLAUDE.md §33) reste entière dans tous les cas : le fichier n'est jamais transformé.*
 28. **DEC-039 §f** — Le module Paramètres doit-il porter les **réglages de notification** (`Module 09` §27) — activation d'une famille d'alerte, seuils, préférences ? La question rejoint l'arbitrage n° 16 (délais de rappel configurables) et suppose de décider ce qui relève de la configuration générale et ce qui reste défini dans le module concerné, comme §27 le rappelle lui-même.
 29. **DEC-039 §g — défaut signalé** — Le droit `TRUNCATE` est accordé par défaut au rôle `authenticated` sur **toutes** les tables du SaaS. `TRUNCATE` ne déclenche aucun trigger de ligne : il contournerait les protections de suppression posées sur les tables métier. Le droit n'est atteignable par aucun chemin applicatif — PostgREST ne l'expose pas —, mais il n'a aucun usage et devrait être retiré partout. Il l'a été sur `company_settings` et `numbering_rules`. À faire table par table, plutôt qu'en une passe aveugle.
+
+---
+
+## DEC-042 — Ajustements fonctionnels et UX du SaaS
+
+**Date :** 8 septembre 2026
+**Portée :** métier, capacités, sécurité et interface
+**Statut :** appliquée · **révise DEC-032 §a** et **le retrait prononcé par la migration 037**
+
+### Contexte
+
+Le SaaS est complet et déployé. ADIKOM l'a parcouru écran par écran et a relevé
+sept points — sept demandes précises, appuyées sur dix-huit captures d'écran.
+Aucune ne relève du confort : chacune corrige un endroit où le système dit ou
+fait autre chose que ce qu'ADIKOM attend de lui.
+
+Les huit paragraphes ci-dessous tranchent ce que ces demandes engagent.
+
+---
+
+### a. Le tableau de bord affiche ses chiffres, quels que soient les modules ouverts
+
+**Demande d'ADIKOM.** « Le tableau de bord doit toujours afficher les valeurs de
+ses indicateurs, même si l'utilisateur connecté n'a pas accès au module métier
+correspondant. »
+
+**Ce qui existait.** Chaque indicateur exigeait la capacité du module qu'il
+résume : sans `rental.rentals.view`, la carte « Retours en retard » affichait
+« Non accessible — permission rental.rentals.view ». Ce n'était pas un défaut :
+sous RLS, un comptage sur des lignes illisibles aurait valu **zéro**, et « 0
+retour en retard » se serait lu comme une bonne nouvelle (DEC-017, DEC-032 §a).
+Le refus était la seule réponse honnête tant que la lecture restait celle de
+l'appelant.
+
+**La raison métier d'en changer.** Un collaborateur qui n'a pas le droit d'ouvrir
+le module Locations peut avoir besoin de savoir qu'il existe **trois retours en
+retard**, pour en informer la personne qui en répond. Le tableau de bord est une
+vue de **pilotage général** ; il ne donne pas accès aux dossiers.
+
+**La décision.**
+
+> **Voir un nombre agrégé n'est pas accéder aux données du module.**
+
+Les dix fonctions du pilotage deviennent `SECURITY DEFINER` : elles lisent
+l'ensemble des données et **ne rendent que des nombres** — jamais une ligne,
+jamais un nom, jamais une immatriculation. Elles exigent, et elles seules :
+
+| Capacité | Ce qu'elle ouvre |
+|---|---|
+| `dashboard.view` | l'écran, l'exploitation, les réservations, l'activité, les maintenances |
+| `dashboard.fleet.view` | la synthèse du parc |
+| `dashboard.financial.view` | les cinq sommes financières, total de trésorerie compris |
+
+Ces trois capacités existent depuis la migration 007. Elles ne **composent** plus
+avec celles des modules : elles se suffisent. Un profil de pilotage se donne
+désormais en trois capacités, sans ouvrir onze modules.
+
+**Ce qui ne change pas — et c'est la contrepartie de la décision.**
+
+Tout ce qui **nomme** reste gouverné par la capacité de son module, sous RLS :
+
+- la liste nominative des retards — client, véhicule, référence de contrat ;
+- les échéances de documents de véhicule ;
+- le détail compte par compte de Banques & Caisses.
+
+Et chaque lien « Voir le détail » mène à un écran qui vérifie de nouveau sa
+capacité. **Le chiffre ne déverrouille aucune porte.**
+
+**Pourquoi `SECURITY DEFINER` ici, alors que le projet l'évite.** DEC-022 a fermé
+les droits d'exécution parce qu'une fonction `SECURITY DEFINER` ouverte à `anon`
+laissait écrire dans le journal d'audit. La leçon n'était pas « jamais de
+`SECURITY DEFINER` » : elle était qu'une telle fonction doit être **hors de
+portée** de qui n'a rien à y faire, et **ne rendre que ce qu'elle a le droit de
+rendre**. Les deux conditions sont tenues, et la recette SQL du tableau de bord
+les vérifie l'une et l'autre à chaque passage.
+
+**Une conséquence à noter.** Les sommes sont désormais **toujours complètes**.
+Auparavant, une créance calculée sans `billing.customer_payments.view` aurait
+valu le total facturé : il fallait la refuser. La chaîne étant maintenant
+entière, deux profils différents lisent le **même** net — et une imputation n'est
+jamais oubliée pour l'un d'eux (CLAUDE.md §16, §57).
+
+---
+
+### b. Un paiement divers peut être un encaissement
+
+**Demande d'ADIKOM.** « Un paiement divers peut être un encaissement ou un
+décaissement. Il faut donc intégrer explicitement le sens de l'opération. »
+
+**Ce qui existait.** `Module 07` §43 décrit le paiement divers comme « un
+paiement qui n'est pas directement rattaché à une facture ». Le LOT 17 l'a
+implémenté comme une **sortie**, et rien d'autre.
+
+**La décision.** Le sens est une donnée métier, portée par le paiement :
+
+| Sens | Effet à la validation |
+|---|---|
+| **Encaissement** | une écriture d'ENTRÉE : le solde du compte augmente |
+| **Décaissement** | une écriture de SORTIE : le solde du compte diminue |
+
+Il est **obligatoire à la saisie** — le déduire d'un défaut reviendrait à décider
+en silence qu'un paiement est une sortie, et un encaissement saisi ainsi
+diminuerait le compte qu'il devait augmenter. Il est **figé** ensuite, au même
+titre que le montant, le compte et la date : l'inverser après validation
+retournerait un mouvement de trésorerie sans qu'aucune écriture ne l'explique.
+
+Le cycle **Brouillon → Validé → Annulé** est inchangé. Un brouillon ne déplace
+rien ; la validation produit **une** écriture, du montant, dans le sens du
+paiement ; l'annulation la défait et rend le solde.
+
+**Aucune permission n'est créée.** Saisir un encaissement divers et saisir un
+décaissement divers sont le **même acte**, sur le même objet, dans le même menu.
+En créer deux surchargerait le catalogue sans qu'ADIKOM ait à arbitrer quoi que
+ce soit (CLAUDE.md §19 bis).
+
+**Les données existantes ne bougent pas.** La colonne naît avec `default 'OUT'` :
+les paiements divers déjà enregistrés, dont ceux de la démonstration, restent
+exactement ce qu'ils étaient. Aucun solde ne change, aucune écriture n'est
+réécrite.
+
+**L'autre partie change de nom avec le sens.** On ne verse pas à un payeur : la
+fiche et le formulaire disent « Bénéficiaire » pour un décaissement, « Payeur »
+pour un encaissement. La colonne, elle, reste `beneficiary` — la renommer aurait
+réécrit l'histoire de trois paiements pour un mot.
+
+---
+
+### c. Quatre fiches reçoivent leur barre d'actions, et le document qui va avec
+
+**Demande d'ADIKOM.** Réservation, facture client, facture fournisseur et
+règlement doivent offrir « Aperçu · Télécharger PDF · Imprimer · Modifier »,
+comme les fiches client, fournisseur, partenaire, véhicule et tarification.
+« Ne crée surtout pas de boutons morts. »
+
+**La décision.** Quatre documents sont créés, et **sept capacités** avec eux :
+
+| Document | Capacités |
+|---|---|
+| Confirmation de réservation | `rental.reservations.download` · `.print` |
+| Facture client | `billing.customer_invoices.download` (`.print` existait) |
+| Facture fournisseur | `billing.supplier_invoices.download` · `.print` |
+| Reçu de paiement divers | `billing.misc_payments.download` · `.print` |
+
+**Catalogue : 171 → 178.** Toutes sensibles : ces pièces sortent du système en
+portant l'identité d'un tiers et des montants.
+
+**Le retrait de la migration 037 est levé, et c'est une décision, pas un oubli.**
+Cette migration avait **supprimé** `rental.reservations.download` et `.print`
+avec ce motif : aucun document de réservation n'existait, et une permission qui
+ne débloque rien ne doit pas être attribuable (CLAUDE.md §19 bis). Une recette
+veillait à ce qu'elles ne reviennent pas.
+
+ADIKOM demande aujourd'hui cette pièce — une **confirmation de réservation**
+remise au client, portant l'engagement. Le motif du retrait tombe avec le fait
+qui le fondait. Les codes reviennent **à l'identique** : ils n'ont jamais changé
+de sens, et aucun autre ne les a remplacés entre-temps.
+
+**La recette qui les interdisait change d'objet plutôt que de disparaître.** Ce
+qu'elle gardait n'était pas « ces deux codes sont absents » mais « aucune
+capacité documentaire n'est attribuable sans document ». C'est cela qu'elle
+vérifie désormais, pour **toutes** : chaque `.download` et chaque `.print` du
+catalogue doit correspondre à une entrée du registre des documents.
+
+**« Modifier » n'ouvre pas d'écran séparé sur les factures.** Leurs champs
+modifiables vivent dans la fiche, tant que la facture n'est pas émise ou validée.
+Le bouton y conduit ; ouvrir une page qui afficherait la même chose n'aurait
+servi que la symétrie.
+
+---
+
+### d. Les onglets « à venir » deviennent opérationnels — ou disparaissent
+
+**Demande d'ADIKOM.** « Il ne doit plus rester d'onglet à venir sur ces fiches
+lorsque la fonction est demandée dans cet ajustement. Ne fabrique pas une
+fonctionnalité vide. »
+
+**La décision, fiche par fiche.**
+
+| Fiche | Onglet | Ce qu'il montre |
+|---|---|---|
+| Client | Réservations | ses réservations, statut dérivé compris |
+| Client | Locations | ses contrats |
+| Client | Documents | sa fiche PDF, et les trois pièces de chacun de ses contrats |
+| Client | Historique | le journal d'activité de la fiche |
+| Fournisseur | Documents | sa fiche PDF, et chacune de ses factures |
+| Partenaire | Projets | les projets rattachés par `partner_id` |
+| Partenaire | Documents | sa fiche PDF |
+| Partenaire | Historique | le journal d'activité de la fiche |
+| Location | Historique | le cycle réellement parcouru par le contrat |
+| Véhicule | Locations | les contrats portant sur ce véhicule |
+| Véhicule | Rentabilité | voir §e |
+| Tarification | Tarifs préférentiels | voir §e |
+
+**Un onglet retiré : « Conditions » sur la fiche partenaire.** Aucune table,
+aucune colonne, aucune capacité ne décrit les conditions d'un partenariat : le
+modèle n'existe pas. L'inventer aurait été fabriquer une fonctionnalité vide, ce
+que la demande interdit expressément. La carte « Périmètre actuel » le dit déjà
+en toutes lettres, et c'est plus honnête qu'un onglet qui ne montrerait rien.
+
+**Aucun historique parallèle n'est créé.** Les trois onglets « Historique »
+**lisent le journal d'activité**, qui consigne déjà qui a fait quoi, quand, et ce
+qui a changé (`Audit` §1). Tenir une seconde trace en aurait fait deux, dont
+l'une aurait fini par diverger — et un historique qui ment est pire qu'un
+historique absent. Ils relèvent donc de `users.audit.view`, et de rien d'autre.
+
+**Aucun stockage de fichier n'est créé.** ADIKOM PILOT ne conserve aucune pièce
+jointe sur une fiche de tiers, et personne ne l'a demandé (arbitrage 19 de
+DEC-036, toujours ouvert). Les onglets « Documents » rassemblent ce que le
+système **produit** au sujet du tiers : sa fiche, et les pièces des dossiers qui
+le concernent.
+
+**Chaque onglet suit la capacité de son module.** Sans elle, il **disparaît** —
+l'afficher vide certifierait qu'il n'y a rien à voir, alors qu'on ne fait que
+refuser la lecture (DEC-017). C'est la convention déjà retenue sur la fiche
+fournisseur depuis le LOT 4.
+
+**La mention « à venir » est retirée du composant d'onglets.** Disponible, elle
+reviendrait un jour dans une fiche, et l'utilisateur retrouverait la promesse
+dont on vient de le débarrasser.
+
+---
+
+### e. Rentabilité d'un véhicule et tarifs préférentiels : deux onglets, deux règles
+
+**La rentabilité EXISTE déjà comme règle, et elle est tenue telle quelle.**
+
+`05_Regles_Metier/02_Parc_Automobile.md` §43 la pose, exemple à l'appui :
+« Revenus : 2 500 000 KMF. Coûts de maintenance : 550 000 KMF. » Rien de plus
+n'est inventé — ni amortissement, ni assurance, ni carburant, ni clé de
+répartition : aucune de ces charges n'est enregistrée par véhicule dans le
+système, et en supposer une rendrait le résultat faux sans que personne puisse le
+vérifier.
+
+Le **même §43** pose un interdit, et c'est lui qui commande l'écran :
+
+> « Le système ne doit pas présenter un indicateur comme une rentabilité
+> **complète** si toutes les charges ne sont pas prises en compte. »
+
+L'onglet parle donc de **marge d'exploitation**, et énumère en toutes lettres ce
+qu'elle ne couvre pas. Il annonce également combien d'interventions ne sont pas
+encore chiffrées.
+
+Le calcul suit la chaîne du SaaS, sans raccourci :
+
+```
+Revenus facturés              factures émises portant une location du véhicule
+− Coût d'entretien réel       coûts RÉELS arrêtés, jamais une estimation
++ Imputé aux fournisseurs     ce qu'ADIKOM a déduit de leurs factures
+= Coût net supporté
+Marge = Revenus facturés − Coût net supporté
+```
+
+Une imputation **n'est pas un paiement** (CLAUDE.md §57), mais elle réduit bien
+la charge qu'ADIKOM supporte : les deux montants restent affichés séparément.
+Chacune des trois composantes relève d'une capacité distincte ; il en manque une,
+la marge n'est **pas calculée** — un zéro y passerait pour une charge nulle.
+
+**Les tarifs préférentiels répondent à la question inverse de la fiche client.**
+La fiche client dit « quelles conditions ce client a-t-il ? ». L'onglet dit « à
+qui avons-nous consenti des conditions, et lesquelles ? ». C'est la vue dont on a
+besoin pour réviser une politique commerciale.
+
+Il réutilise le panneau de la fiche client : portée, véhicule, catégorie, mode,
+montant ou remise, unité, validité, et la priorité de la règle la plus spécifique
+— rien n'est réécrit, et le résolveur en base reste l'unique implémentation de
+DEC-002. L'onglet suit `parties.clients.pricing.view` ; la modification exige
+`parties.clients.pricing.manage`, vérifiée de nouveau par l'action serveur. **Un
+tarif déjà verrouillé sur une réservation n'est atteint par aucune modification
+faite ici.**
+
+---
+
+### f. Un champ déroulant reste un champ déroulant, sur téléphone comme ailleurs
+
+**Demande d'ADIKOM.** « Sur mobile, certains champs déroulants deviennent une
+sorte de fenêtre pop-up avec cases à cocher. Ce comportement n'est pas souhaité. »
+
+**Le constat.** Un `<select>` natif ne se dessine pas : c'est le **système** qui
+décide de sa liste. Sur Android, une pression ouvre une fenêtre modale plein
+écran, options précédées de pastilles ; sur iOS, une roue crantée en bas de
+l'écran. Le même champ, sur ordinateur, ouvre une liste sobre sous le champ.
+
+**La décision.** La liste est **dessinée par l'application**, et elle est la même
+partout.
+
+**Ce qui reste natif, et pourquoi c'est essentiel.** Le `<select>` n'est pas
+remplacé : il est **conservé** dans le document, et demeure la seule source de
+vérité de la valeur. Les formulaires continuent de l'envoyer ; `onChange` reçoit
+un vrai événement ; un champ piloté reste piloté par son parent ; une valeur
+posée de l'extérieur — recette automatisée, gestionnaire de mots de passe — met
+la liste à jour, puisque l'affichage LIT le `<select>` et ne le double jamais.
+
+Il est simplement rendu invisible et **hors d'atteinte du pointeur** : c'est ce
+qui empêche la fenêtre du système de s'ouvrir.
+
+**Ce que la liste garantit**, et que la recette mesure sur un écran de 390 px :
+elle est rendue en portail — aucune carte à `overflow-hidden` ne la rogne ; elle
+est ramenée dans l'écran, jamais hors cadre ; elle s'ouvre vers le haut quand le
+bas manque de place ; le texte d'une option **revient à la ligne** plutôt que
+d'être coupé ; sa hauteur est bornée et elle défile ; une option offre une cible
+tactile de 44 px.
+
+**Les vraies listes à choix multiples ne sont pas touchées.** Départements,
+groupes d'un utilisateur, dommages d'un incident restent des cases à cocher : ce
+sont de véritables choix multiples, pas des champs déroulants déguisés. Le SaaS
+n'expose aucun `<select multiple>`.
+
+---
+
+### g. Ajouter une personne à un projet
+
+**Demande d'ADIKOM.** « La zone permettant d'ajouter une personne à un projet est
+mal arrangée. Le champ, le rôle et le bouton se présentent de manière trop serrée. »
+
+**Ce qui existait.** Les deux champs et le bouton tenaient sur une seule ligne
+(`2fr 1fr auto`) : le rôle s'y retrouvait deux fois plus étroit que la personne,
+son explication tombait sur quatre lignes, et le bouton était comprimé contre le
+bord.
+
+**La décision.** Les deux champs partagent la largeur à parts égales, et le
+bouton prend sa propre ligne — il ne dépend plus de la hauteur des explications
+qui le précèdent. Sur téléphone, tout s'empile : une colonne, des champs pleine
+largeur, un bouton pleine largeur. Le premier champ est intitulé **« Personne »**,
+et non plus « Ajouter » : c'est ce qu'il désigne.
+
+---
+
+### h. Aucune référence de documentation dans une page
+
+**Demande d'ADIKOM.** Les bandeaux explicatifs sont validés, mais les références
+« (§25) », « (Workflow 07 §23) » qu'ils portent « ne sont pas professionnelles
+dans l'interface utilisateur finale ».
+
+**La décision.** Toute référence à la documentation de développement est retirée
+des textes **visibles** : `§XX`, `Workflow NN §XX`, `Module NN §XX`,
+`Règles … §XX`, `DEC-0XX`, `CLAUDE.md §XX`, et les chemins de fichiers. Le
+contenu pédagogique, lui, est intégralement conservé — c'est lui qu'ADIKOM
+valide.
+
+**Les commentaires du code ne sont pas touchés.** Ils portent la traçabilité vers
+la documentation, que CLAUDE.md §53 demande de conserver : une règle métier doit
+rester retrouvable depuis le code qui l'applique. Seule change la frontière entre
+ce qui s'adresse au développeur et ce qui s'adresse à l'utilisateur.
+
+**Un cas hors périmètre, signalé.** Une fiche de maintenance de démonstration
+affiche « Donnée de démonstration — DEMO. Ne pas supprimer sans décision. [M1] ».
+Ce n'est pas un texte de l'application : c'est le **marqueur d'un enregistrement
+de démonstration**, écrit par `demo:seed` et relu par `demo:clean` pour retrouver
+exactement ce qu'il a créé. Le retirer laisserait des données que le nettoyage ne
+saurait plus viser. Il disparaît avec le jeu de démonstration lui-même.
+
+---
+
+### Ce que ces ajustements n'ont pas fait
+
+- **Aucune capacité de module n'est accordée implicitement.** Le tableau de bord
+  affiche des nombres ; il n'ouvre aucune table. La recette le vérifie dans les
+  deux sens : le chiffre est là, et RLS masque toujours les lignes.
+- **Aucune RLS n'est affaiblie.** Aucune policy n'est modifiée par ces trois
+  migrations.
+- **Aucun espace externe n'est créé.** Clients, fournisseurs et partenaires
+  restent des données métier ; le SaaS demeure strictement interne.
+- **Aucune règle métier n'est inventée.** La rentabilité suit §43 et en énonce
+  les limites ; le sens du paiement divers est un arbitrage d'ADIKOM ; les
+  conditions de partenariat, faute de modèle, restent absentes.
+
 
 ---
 

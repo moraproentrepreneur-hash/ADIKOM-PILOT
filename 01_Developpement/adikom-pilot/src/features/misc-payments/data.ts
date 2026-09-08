@@ -2,7 +2,11 @@ import 'server-only'
 
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { reportQueryFailure } from '@/lib/server-action'
-import type { MiscPaymentCategory, MiscPaymentStatus } from './constants'
+import type {
+  MiscPaymentCategory,
+  MiscPaymentDirection,
+  MiscPaymentStatus,
+} from './constants'
 
 /**
  * Accès aux paiements divers — Module 07 §43 à §46, LOT 17.
@@ -22,7 +26,10 @@ export type MiscPayment = {
   accountLabel: string | null
   amount: number
   paidOn: string
+  /** ENTRÉE (encaissement) ou SORTIE (décaissement) — DEC-042 §b. */
+  direction: MiscPaymentDirection
   category: MiscPaymentCategory
+  /** L'autre partie : bénéficiaire d'un décaissement, payeur d'un encaissement. */
   beneficiary: string
   purpose: string
   externalRef: string | null
@@ -35,7 +42,7 @@ export type MiscPayment = {
 }
 
 const SELECT = `
-  id, payment_no, account_id, amount, paid_on, category, beneficiary, purpose,
+  id, payment_no, account_id, amount, paid_on, direction, category, beneficiary, purpose,
   external_ref, notes, status, status_reason, validated_at, cancelled_at, created_at,
   financial_accounts ( label, account_no )
 `
@@ -46,6 +53,7 @@ type RawMiscPayment = {
   account_id: string
   amount: number
   paid_on: string
+  direction: MiscPaymentDirection
   category: MiscPaymentCategory
   beneficiary: string
   purpose: string
@@ -69,6 +77,7 @@ function toMiscPayment(row: RawMiscPayment): MiscPayment {
       : null,
     amount: row.amount,
     paidOn: row.paid_on,
+    direction: row.direction,
     category: row.category,
     beneficiary: row.beneficiary,
     purpose: row.purpose,
@@ -86,6 +95,8 @@ export type MiscPaymentFilters = {
   search?: string
   accountId?: string
   category?: string
+  /** `IN` ou `OUT` : la liste se lit rarement dans les deux sens à la fois. */
+  direction?: string
   status?: string
   from?: string
   to?: string
@@ -110,6 +121,7 @@ export async function listMiscPayments(
   }
   if (filters.accountId) query = query.eq('account_id', filters.accountId)
   if (filters.category) query = query.eq('category', filters.category)
+  if (filters.direction) query = query.eq('direction', filters.direction)
   if (filters.status) query = query.eq('status', filters.status)
   if (filters.from) query = query.gte('paid_on', filters.from)
   if (filters.to) query = query.lte('paid_on', filters.to)

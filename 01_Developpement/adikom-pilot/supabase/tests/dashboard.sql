@@ -84,17 +84,36 @@ begin
 end $$;
 
 
--- --- 2. LES SEPT FONCTIONS EXISTENT, ET SONT SOBRES ----------------------------------
+-- --- 2. LES DIX FONCTIONS EXISTENT, ET SONT HORS DE PORTÉE --------------------------
 --
--- `SECURITY INVOKER` (DEC-022), `stable`, `search_path` figé. Une fonction de
--- lecture qui s'exécuterait avec les droits de son propriétaire contournerait
--- RLS — et rendrait à chacun les chiffres de tout le monde.
+-- ELLES SONT `SECURITY DEFINER`, ET C'EST LE POINT DE L'AJUSTEMENT (DEC-042 §a).
+--
+-- Le LOT 9 les avait voulues `SECURITY INVOKER` : chacune lisait avec les droits
+-- de l'appelant, RLS comprise, et refusait plutôt que de rendre un « 0 » qui se
+-- serait lu « rien à faire ». C'était juste tant que le tableau de bord n'était
+-- ouvert qu'à qui ouvrait déjà les modules.
+--
+-- ADIKOM a tranché : un indicateur AGRÉGÉ n'est pas un accès au module. Ces
+-- fonctions ne rendent que des nombres — jamais une ligne, jamais un nom — et
+-- elles lisent donc l'ensemble des données, sous la seule garde de
+-- `dashboard.view`.
+--
+-- Ce qui remplace RLS, ici, ce sont DEUX conditions, et ce test les éprouve :
+--
+--   1. l'exécution est fermée à PUBLIC et à `anon` — sans quoi la clé publique
+--      suffirait à lire les chiffres d'ADIKOM (DEC-022) ;
+--   2. la garde `dashboard.view` est écrite dans le corps de chacune (§3).
+--
+-- `stable` et `search_path` figé restent exigés : une fonction `SECURITY
+-- DEFINER` dont le chemin de recherche flotte peut être détournée par un schéma
+-- temporaire.
 do $$
 declare
   v_fns  text[] := array[
     'dashboard_operations', 'dashboard_reservations', 'dashboard_fleet',
     'dashboard_customer_invoiced', 'dashboard_customer_collected',
-    'dashboard_customer_receivables', 'dashboard_supplier_payables'
+    'dashboard_customer_receivables', 'dashboard_supplier_payables',
+    'dashboard_activity', 'dashboard_maintenance_open', 'dashboard_treasury_total'
   ];
   v_bad  text[];
   v_seen int;
@@ -102,15 +121,19 @@ begin
   select count(distinct p.proname) into v_seen
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = any(v_fns);
-  if v_seen <> 7 then
-    raise exception 'Sept fonctions attendues, % trouvée(s).', v_seen;
+  if v_seen <> 10 then
+    raise exception 'Dix fonctions attendues, % trouvée(s).', v_seen;
   end if;
 
+  -- L'inverse du contrôle d'origine : une fonction redevenue INVOKER rendrait
+  -- « 0 » à qui n'ouvre pas le module, et l'écran mentirait (DEC-017).
   select array_agg(p.proname) into v_bad
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public' and p.proname = any(v_fns) and p.prosecdef;
+  where n.nspname = 'public' and p.proname = any(v_fns) and not p.prosecdef;
   if v_bad is not null then
-    raise exception 'SECURITY DEFINER de commodité (DEC-022) : %.', v_bad;
+    raise exception
+      'Fonction du pilotage redevenue SECURITY INVOKER : %. Elle rendrait zéro au lieu du chiffre (DEC-042 §a).',
+      v_bad;
   end if;
 
   select array_agg(p.proname) into v_bad
@@ -127,7 +150,7 @@ begin
       select 1 from unnest(p.proconfig) c where c like 'search\_path=%'
     ));
   if v_bad is not null then
-    raise exception '`search_path` non figé : %.', v_bad;
+    raise exception '`search_path` non figé sur une fonction SECURITY DEFINER : %.', v_bad;
   end if;
 
   select array_agg(p.proname) into v_bad
@@ -138,34 +161,96 @@ begin
     raise exception 'EXECUTE encore accordé à PUBLIC (DEC-022) : %.', v_bad;
   end if;
 
-  raise notice '[OK] 2. Sept fonctions, toutes SECURITY INVOKER, stables et fermées à PUBLIC.';
+  select array_agg(p.proname) into v_bad
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = any(v_fns)
+    and has_function_privilege('anon', p.oid, 'EXECUTE');
+  if v_bad is not null then
+    raise exception
+      'EXECUTE accordé à `anon` : la clé publique lirait les chiffres d''ADIKOM : %.', v_bad;
+  end if;
+
+  raise notice '[OK] 2. Dix fonctions SECURITY DEFINER, stables, chemin figé, fermées à PUBLIC et anon.';
 end $$;
 
 
--- --- 3. CHAQUE FONCTION EXIGE SES CAPACITÉS -----------------------------------------
+-- --- 2 bis. L'ARITHMÉTIQUE DU SOLDE RESTE HORS D'ATTEINTE ---------------------------
+--
+-- `account_balance_formula` calcule un solde SANS garde : c'est ce qui permet au
+-- total du tableau de bord et au solde d'une fiche de partager une seule
+-- vérité (migration 076). Exécutable par une session applicative, elle
+-- contournerait `treasury.balances.view`.
+do $$
+declare v_leaky text[];
+begin
+  if not exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'account_balance_formula'
+  ) then
+    raise exception '`account_balance_formula` est absente : le solde aurait deux vérités.';
+  end if;
+
+  select array_agg(r) into v_leaky
+  from unnest(array['anon', 'authenticated', 'public']) r
+  where has_function_privilege(r, 'public.account_balance_formula(uuid)', 'EXECUTE');
+
+  if v_leaky is not null then
+    raise exception
+      '`account_balance_formula` exécutable par : %. Elle contournerait les gardes du solde.',
+      array_to_string(v_leaky, ', ');
+  end if;
+
+  -- Et `financial_account_balance`, elle, garde ses deux exigences.
+  if position('treasury.balances.view' in
+      (select p.prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'financial_account_balance' limit 1)) = 0 then
+    raise exception '`financial_account_balance` n''exige plus `treasury.balances.view`.';
+  end if;
+
+  raise notice '[OK] 2 bis. Une seule arithmétique du solde, et elle reste hors d''atteinte.';
+end $$;
+
+
+-- --- 3. CHAQUE FONCTION EXIGE LES CAPACITÉS DU PILOTAGE, ET RIEN D'AUTRE ------------
 --
 -- Le contrôle est LEXICAL : la garde doit être écrite dans le corps de la
 -- fonction. Son EFFET, lui, s'éprouve avec de vraies sessions — ici
 -- `current_actor()` est NULL et `require_capability` s'efface (migration 021).
+--
+-- DEUX CONTRÔLES, DE SENS OPPOSÉS.
+--
+-- Le premier vérifie que la garde du pilotage EST là. Le second — nouveau —
+-- vérifie qu'aucune capacité de MODULE n'y est revenue : c'est elle qui
+-- refermerait les chiffres sur les seuls porteurs du module, et rendrait à
+-- l'écran ses « Non accessible » (DEC-042 §a).
 do $$
 declare
   v_src  text;
   v_want text;
+  v_all  text[] := array[
+    'dashboard_operations', 'dashboard_reservations', 'dashboard_fleet',
+    'dashboard_customer_invoiced', 'dashboard_customer_collected',
+    'dashboard_customer_receivables', 'dashboard_supplier_payables',
+    'dashboard_activity', 'dashboard_maintenance_open', 'dashboard_treasury_total'
+  ];
   v_pair text[][] := array[
-    ['dashboard_operations',           'rental.rentals.view'],
-    ['dashboard_reservations',         'rental.reservations.view'],
     ['dashboard_fleet',                'dashboard.fleet.view'],
-    ['dashboard_fleet',                'rental.fleet.view'],
     ['dashboard_customer_invoiced',    'dashboard.financial.view'],
-    ['dashboard_customer_invoiced',    'billing.customer_invoices.view'],
-    ['dashboard_customer_collected',   'billing.customer_payments.view'],
-    ['dashboard_customer_receivables', 'billing.customer_invoices.view'],
-    ['dashboard_customer_receivables', 'billing.customer_payments.view'],
-    ['dashboard_supplier_payables',    'billing.supplier_invoices.view'],
-    ['dashboard_supplier_payables',    'billing.imputations.view'],
-    ['dashboard_supplier_payables',    'billing.supplier_payments.view']
+    ['dashboard_customer_collected',   'dashboard.financial.view'],
+    ['dashboard_customer_receivables', 'dashboard.financial.view'],
+    ['dashboard_supplier_payables',    'dashboard.financial.view'],
+    ['dashboard_treasury_total',       'dashboard.financial.view']
+  ];
+  v_modules text[] := array[
+    'rental.rentals.view', 'rental.reservations.view', 'rental.fleet.view',
+    'rental.maintenance.view', 'parties.clients.view',
+    'billing.customer_invoices.view', 'billing.customer_payments.view',
+    'billing.supplier_invoices.view', 'billing.supplier_payments.view',
+    'billing.imputations.view', 'treasury.accounts.view',
+    'treasury.balances.view', 'treasury.entries.view'
   ];
   i int;
+  j int;
 begin
   for i in 1 .. array_length(v_pair, 1) loop
     select p.prosrc into v_src
@@ -179,24 +264,28 @@ begin
     end if;
   end loop;
 
-  -- `dashboard.view` garde les sept : la page ne s'ouvre pas par la bande.
-  for i in 1 .. 7 loop
+  for i in 1 .. array_length(v_all, 1) loop
     select p.prosrc into v_src
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'public'
-      and p.proname = (array[
-        'dashboard_operations', 'dashboard_reservations', 'dashboard_fleet',
-        'dashboard_customer_invoiced', 'dashboard_customer_collected',
-        'dashboard_customer_receivables', 'dashboard_supplier_payables'
-      ])[i]
+    where n.nspname = 'public' and p.proname = v_all[i]
     limit 1;
 
+    -- `dashboard.view` garde les dix : la page ne s'ouvre pas par la bande.
     if position('dashboard.view' in v_src) = 0 then
-      raise exception 'Une fonction du pilotage n''exige pas « dashboard.view ».';
+      raise exception '% n''exige pas « dashboard.view ».', v_all[i];
     end if;
+
+    -- Et aucune capacité de module n'y revient.
+    for j in 1 .. array_length(v_modules, 1) loop
+      if position(v_modules[j] in v_src) > 0 then
+        raise exception
+          '% exige de nouveau « % » : les indicateurs redeviendraient « Non accessible » (DEC-042 §a).',
+          v_all[i], v_modules[j];
+      end if;
+    end loop;
   end loop;
 
-  raise notice '[OK] 3. Chaque somme nomme les capacités dont elle dépend.';
+  raise notice '[OK] 3. Les dix fonctions gardent le pilotage, et n''exigent aucun module.';
 end $$;
 
 
@@ -597,6 +686,81 @@ begin
 end $$;
 
 
+-- --- 10 bis. LES TROIS LECTURES AGRÉGÉES AJOUTÉES PAR DEC-042 §a ---------------------
+--
+-- Activité de la période, maintenances ouvertes, total de trésorerie : trois
+-- chiffres que l'application calculait auparavant table par table, sous la
+-- capacité de chaque module. Ils passent en base pour la même raison que les
+-- autres — un nombre ne nomme personne.
+do $$
+declare
+  a         record;
+  v_open    integer;
+  v_total   bigint;
+  v_expected bigint;
+  v_client  uuid := (select client from recette_tdb);
+begin
+  -- L'ACTIVITÉ COMPTE DES CRÉATIONS, ET SUR LE BON JOUR.
+  --
+  -- Le client de recette a été créé à l'instant : il doit figurer dans la
+  -- journée courante, et NON dans une fenêtre passée.
+  select * into a from public.dashboard_activity(current_date, current_date);
+
+  if a.clients < 1 then
+    raise exception
+      'Le client créé aujourd''hui n''est pas compté dans l''activité du jour (% clients).', a.clients;
+  end if;
+
+  select * into a from public.dashboard_activity(current_date - 30, current_date - 20);
+  if a.clients < 0 or a.reservations < 0 or a.rentals < 0 or a.invoices < 0 then
+    raise exception 'Un comptage d''activité est négatif.';
+  end if;
+
+  -- Une période sans borne n'est pas devinée : elle est refusée.
+  begin
+    perform public.dashboard_activity(null, current_date);
+    raise exception 'Une période d''activité sans borne a été acceptée.';
+  exception
+    when check_violation then null;
+  end;
+
+  -- MAINTENANCES OUVERTES : un compte, jamais négatif, cohérent avec la table.
+  v_open := public.dashboard_maintenance_open();
+
+  if v_open <> (
+    select count(*) from public.vehicle_maintenances
+    where status in ('PLANNED', 'TO_DIAGNOSE', 'IN_PROGRESS', 'ON_HOLD')
+  ) then
+    raise exception 'Le compte des maintenances ouvertes ne correspond pas à la table.';
+  end if;
+
+  -- TOTAL DE TRÉSORERIE : la MÊME arithmétique que le solde d'une fiche.
+  --
+  -- C'est le contrôle qui garantit qu'il n'y a pas deux vérités sur un solde :
+  -- le total du tableau de bord doit valoir la somme, compte par compte, de ce
+  -- que `financial_account_balance` rendrait.
+  v_total := public.dashboard_treasury_total();
+
+  select coalesce(sum(public.financial_account_balance(x.id)), 0)::bigint
+  into v_expected
+  from public.financial_accounts x
+  where x.status = 'ACTIVE';
+
+  if v_total <> v_expected then
+    raise exception
+      'Le total du pilotage (%) diffère de la somme des soldes (%) : deux vérités sur un solde.',
+      v_total, v_expected;
+  end if;
+
+  -- Le client de recette existe : la lecture n'a pas porté sur rien.
+  if v_client is null then
+    raise exception 'Le jeu de recette est incomplet.';
+  end if;
+
+  raise notice '[OK] 10 bis. Activité, maintenances et trésorerie : agrégées, exactes, bornées.';
+end $$;
+
+
 -- --- 11. AUCUN EFFET DE BORD : LE PILOTAGE NE MODIFIE RIEN ---------------------------
 --
 -- Sept fonctions `stable` : les appeler ne doit rien changer. Le contrôle est
@@ -648,8 +812,8 @@ declare
   v_missing text[];
 begin
   select count(*) into v_total from public.permissions;
-  if v_total <> 171 then
-    raise exception 'Catalogue attendu à 171 permissions, obtenu %.', v_total;
+  if v_total <> 178 then
+    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
   end if;
 
   select array_agg(code) into v_missing
@@ -668,7 +832,7 @@ begin
     raise exception 'Une capacité `dashboard.*` a été ajoutée sans décision (DEC-024).';
   end if;
 
-  raise notice '[OK] 12. Catalogue à 171 ; trois capacités de pilotage, pas une de plus.';
+  raise notice '[OK] 12. Catalogue à 178 ; trois capacités de pilotage, pas une de plus.';
 end $$;
 
 

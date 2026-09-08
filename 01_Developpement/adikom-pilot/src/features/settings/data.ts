@@ -301,7 +301,7 @@ export function configurationChecklist(
       label: 'Logo',
       done: filled(settings.logoPath),
       readable: true,
-      hint: 'Logo officiel enregistré (§6).',
+      hint: 'Logo officiel enregistré.',
     },
     {
       label: 'Informations administratives',
@@ -310,13 +310,13 @@ export function configurationChecklist(
           (filled(sensitive.registrationNumber) || filled(sensitive.taxIdentifier))
       ),
       readable: Boolean(sensitive?.mayReadAdministrative),
-      hint: 'Registre ou identifiant fiscal (§34).',
+      hint: 'Registre ou identifiant fiscal.',
     },
     {
       label: 'Informations bancaires',
       done: Boolean(sensitive?.mayReadBank && filled(sensitive.bankAccountDetails)),
       readable: Boolean(sensitive?.mayReadBank),
-      hint: 'Coordonnées destinées aux documents (§37).',
+      hint: 'Coordonnées destinées aux documents.',
     },
   ]
 }

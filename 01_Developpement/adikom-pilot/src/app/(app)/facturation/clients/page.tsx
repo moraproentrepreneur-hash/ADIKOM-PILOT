@@ -110,7 +110,7 @@ export default async function CustomerInvoicesPage(props: PageProps<'/facturatio
       <Notice tone="info" className="mb-5">
         Une facture <strong>émise</strong> reconnaît une créance et fige ses montants.{' '}
         <strong>« Payée »</strong> et <strong>« Partiellement payée »</strong> ne s’écrivent
-        jamais : elles se calculent des règlements enregistrés (Workflow 07 §61).
+        jamais : elles se calculent des règlements enregistrés.
       </Notice>
 
       {!canSeePayments && (

@@ -2,6 +2,16 @@ import type { ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 
+/*
+ * Le champ déroulant vit dans son propre module.
+ *
+ * Il dessine sa liste lui-même — le système ne doit plus imposer sa fenêtre sur
+ * téléphone (DEC-042 §f) —, ce qui en fait un composant client. Le réexporter
+ * ici laisse tous les appels existants inchangés, et garde `Field`, `Input` et
+ * `Textarea` utilisables directement depuis un composant serveur.
+ */
+export { Select } from './select'
+
 /**
  * Champs de formulaire ADIKOM PILOT.
  *
@@ -59,7 +69,17 @@ export function Field({
 }) {
   return (
     <div className={cn('space-y-1.5', wide && 'sm:col-span-2')}>
-      <label htmlFor={name} className="block text-sm font-medium text-ink">
+      {/*
+        Le libellé porte un identifiant : un champ déroulant ne peut pas se
+        désigner par `htmlFor` — le contrôle qu'il faut nommer est le bouton qui
+        ouvre la liste, pas le `<select>` invisible qui porte la valeur. Il s'y
+        rattache donc par `aria-labelledby`.
+      */}
+      <label
+        htmlFor={name}
+        id={`${name}-label`}
+        className="block text-sm font-medium text-ink"
+      >
         {label}
         {required && (
           <span className="ml-1 text-danger" title="Champ obligatoire" aria-hidden>
@@ -95,27 +115,6 @@ export function Input({
       className={cn(CONTROL, error && CONTROL_INVALID, className)}
       {...props}
     />
-  )
-}
-
-export function Select({
-  name,
-  error,
-  children,
-  className,
-  ...props
-}: React.SelectHTMLAttributes<HTMLSelectElement> & { name: string; error?: string }) {
-  return (
-    <select
-      id={name}
-      name={name}
-      aria-invalid={Boolean(error)}
-      aria-describedby={error ? `${name}-error` : undefined}
-      className={cn(CONTROL, error && CONTROL_INVALID, className)}
-      {...props}
-    >
-      {children}
-    </select>
   )
 }
 

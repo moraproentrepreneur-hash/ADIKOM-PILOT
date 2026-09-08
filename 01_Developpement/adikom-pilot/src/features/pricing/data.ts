@@ -113,6 +113,14 @@ function toRuleRow(row: RawRuleRow): PricingRuleRow {
 export type PricingRuleFilters = {
   /** `null` cible explicitement les tarifs standard, sans client. */
   clientId?: string | null
+  /**
+   * Toutes les conditions CONSENTIES, quel que soit le client.
+   *
+   * L'onglet « Tarifs préférentiels » répond à la question inverse de la fiche
+   * client : non pas « quelles conditions ce client a-t-il ? » mais « à qui
+   * avons-nous consenti des conditions ? » (DEC-042 §e).
+   */
+  withClient?: boolean
   vehicleId?: string
   categoryId?: string
   includeInactive?: boolean
@@ -127,6 +135,7 @@ export async function listPricingRules(
 
   if (filters.clientId === null) query = query.is('client_id', null)
   else if (filters.clientId) query = query.eq('client_id', filters.clientId)
+  else if (filters.withClient) query = query.not('client_id', 'is', null)
 
   if (filters.vehicleId) query = query.eq('vehicle_id', filters.vehicleId)
   if (filters.categoryId) query = query.eq('category_id', filters.categoryId)

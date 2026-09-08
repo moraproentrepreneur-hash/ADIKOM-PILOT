@@ -32,6 +32,7 @@ type Option = { id: string; label: string }
  */
 export function PricingRuleForm({
   clientId,
+  clients,
   categories,
   vehicles,
   rule,
@@ -39,6 +40,15 @@ export function PricingRuleForm({
 }: {
   /** Fixé lorsque le formulaire est ouvert depuis la fiche d'un client. */
   clientId?: string
+  /**
+   * Clients sélectionnables — fourni par l'onglet « Tarifs préférentiels ».
+   *
+   * Une condition préférentielle SUPPOSE un client : sans lui, la même saisie
+   * créerait un tarif standard applicable à tous. Le champ est donc obligatoire
+   * dès que cette liste est présente, et le bénéficiaire se choisit avant tout
+   * le reste (DEC-042 §e).
+   */
+  clients?: Option[]
   categories: Option[]
   vehicles: Option[]
   rule?: PricingRuleRow
@@ -67,13 +77,24 @@ export function PricingRuleForm({
     rule?.discountPercent !== null && rule?.discountPercent !== undefined ? 'DISCOUNT' : 'AMOUNT'
   )
 
-  const effectiveClientId = clientId ?? rule?.clientId ?? ''
+  const fixedClientId = clientId ?? rule?.clientId ?? ''
+
+  /*
+   * Le client est CHOISI lorsque l'onglet des tarifs préférentiels fournit la
+   * liste, FIXÉ lorsqu'on vient d'une fiche client. Dans les deux cas, la valeur
+   * part sous le même nom : l'action serveur n'a pas à savoir d'où vient l'appel
+   * pour exiger `parties.clients.pricing.manage`.
+   */
+  const chooseClient = Boolean(clients) && !clientId
+  const [pickedClientId, setPickedClientId] = useState(fixedClientId)
+  const effectiveClientId = chooseClient ? pickedClientId : fixedClientId
+
   const errors = state.fieldErrors ?? {}
 
   return (
     <form action={formAction} noValidate>
       {rule && <input type="hidden" name="ruleId" value={rule.id} />}
-      <input type="hidden" name="clientId" value={effectiveClientId} />
+      {!chooseClient && <input type="hidden" name="clientId" value={effectiveClientId} />}
 
       <FormFeedback error={state.error} success={state.success} className="mb-5" />
 
@@ -82,9 +103,36 @@ export function PricingRuleForm({
         description={
           effectiveClientId
             ? 'Ce tarif ne s’appliquera qu’à ce client.'
-            : 'Ce tarif s’appliquera à tous les clients sans condition particulière.'
+            : chooseClient
+              ? 'Choisissez le client à qui cette condition est consentie.'
+              : 'Ce tarif s’appliquera à tous les clients sans condition particulière.'
         }
       >
+        {chooseClient && (
+          <Field
+            label="Client"
+            name="clientId"
+            required
+            error={errors.clientId}
+            wide
+            hint="La condition ne vaudra que pour ce client."
+          >
+            <Select
+              name="clientId"
+              value={pickedClientId}
+              error={errors.clientId}
+              onChange={(event) => setPickedClientId(event.target.value)}
+            >
+              <option value="">Choisir un client…</option>
+              {(clients ?? []).map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+
         <Field label="S’applique à" name="scope" required>
           <Select
             name="scope"

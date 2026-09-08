@@ -1399,21 +1399,39 @@ async function seedTreasuryOperations(admin, ids) {
     report('virement', item.purpose, null, true)
   }
 
+  /*
+   * Les paiements divers de la démonstration — dans LES DEUX SENS.
+   *
+   * DEC-042 §b a ouvert l'encaissement divers. Les trois décaissements d'origine
+   * restent inchangés : leur sens est explicite plutôt que deviné, et un
+   * quatrième montre ce que la nouveauté permet — un remboursement reçu, qui
+   * AUGMENTE le solde du compte.
+   */
   const payments = [
     {
-      code: 'P1', account: 'C3', amount: 45_000, dayOffset: -6, category: 'SMALL_EXPENSE',
+      code: 'P1', account: 'C3', amount: 45_000, dayOffset: -6, direction: 'OUT',
+      category: 'SMALL_EXPENSE',
       beneficiary: 'Fournitures de bureau DEMO', purpose: 'Achat de consommables pour l’agence.',
       validate: true,
     },
     {
-      code: 'P2', account: 'C1', amount: 180_000, dayOffset: -2, category: 'ADMIN_FEE',
+      code: 'P2', account: 'C1', amount: 180_000, dayOffset: -2, direction: 'OUT',
+      category: 'ADMIN_FEE',
       beneficiary: 'Administration DEMO', purpose: 'Frais administratifs annuels.',
       validate: true,
     },
     {
-      code: 'P3', account: 'C1', amount: 95_000, dayOffset: 0, category: 'ONE_OFF_SERVICE',
+      code: 'P3', account: 'C1', amount: 95_000, dayOffset: 0, direction: 'OUT',
+      category: 'ONE_OFF_SERVICE',
       beneficiary: 'Prestataire DEMO', purpose: 'Intervention ponctuelle — en attente de validation.',
       validate: false,
+    },
+    {
+      code: 'P4', account: 'C1', amount: 120_000, dayOffset: -1, direction: 'IN',
+      category: 'OTHER',
+      beneficiary: 'Assureur DEMO',
+      purpose: 'Remboursement de franchise après sinistre — encaissement divers.',
+      validate: true,
     },
   ]
 
@@ -1428,6 +1446,7 @@ async function seedTreasuryOperations(admin, ids) {
       p_account_id: ids.accounts[item.account],
       p_amount: item.amount,
       p_paid_on: dayOffset(item.dayOffset),
+      p_direction: item.direction,
       p_category: item.category,
       p_beneficiary: item.beneficiary,
       p_purpose: item.purpose,

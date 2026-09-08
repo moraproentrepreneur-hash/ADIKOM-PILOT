@@ -82,7 +82,7 @@ const CYCLE = [
 const FACTS = [
   { value: '9', label: 'modules ouverts', hint: 'Aucune entrée de navigation n’est « à venir ».' },
   {
-    value: '171',
+    value: '178',
     label: 'capacités attribuables',
     hint: 'Consulter, exporter, imprimer : trois droits distincts.',
   },

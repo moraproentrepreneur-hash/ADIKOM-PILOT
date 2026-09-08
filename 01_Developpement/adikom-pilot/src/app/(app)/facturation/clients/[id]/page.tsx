@@ -1,10 +1,21 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Banknote, Receipt } from 'lucide-react'
+import { ArrowLeft, Banknote, Pencil, Receipt } from 'lucide-react'
 
-import { Badge, Card, Empty, EmptyState, InfoRow, PageHeader } from '@/components/ui/primitives'
+import {
+  Badge,
+  BUTTON_BASE,
+  BUTTON_TONES,
+  Card,
+  Empty,
+  EmptyState,
+  InfoRow,
+  PageHeader,
+} from '@/components/ui/primitives'
+import { cn } from '@/lib/utils'
 import { Notice } from '@/components/ui/feedback'
+import { DocumentToolbar } from '@/components/ui/document-toolbar'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate, formatDateTime, todayISO } from '@/lib/dates'
@@ -76,6 +87,8 @@ export default async function CustomerInvoiceDetailPage(
     canPay,
     canCancelPayment,
     canSeeAccounts,
+    canDownload,
+    canPrint,
   ] = await Promise.all([
     can(PERMISSIONS.CUSTOMER_INVOICES_UPDATE),
     can(PERMISSIONS.CUSTOMER_INVOICES_ISSUE),
@@ -86,6 +99,10 @@ export default async function CustomerInvoiceDetailPage(
     can(PERMISSIONS.CUSTOMER_PAYMENTS_CREATE),
     can(PERMISSIONS.CUSTOMER_PAYMENTS_CANCEL),
     can(PERMISSIONS.ACCOUNTS_VIEW),
+    // DEC-024 : produire la facture en PDF et l'imprimer sont deux capacités
+    // distinctes de la consultation, attribuables séparément (DEC-042 §c).
+    can(PERMISSIONS.CUSTOMER_INVOICES_DOWNLOAD),
+    can(PERMISSIONS.CUSTOMER_INVOICES_PRINT),
   ])
 
   const invoice = await getCustomerInvoiceDetail(id, { canSeePayments })
@@ -139,11 +156,33 @@ export default async function CustomerInvoiceDetailPage(
         title={formatAmount(invoice.total) ?? '—'}
         description={`${invoice.invoiceNo} · ${invoice.clientLabel ?? 'Client non communiqué'}`}
         actions={
-          <Badge tone={CUSTOMER_INVOICE_STATUS_TONES[shown]}>
-            {CUSTOMER_INVOICE_STATUS_LABELS[shown]}
-          </Badge>
+          <>
+            <DocumentToolbar
+              type="factures-clients"
+              id={id}
+              label={`facture ${invoice.invoiceNo}`}
+              canDownload={canDownload}
+              canPrint={canPrint}
+            />
+            {canUpdate && editable && (
+              <a
+                href="#modifier"
+                className={cn(BUTTON_BASE, BUTTON_TONES.secondary)}
+              >
+                <Pencil className="size-4 shrink-0" aria-hidden />
+                Modifier
+              </a>
+            )}
+          </>
         }
       />
+
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <Badge tone={CUSTOMER_INVOICE_STATUS_TONES[shown]}>
+          {CUSTOMER_INVOICE_STATUS_LABELS[shown]}
+        </Badge>
+        <span className="text-sm text-muted tabular">{invoice.invoiceNo}</span>
+      </div>
 
       {shown === 'OVERDUE' && (
         <Notice tone="warning" className="mb-5">
@@ -156,7 +195,7 @@ export default async function CustomerInvoiceDetailPage(
         <div className="space-y-5 lg:col-span-2">
           <Card
             title="Montants"
-            description="Sous-total, réductions et total restent séparés (Workflow 07 §23)."
+            description="Sous-total, réductions et total restent séparés."
           >
             <dl>
               <InfoRow label="Sous-total" hint="Location, services et frais.">
@@ -165,7 +204,7 @@ export default async function CustomerInvoiceDetailPage(
 
               <InfoRow
                 label="Réductions"
-                hint="Identifiables ligne à ligne : jamais un prix modifié en silence (§24)."
+                hint="Identifiables ligne à ligne : jamais un prix modifié en silence."
               >
                 {invoice.discount > 0 ? (
                   <span className="tabular">− {formatAmount(invoice.discount)}</span>
@@ -178,7 +217,7 @@ export default async function CustomerInvoiceDetailPage(
                 <span className="font-medium tabular">{formatAmount(invoice.total)}</span>
               </InfoRow>
 
-              <InfoRow label="Encaissé" hint="Règlements validés (Workflow 08 §21, §32).">
+              <InfoRow label="Encaissé" hint="Règlements validés.">
                 {invoice.paidAmount === null ? (
                   <span className="text-muted">
                     Votre compte ne peut pas consulter les règlements.
@@ -188,7 +227,7 @@ export default async function CustomerInvoiceDetailPage(
                 )}
               </InfoRow>
 
-              <InfoRow label="Solde" hint="Total moins les encaissements validés (§21, §28).">
+              <InfoRow label="Solde" hint="Total moins les encaissements validés.">
                 {invoice.remainingDue === null ? (
                   <span className="text-muted">
                     Non calculable sans le droit de consulter les règlements.
@@ -204,7 +243,7 @@ export default async function CustomerInvoiceDetailPage(
 
           <Card
             title="Lignes"
-            description="Leur somme fait le total (Workflow 07 §22, §60)."
+            description="Leur somme fait le total."
           >
             {lines.length === 0 ? (
               <EmptyState
@@ -260,7 +299,7 @@ export default async function CustomerInvoiceDetailPage(
           {canSeePayments ? (
             <Card
               title="Règlements"
-              description="Encaissements réels, rattachés au compte crédité (Workflow 08 §13, §47)."
+              description="Encaissements réels, rattachés au compte crédité."
             >
               {payments === null || payments.length === 0 ? (
                 <EmptyState
@@ -362,7 +401,7 @@ export default async function CustomerInvoiceDetailPage(
               </InfoRow>
               <InfoRow
                 label="Location facturée"
-                hint="Facture → Location → Véhicule → Client (§49)."
+                hint="Facture → Location → Véhicule → Client."
               >
                 {invoice.rentalId === null ? (
                   <span className="text-muted">Facture de services, sans location.</span>
@@ -400,7 +439,7 @@ export default async function CustomerInvoiceDetailPage(
             </dl>
             <p className="mt-4 border-t border-line pt-4 text-xs text-muted">
               Qui a préparé, qui a émis, qui a annulé : le journal d’audit conserve l’avant,
-              l’après et l’auteur de chaque écriture (§48, §71).
+              l’après et l’auteur de chaque écriture.
             </p>
           </Card>
 
@@ -422,8 +461,18 @@ export default async function CustomerInvoiceDetailPage(
             </Card>
           )}
 
+          {/*
+            L'ancre du bouton « Modifier » de la barre d'actions. Une facture ne
+            se modifie pas dans un écran séparé : ses champs modifiables vivent
+            ici, et le bouton y conduit plutôt que d'ouvrir une page qui
+            afficherait la même chose (DEC-042 §c).
+          */}
           {canUpdate && editable && (
-            <Card title="Modifier" description="Tant que la facture n’est pas émise.">
+            <Card
+              id="modifier"
+              title="Modifier"
+              description="Tant que la facture n’est pas émise."
+            >
               <EditCustomerInvoicePanel
                 invoiceId={id}
                 invoiceDate={invoice.invoiceDate}
@@ -434,7 +483,7 @@ export default async function CustomerInvoiceDetailPage(
           )}
 
           {canIssue && invoice.status === 'DRAFT' && (
-            <Card title="Émettre" description="Reconnaître la créance (Workflow 07 §26).">
+            <Card title="Émettre" description="Reconnaître la créance.">
               <IssueCustomerInvoicePanel
                 invoiceId={id}
                 hasRental={invoice.rentalId !== null}
@@ -446,7 +495,7 @@ export default async function CustomerInvoiceDetailPage(
           {canPay && payable && (
             <Card
               title="Enregistrer un règlement"
-              description="L’encaissement qui solde la créance (Workflow 08 §5, §47)."
+              description="L’encaissement qui solde la créance."
             >
               <RecordCustomerPaymentPanel
                 invoiceId={id}
@@ -491,7 +540,7 @@ export default async function CustomerInvoiceDetailPage(
                         : 'Cette facture est soldée : son total est intégralement encaissé.'
                       : `Reste ${formatAmount(invoice.remainingDue)} à encaisser.${
                           invoice.rentalId
-                            ? ' La location, elle, peut être clôturée sans attendre le paiement (Workflow 01 §42).'
+                            ? ' La location, elle, peut être clôturée sans attendre le paiement.'
                             : ''
                         }`}
             </p>

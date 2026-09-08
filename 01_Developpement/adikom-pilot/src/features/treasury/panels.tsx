@@ -82,7 +82,7 @@ export function CreateAccountPanel() {
           label="Solde initial"
           name="openingBalance"
           error={errors.openingBalance}
-          hint="En KMF. Il se fige dès la première écriture (§12)."
+          hint="En KMF. Il se fige dès la première écriture."
         >
           <Input
             name="openingBalance"
@@ -163,7 +163,7 @@ export function EditAccountPanel({
         <p className="rounded-control border border-line bg-canvas px-3.5 py-3 text-xs text-muted">
           Le <strong>solde initial</strong> ({openingBalance.toLocaleString('fr-FR')} KMF) est figé :
           ce compte porte des écritures. Le corriger déplacerait son solde sans qu’aucun mouvement
-          ne l’explique (Module 06 §12, §17).
+          ne l’explique.
         </p>
       ) : (
         <Field
@@ -251,7 +251,7 @@ export function CreateTransferPanel({
           name="sourceAccountId"
           required
           error={errors.sourceAccountId}
-          hint="Le compte débité (§29)."
+          hint="Le compte débité."
         >
           <Select name="sourceAccountId" defaultValue="" error={errors.sourceAccountId}>
             <option value="">À désigner</option>
@@ -268,7 +268,7 @@ export function CreateTransferPanel({
           name="destinationAccountId"
           required
           error={errors.destinationAccountId}
-          hint="Le compte crédité, obligatoirement distinct du premier (§29)."
+          hint="Le compte crédité, obligatoirement distinct du premier."
         >
           <Select
             name="destinationAccountId"
@@ -303,11 +303,11 @@ export function CreateTransferPanel({
           />
         </Field>
 
-        <Field label="Motif" name="purpose" hint="Pourquoi ce transfert (§29).">
+        <Field label="Motif" name="purpose" hint="Pourquoi ce transfert.">
           <Input name="purpose" placeholder="Approvisionnement de la banque" />
         </Field>
 
-        <Field label="Référence" name="reference" hint="Bordereau, avis d’opération (§29).">
+        <Field label="Référence" name="reference" hint="Bordereau, avis d’opération.">
           <Input name="reference" placeholder="BORD-2026-0012" />
         </Field>
       </div>
@@ -357,14 +357,15 @@ export function ValidateTransferPanel({
 
       {sourceBalance === null ? (
         <Notice tone="info">
-          Le solde du compte source n’est pas lisible avec vos droits. Le contrôle du §30 sera
-          néanmoins appliqué par le serveur, qui refusera si les fonds manquent.
+          Le solde du compte source n’est pas lisible avec vos droits. Le contrôle des fonds
+          disponibles sera néanmoins appliqué par le serveur, qui refusera le virement s’ils
+          manquent.
         </Notice>
       ) : insufficient ? (
         <Notice tone="warning">
           Le compte source ne porte que <strong>{formatAmount(sourceBalance)}</strong>, et ce
           virement en demande <strong>{formatAmount(amount)}</strong>. La validation sera refusée
-          tant que les fonds manqueront (Module 06 §30).
+          tant que les fonds manqueront.
         </Notice>
       ) : (
         <p className="text-xs text-muted">
@@ -414,7 +415,7 @@ export function CancelTransferPanel({
       <Field
         label="Motif"
         name={`reason-transfer-${transferId}`}
-        hint="Facultatif, conservé au journal (§33)."
+        hint="Facultatif, conservé au journal."
       >
         <Textarea id={`reason-transfer-${transferId}`} name="reason" rows={2} />
       </Field>

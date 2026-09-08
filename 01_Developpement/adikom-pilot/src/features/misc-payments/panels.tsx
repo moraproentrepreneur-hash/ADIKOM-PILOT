@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 import { Check, Plus, X } from 'lucide-react'
 
 import { Field, Input, Select, Textarea } from '@/components/ui/form'
@@ -16,16 +16,29 @@ import {
 import {
   MISC_PAYMENT_CATEGORY_LABELS,
   MISC_PAYMENT_CATEGORY_ORDER,
+  MISC_PAYMENT_DIRECTIONS,
+  MISC_PAYMENT_DIRECTION_HINTS,
+  MISC_PAYMENT_DIRECTION_LABELS,
+  MISC_PAYMENT_PARTY_HINTS,
+  MISC_PAYMENT_PARTY_LABELS,
+  type MiscPaymentDirection,
 } from './constants'
 
 /**
- * Formulaires de paiement divers — Module 07 §43 à §47, LOT 17.
+ * Formulaires de paiement divers — Module 07 §43 à §47.
  *
  * L'ÉCRAN DIT CE QUE CHAQUE GESTE PRODUIT.
  *
- * Un brouillon ne sort aucun fonds : le formulaire l'annonce, pour qu'une
- * saisie ne soit jamais prise pour un paiement effectué. La validation débite
- * le compte source (§45), et le bouton le dit avant le clic.
+ * Un brouillon ne déplace aucun fonds : le formulaire l'annonce, pour qu'une
+ * saisie ne soit jamais prise pour un paiement effectué. La validation mouvemente
+ * le compte (§45), et le bouton le dit avant le clic.
+ *
+ * LE SENS EST LE PREMIER CHOIX — DEC-042 §b
+ *
+ * Encaissement ou décaissement : le reste du formulaire s'y accorde. Le
+ * bénéficiaire devient un payeur, l'effet annoncé change de signe. Poser la
+ * question en tête plutôt qu'en bas de page évite de saisir un mouvement entier
+ * dans le mauvais sens.
  */
 
 /** Comptes proposables — Module 06 §10 : les actifs seulement. */
@@ -43,6 +56,14 @@ export function CreateMiscPaymentPanel({
     createMiscPaymentAction,
     EMPTY_FORM_STATE
   )
+
+  /*
+   * Le sens choisi n'est pas qu'une valeur envoyée : il change les mots du
+   * formulaire. Il est donc suivi ici — la valeur reste portée par le champ,
+   * que le serveur relit dans le `FormData` comme les autres.
+   */
+  const [direction, setDirection] = useState<MiscPaymentDirection>('OUT')
+  const entree = direction === 'IN'
 
   const errors = state.fieldErrors ?? {}
 
@@ -70,11 +91,36 @@ export function CreateMiscPaymentPanel({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
-          label="Compte source"
+          label="Sens"
+          name="direction"
+          required
+          error={errors.direction}
+          hint={MISC_PAYMENT_DIRECTION_HINTS[direction]}
+        >
+          <Select
+            name="direction"
+            value={direction}
+            error={errors.direction}
+            onChange={(event) => setDirection(event.target.value as MiscPaymentDirection)}
+          >
+            {MISC_PAYMENT_DIRECTIONS.map((value) => (
+              <option key={value} value={value}>
+                {MISC_PAYMENT_DIRECTION_LABELS[value]}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        <Field
+          label="Compte"
           name="accountId"
           required
           error={errors.accountId}
-          hint="Le compte débité à la validation (§44, §45)."
+          hint={
+            entree
+              ? 'Le compte crédité à la validation.'
+              : 'Le compte débité à la validation.'
+          }
         >
           <Select name="accountId" defaultValue="" error={errors.accountId}>
             <option value="">À désigner</option>
@@ -111,15 +157,17 @@ export function CreateMiscPaymentPanel({
         </Field>
 
         <Field
-          label="Bénéficiaire"
+          label={MISC_PAYMENT_PARTY_LABELS[direction]}
           name="beneficiary"
           required
           error={errors.beneficiary}
-          hint="À qui l’argent est versé (§44)."
+          hint={MISC_PAYMENT_PARTY_HINTS[direction]}
         >
           <Input
             name="beneficiary"
-            placeholder="Trésor public, fournisseur ponctuel…"
+            placeholder={
+              entree ? 'Assureur, partenaire, organisme…' : 'Trésor public, fournisseur ponctuel…'
+            }
             error={errors.beneficiary}
           />
         </Field>
@@ -127,7 +175,7 @@ export function CreateMiscPaymentPanel({
         <Field
           label="Référence"
           name="externalRef"
-          hint="Reçu, bordereau, numéro de pièce (§44)."
+          hint="Reçu, bordereau, numéro de pièce."
         >
           <Input name="externalRef" placeholder="RECU-2026-0042" />
         </Field>
@@ -139,7 +187,7 @@ export function CreateMiscPaymentPanel({
         required
         error={errors.purpose}
         wide
-        hint="§43 : « chaque paiement doit être suffisamment documenté »."
+        hint="Chaque paiement doit être suffisamment documenté."
       >
         <Textarea name="purpose" rows={2} error={errors.purpose} />
       </Field>
@@ -149,9 +197,9 @@ export function CreateMiscPaymentPanel({
       </Field>
 
       <p className="text-xs text-muted">
-        Le paiement est enregistré en <strong>brouillon</strong> : aucun fonds ne sort, et aucune
-        écriture n’est produite. La <strong>validation</strong> débitera le compte source du
-        montant payé.
+        Le paiement est enregistré en <strong>brouillon</strong> : aucun fonds ne bouge, et aucune
+        écriture n’est produite. La <strong>validation</strong>{' '}
+        {entree ? 'créditera' : 'débitera'} le compte désigné du montant saisi.
       </p>
 
       <SubmitButton label="Enregistrer le paiement" icon={Plus} pendingLabel="Enregistrement…" />
@@ -159,14 +207,16 @@ export function CreateMiscPaymentPanel({
   )
 }
 
-/** Validation — §45. C'est ici que les fonds sortent. */
+/** Validation — §45. C'est ici que les fonds bougent, dans le sens du paiement. */
 export function ValidateMiscPaymentPanel({
   paymentId,
   amount,
+  direction,
   accountLabel,
 }: {
   paymentId: string
   amount: number
+  direction: MiscPaymentDirection
   accountLabel: string | null
 }) {
   const [state, formAction] = useActionState<MiscPaymentFormState, FormData>(
@@ -181,9 +231,9 @@ export function ValidateMiscPaymentPanel({
       <FormFeedback error={state.error} success={state.success} />
 
       <p className="text-xs text-muted">
-        <strong>{accountLabel ?? 'Le compte source'}</strong> sera débité de{' '}
-        <strong>{formatAmount(amount)}</strong>, et l’écriture correspondante enregistrée au
-        journal des mouvements (§45).
+        <strong>{accountLabel ?? 'Le compte désigné'}</strong> sera{' '}
+        {direction === 'IN' ? 'crédité' : 'débité'} de <strong>{formatAmount(amount)}</strong>, et
+        l’écriture correspondante enregistrée au journal des mouvements.
       </p>
 
       <SubmitButton label="Valider le paiement" icon={Check} pendingLabel="Validation…" />
@@ -195,10 +245,12 @@ export function ValidateMiscPaymentPanel({
 export function CancelMiscPaymentPanel({
   paymentId,
   amount,
+  direction,
   validated,
 }: {
   paymentId: string
   amount: number
+  direction: MiscPaymentDirection
   validated: boolean
 }) {
   const [state, formAction] = useActionState<MiscPaymentFormState, FormData>(
@@ -215,7 +267,7 @@ export function CancelMiscPaymentPanel({
       <Field
         label="Motif"
         name={`reason-misc-payment-${paymentId}`}
-        hint="Facultatif, conservé au journal (§47)."
+        hint="Facultatif, conservé au journal."
       >
         <Textarea id={`reason-misc-payment-${paymentId}`} name="reason" rows={2} />
       </Field>
@@ -224,7 +276,8 @@ export function CancelMiscPaymentPanel({
         {validated ? (
           <>
             L’écriture de <strong>{formatAmount(amount)}</strong> sera annulée et le solde du
-            compte remontera d’autant. L’historique du paiement reste consultable.
+            compte {direction === 'IN' ? 'redescendra' : 'remontera'} d’autant. L’historique du
+            paiement reste consultable.
           </>
         ) : (
           <>

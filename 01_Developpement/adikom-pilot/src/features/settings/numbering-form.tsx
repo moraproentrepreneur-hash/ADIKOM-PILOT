@@ -175,7 +175,7 @@ export function NumberingRuleForm({
             </span>
             {rule.currentYear !== null && <> · exercice {rule.currentYear}</>}
             <span className="mt-0.5 block">
-              Le compteur ne se modifie pas : un numéro ne se réutilise jamais (§16).
+              Le compteur ne se modifie pas : un numéro ne se réutilise jamais.
             </span>
           </p>
 

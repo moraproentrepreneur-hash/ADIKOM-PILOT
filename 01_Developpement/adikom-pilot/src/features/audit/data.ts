@@ -52,6 +52,15 @@ export type AuditFilters = {
   actorId?: string
   moduleCode?: string
   entityType?: string
+  /**
+   * L'objet PRÉCIS dont on veut l'histoire — l'identifiant d'un client, d'une
+   * location, d'un partenaire.
+   *
+   * C'est ce qui permet aux onglets « Historique » des fiches de lire le
+   * journal plutôt que d'inventer une seconde trace (DEC-042 §d). Le journal
+   * reste la source unique : il n'existe pas d'historique parallèle.
+   */
+  entityId?: string
   action?: string
   result?: string
   /** Jour civil comorien, inclus. */
@@ -170,6 +179,7 @@ function applyFilters<T>(query: T, filters: AuditFilters): T {
   if (filters.actorId) q = q.eq('actor_id', filters.actorId)
   if (filters.moduleCode) q = q.eq('module_code', filters.moduleCode)
   if (filters.entityType) q = q.eq('entity_type', filters.entityType)
+  if (filters.entityId) q = q.eq('entity_id', filters.entityId)
   if (filters.action) q = q.eq('action', filters.action)
   if (filters.result) q = q.eq('result', filters.result)
 
@@ -437,4 +447,46 @@ export async function listAuditActors(): Promise<AuditActor[]> {
     id: row.actor_id,
     label: row.actor_label,
   }))
+}
+
+/* -------------------------------------------------------------------------- */
+/*  L'histoire d'un objet — DEC-042 §d                                         */
+/* -------------------------------------------------------------------------- */
+
+/** Ce qu'un onglet « Historique » montre d'une fiche, sans pagination. */
+export const HISTORY_ROWS = 30
+
+/**
+ * Les événements enregistrés sur UNE fiche, du plus récent au plus ancien.
+ *
+ * AUCUNE SECONDE TRACE N'EST CRÉÉE.
+ *
+ * Les onglets « Historique » des fiches — client, partenaire, location — lisent
+ * le journal d'activité, qui consigne déjà « qui, quoi, quand, sur quelle
+ * donnée, avant, après » (Règles audit §1). Tenir un historique parallèle en
+ * ferait deux, dont l'un finirait par mentir.
+ *
+ * LA GARDE EST CELLE DU JOURNAL.
+ *
+ * La policy `audit_log_select` exige `users.audit.view` : sans elle, cette
+ * lecture ne renvoie rien. Les écrans n'affichent donc l'onglet qu'à qui détient
+ * cette capacité, plutôt que de montrer une liste vide qui se lirait « il ne
+ * s'est rien passé » (DEC-017).
+ */
+export async function listEntityHistory(entityId: string): Promise<AuditEvent[]> {
+  const supabase = await createSupabaseServerClient()
+
+  const { data, error } = await newestFirst(
+    supabase.from('audit_log').select(SELECT).eq('entity_id', entityId)
+  ).limit(HISTORY_ROWS)
+
+  if (error) {
+    reportQueryFailure(
+      'historique de la fiche',
+      error,
+      'L’historique n’a pas pu être chargé.'
+    )
+  }
+
+  return ((data ?? []) as unknown as RawEvent[]).map(toEvent)
 }

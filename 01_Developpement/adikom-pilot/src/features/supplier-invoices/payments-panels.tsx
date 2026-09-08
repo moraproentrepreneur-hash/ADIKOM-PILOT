@@ -83,7 +83,7 @@ export function RecordPaymentPanel({
         name="accountId"
         required
         error={errors.accountId}
-        hint="Banque ou caisse d’où sort l’argent (Workflow 08 §13)."
+        hint="Banque ou caisse d’où sort l’argent."
       >
         <Select name="accountId" defaultValue="" error={errors.accountId}>
           <option value="">À désigner</option>
@@ -115,7 +115,7 @@ export function RecordPaymentPanel({
           name="paidOn"
           required
           error={errors.paidOn}
-          hint="Date réelle du décaissement, distincte de celle de la facture (§11)."
+          hint="Date réelle du décaissement, distincte de celle de la facture."
         >
           <Input name="paidOn" type="date" defaultValue={today} error={errors.paidOn} />
         </Field>
@@ -133,7 +133,7 @@ export function RecordPaymentPanel({
         <Field
           label="Référence externe"
           name="externalRef"
-          hint="Numéro de virement, de chèque ou de bordereau (§16)."
+          hint="Numéro de virement, de chèque ou de bordereau."
         >
           <Input name="externalRef" placeholder="VIR-2026-0042" />
         </Field>

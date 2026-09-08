@@ -597,8 +597,8 @@ declare v_total int;
 begin
   select count(*) into v_total from public.permissions;
 
-  if v_total <> 171 then
-    raise exception 'Catalogue attendu à 171 permissions, obtenu %.', v_total;
+  if v_total <> 178 then
+    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
   end if;
 
   -- AUCUNE permission n'a été créée par ce lot (DEC-041) : la sauvegarde suit
@@ -608,7 +608,7 @@ begin
       'Une permission de sauvegarde a été créée : elle ne serait jamais attribuable (CLAUDE.md §19 bis).';
   end if;
 
-  raise notice '[OK] 15. Catalogue à 171 permissions, aucune capacité de sauvegarde créée.';
+  raise notice '[OK] 15. Catalogue à 178 permissions, aucune capacité de sauvegarde créée.';
 end $$;
 
 

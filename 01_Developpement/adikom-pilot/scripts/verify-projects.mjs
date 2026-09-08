@@ -26,7 +26,7 @@
  *  10. §36    — la vue personnelle montre ce qui est attribué, et rien de plus.
  *  11. §38    — la veille apprend les échéances et les retards de tâches ; une
  *               source fermée est NOMMÉE, jamais silencieuse (DEC-017).
- *  12.        — aucun effet de bord : DEMO intactes, catalogue à 171, aucun
+ *  12.        — aucun effet de bord : DEMO intactes, catalogue à 178, aucun
  *               autre module modifié.
  *
  * AUCUNE DATE EN DUR : les échéances se posent par rapport au jour d'exécution.
@@ -1060,7 +1060,7 @@ async function main() {
       const { count: total } = await admin
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-      check(total === 171, 'Catalogue conforme', `${total} permissions`)
+      check(total === 178, 'Catalogue conforme', `${total} permissions`)
 
       // Le LOT 13 a porté le module à vingt et une capacités (migration 059).
       // Celles des TÂCHES restent quatre : c'est ce que ce lot-ci garantit.

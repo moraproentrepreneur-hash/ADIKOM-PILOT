@@ -30,6 +30,21 @@ import {
   ReturnReportDocument,
 } from '@/features/rentals/documents/rental-documents'
 import { getRentalDetail, listInspections } from '@/features/rentals/data'
+import { ReservationConfirmationDocument } from '@/features/reservations/documents/reservation-confirmation'
+import { getReservationDetail } from '@/features/reservations/data'
+import { CustomerInvoiceDocument } from '@/features/customer-invoices/documents/customer-invoice'
+import {
+  getCustomerInvoiceDetail,
+  listCustomerInvoiceLines,
+} from '@/features/customer-invoices/data'
+import { SupplierInvoiceDocument } from '@/features/supplier-invoices/documents/supplier-invoice'
+import {
+  getSupplierInvoiceDetail,
+  listSupplierInvoiceLines,
+} from '@/features/supplier-invoices/data'
+import { listInvoiceImputations } from '@/features/imputations/data'
+import { MiscPaymentReceiptDocument } from '@/features/misc-payments/documents/misc-payment-receipt'
+import { getMiscPayment } from '@/features/misc-payments/data'
 
 /**
  * Registre des documents.
@@ -321,6 +336,170 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
   contrats: rentalDocument('Contrat-location', RentalContractDocument),
   departs: rentalDocument('Bon-depart', DepartureReportDocument),
   retours: rentalDocument('PV-retour', ReturnReportDocument),
+
+  /* -------------------------------------------------------- Réservation -- */
+  //
+  // La CONFIRMATION DE RÉSERVATION — DEC-042 §c.
+  //
+  // La migration 037 avait retiré `download` et `print` de ce menu, faute de
+  // document à produire. ADIKOM demande cette pièce ; la migration 078 les
+  // rétablit, et cette entrée est ce qui les rend utiles.
+  reservations: {
+    entityType: 'reservations',
+    moduleCode: 'rental',
+    viewPermission: PERMISSIONS.RESERVATIONS_VIEW,
+    downloadPermission: PERMISSIONS.RESERVATIONS_DOWNLOAD,
+    printPermission: PERMISSIONS.RESERVATIONS_PRINT,
+
+    async build(id) {
+      const reservation = await getReservationDetail(id)
+      if (!reservation) return null
+
+      // Le tarif verrouillé relève de sa propre capacité (DEC-024) : sans elle,
+      // la section entière disparaît du document comme elle disparaît de
+      // l'écran. Un document n'expose jamais plus que la fiche.
+      const showAmounts = await can(PERMISSIONS.RENTALS_FINANCIAL_VIEW)
+      const identity = await getDocumentIdentity()
+
+      return {
+        element: ReservationConfirmationDocument({
+          identity,
+          reservation,
+          showAmounts,
+          issuedOn: issuedOnLabel(),
+        }),
+        reference: reservation.reservationNo,
+        label: 'Confirmation-reservation',
+      }
+    },
+  },
+
+  /* ---------------------------------------------------- Factures clients -- */
+  'factures-clients': {
+    entityType: 'customer_invoices',
+    moduleCode: 'billing',
+    viewPermission: PERMISSIONS.CUSTOMER_INVOICES_VIEW,
+    downloadPermission: PERMISSIONS.CUSTOMER_INVOICES_DOWNLOAD,
+    printPermission: PERMISSIONS.CUSTOMER_INVOICES_PRINT,
+
+    async build(id) {
+      /*
+       * L'encaissé et le solde relèvent de `billing.customer_payments.view`.
+       * Sans cette capacité, ils ne sont ni lus ni écrits : une facture soldée
+       * ne doit pas passer pour impayée faute de droit de lire ses règlements
+       * (DEC-017, DEC-024).
+       */
+      const canSeePayments = await can(PERMISSIONS.CUSTOMER_PAYMENTS_VIEW)
+
+      const invoice = await getCustomerInvoiceDetail(id, { canSeePayments })
+      if (!invoice) return null
+
+      // Le client relève de `parties.clients.view` : sans elle, `clientLabel`
+      // revient déjà `null` de la couche de données, et le document le dit.
+      const mayReadClient = await can(PERMISSIONS.CLIENTS_VIEW)
+      const client = mayReadClient ? await getClientDetail(invoice.clientId) : null
+
+      const [lines, identity] = await Promise.all([
+        listCustomerInvoiceLines(id),
+        getDocumentIdentity(),
+      ])
+
+      return {
+        element: CustomerInvoiceDocument({
+          identity,
+          invoice,
+          lines,
+          clientLabel: invoice.clientLabel,
+          clientAddress: client
+            ? [client.address, client.city, client.country].filter(
+                (line): line is string => Boolean(line)
+              )
+            : null,
+          showPayments: canSeePayments,
+          issuedOn: issuedOnLabel(),
+        }),
+        reference: invoice.invoiceNo,
+        label: 'Facture-client',
+      }
+    },
+  },
+
+  /* ----------------------------------------------- Factures fournisseurs -- */
+  'factures-fournisseurs': {
+    entityType: 'supplier_invoices',
+    moduleCode: 'billing',
+    viewPermission: PERMISSIONS.SUPPLIER_INVOICES_VIEW,
+    downloadPermission: PERMISSIONS.SUPPLIER_INVOICES_DOWNLOAD,
+    printPermission: PERMISSIONS.SUPPLIER_INVOICES_PRINT,
+
+    async build(id) {
+      /*
+       * Une imputation n'est pas un paiement (CLAUDE.md §57). Les deux
+       * capacités sont donc éprouvées séparément, et ce qui n'est pas lisible
+       * n'est pas écrit — un « 0 imputé » ferait passer pour dû ce qu'une
+       * imputation a déjà réduit.
+       */
+      const [canSeeImputations, canSeePayments] = await Promise.all([
+        can(PERMISSIONS.IMPUTATIONS_VIEW),
+        can(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW),
+      ])
+
+      const invoice = await getSupplierInvoiceDetail(id, {
+        canSeeImputations,
+        canSeePayments,
+      })
+      if (!invoice) return null
+
+      const [lines, imputations, identity] = await Promise.all([
+        listSupplierInvoiceLines(id),
+        canSeeImputations ? listInvoiceImputations(id) : Promise.resolve(null),
+        getDocumentIdentity(),
+      ])
+
+      return {
+        element: SupplierInvoiceDocument({
+          identity,
+          invoice,
+          lines,
+          imputations:
+            imputations?.map((imputation) => ({
+              imputationNo: imputation.imputationNo,
+              amount: imputation.amount,
+              maintenanceNo: imputation.maintenanceNo,
+            })) ?? null,
+          issuedOn: issuedOnLabel(),
+        }),
+        reference: invoice.invoiceNo,
+        label: 'Facture-fournisseur',
+      }
+    },
+  },
+
+  /* ------------------------------------------------------ Paiement divers -- */
+  'paiements-divers': {
+    entityType: 'misc_payments',
+    moduleCode: 'billing',
+    viewPermission: PERMISSIONS.MISC_PAYMENTS_VIEW,
+    downloadPermission: PERMISSIONS.MISC_PAYMENTS_DOWNLOAD,
+    printPermission: PERMISSIONS.MISC_PAYMENTS_PRINT,
+
+    async build(id) {
+      const payment = await getMiscPayment(id)
+      if (!payment) return null
+
+      const identity = await getDocumentIdentity()
+
+      return {
+        element: MiscPaymentReceiptDocument({
+          identity,
+          payment,
+          issuedOn: issuedOnLabel(),
+        }),
+        reference: payment.paymentNo,
+        label: payment.direction === 'IN' ? 'Recu-encaissement' : 'Recu-decaissement',
+      }
+    },
+  },
 
   /* -------------------------------------------------------- Tarification -- */
   tarification: {

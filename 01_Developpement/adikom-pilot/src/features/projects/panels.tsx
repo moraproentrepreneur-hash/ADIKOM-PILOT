@@ -274,33 +274,59 @@ export function MembersPanel({
             pouvoir consulter les utilisateurs (<code className="tabular">users.users.view</code>).
           </Notice>
         ) : (
-          <form action={addAction} className="grid gap-3 sm:grid-cols-[2fr_1fr_auto] sm:items-end">
+          /*
+           * Ajouter une personne — deux choix, puis un geste.
+           *
+           * L'ancienne disposition tenait les deux champs et le bouton sur une
+           * seule ligne (`2fr 1fr auto`) : le rôle s'y retrouvait deux fois plus
+           * étroit que la personne, son explication tombait sur quatre lignes,
+           * et le bouton était comprimé contre le bord (DEC-042 §g).
+           *
+           * Les deux champs partagent désormais la largeur à parts égales, et
+           * le bouton prend sa propre ligne — il ne dépend plus de la hauteur
+           * des explications qui le précèdent. Sur téléphone, tout s'empile :
+           * une colonne, des champs pleine largeur, un bouton pleine largeur.
+           */
+          <form
+            action={addAction}
+            className="space-y-4 rounded-control border border-line p-4"
+          >
             <input type="hidden" name="projectId" value={projectId} />
 
-            <Field label="Ajouter" name="userId">
-              <Select name="userId" defaultValue="">
-                <option value="">Choisir une personne</option>
-                {available.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Personne"
+                name="userId"
+                hint="Qui rejoint l’équipe de ce projet."
+              >
+                <Select name="userId" defaultValue="">
+                  <option value="">Choisir une personne</option>
+                  {available.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
 
-            <Field label="Rôle" name="role" hint={MEMBER_ROLE_HINTS.PARTICIPANT}>
-              <Select name="role" defaultValue="PARTICIPANT">
-                {MEMBER_ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {MEMBER_ROLE_LABELS[role]}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-
-            <div className="pb-0.5">
-              <SubmitButton label="Ajouter" pendingLabel="Ajout…" icon={UserPlus} tone="secondary" />
+              <Field label="Rôle" name="role" hint={MEMBER_ROLE_HINTS.PARTICIPANT}>
+                <Select name="role" defaultValue="PARTICIPANT">
+                  {MEMBER_ROLES.map((role) => (
+                    <option key={role} value={role}>
+                      {MEMBER_ROLE_LABELS[role]}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
             </div>
+
+            <SubmitButton
+              label="Ajouter au projet"
+              pendingLabel="Ajout…"
+              icon={UserPlus}
+              tone="secondary"
+              className="w-full sm:w-auto"
+            />
           </form>
         ))}
     </div>

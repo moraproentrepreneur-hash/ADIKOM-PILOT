@@ -108,16 +108,16 @@ export default async function AccountDetailPage(props: PageProps<'/tresorerie/co
 
       {account.status !== 'ACTIVE' && (
         <Notice tone="warning" className="mb-5">
-          Ce compte n’est plus proposé pour de nouvelles opérations (Module 06 §10). Son historique
+          Ce compte n’est plus proposé pour de nouvelles opérations. Son historique
           reste consultable.
         </Notice>
       )}
 
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
-          <Card title="Solde" description="Solde initial + entrées − sorties (Module 06 §17).">
+          <Card title="Solde" description="Solde initial + entrées − sorties.">
             <dl>
-              <InfoRow label="Solde initial" hint="Figé dès la première écriture (§12).">
+              <InfoRow label="Solde initial" hint="Figé dès la première écriture.">
                 <span className="tabular">{formatAmount(account.openingBalance)}</span>
               </InfoRow>
               <InfoRow label="Solde actuel">
@@ -141,7 +141,7 @@ export default async function AccountDetailPage(props: PageProps<'/tresorerie/co
           {canSeeEntries ? (
             <Card
               title="Écritures"
-              description="Chaque mouvement, son sens et son origine (§18 à §20)."
+              description="Chaque mouvement, son sens et son origine."
             >
               {entries === null || entries.length === 0 ? (
                 <EmptyState
@@ -192,7 +192,7 @@ export default async function AccountDetailPage(props: PageProps<'/tresorerie/co
           {canSeeTransfers && (
             <Card
               title="Virements"
-              description="Transferts au départ ou à destination de ce compte (Module 06 §16)."
+              description="Transferts au départ ou à destination de ce compte."
             >
               {transfers === null || transfers.length === 0 ? (
                 <EmptyState
@@ -284,7 +284,7 @@ export default async function AccountDetailPage(props: PageProps<'/tresorerie/co
           {canArchive && (
             <Card
               title="Statut du compte"
-              description="Seul un compte actif reçoit de nouvelles opérations (§10)."
+              description="Seul un compte actif reçoit de nouvelles opérations."
             >
               <StatusChangeForm
                 action={setFinancialAccountStatusAction}

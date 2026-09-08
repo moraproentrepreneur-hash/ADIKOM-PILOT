@@ -447,7 +447,7 @@ async function CostsTab({
           description="Aucun de ces montants n’est déduit d’un autre : aucune règle ne les relie."
         >
           <dl>
-            <InfoRow label="Coût estimé" hint="Avant intervention (§33).">
+            <InfoRow label="Coût estimé" hint="Avant intervention.">
               {/*
                 « Pas encore chiffré » n'est pas « gratuit » : un tiret dit
                 l'absence de saisie là où un 0 KMF affirmerait une gratuité.
@@ -457,7 +457,7 @@ async function CostsTab({
               )}
             </InfoRow>
 
-            <InfoRow label="Coût réel" hint="Après intervention (§34). L’estimation est conservée.">
+            <InfoRow label="Coût réel" hint="Après intervention. L’estimation est conservée.">
               {formatAmount(costs?.actualCost ?? null) ?? (
                 <span className="text-muted">Pas encore chiffré</span>
               )}
@@ -465,7 +465,7 @@ async function CostsTab({
 
             <InfoRow
               label="Écart"
-              hint="Réel − estimé (§35). Indicateur de pilotage, calculé à la lecture."
+              hint="Réel − estimé. Indicateur de pilotage, calculé à la lecture."
             >
               {formatVariance(variance) ?? (
                 <span className="text-muted">Indéterminable — un des deux montants manque</span>
@@ -481,7 +481,7 @@ async function CostsTab({
               )}
             </InfoRow>
 
-            <InfoRow label="Montant non imputable" hint="Coût réel − imputable (Workflow 06 §7).">
+            <InfoRow label="Montant non imputable" hint="Coût réel − imputable.">
               {formatAmount(nonImputable) ?? (
                 <span className="text-muted">Indéterminable</span>
               )}
@@ -559,7 +559,7 @@ async function CostsTab({
           )}
         </Card>
 
-        <Card title="Devis" description="Offres reçues pour cette intervention (§26).">
+        <Card title="Devis" description="Offres reçues pour cette intervention.">
           {quotes.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">Aucun devis enregistré.</p>
           ) : (
@@ -605,7 +605,7 @@ async function CostsTab({
           )}
         </Card>
 
-        <Card title="Justificatifs" description="Devis, factures, reçus, bons de réparation (§37).">
+        <Card title="Justificatifs" description="Devis, factures, reçus, bons de réparation.">
           {documents.length === 0 ? (
             <EmptyState
               icon={Paperclip}
@@ -735,7 +735,7 @@ async function ImputationsTab({
           description="Le plafond arrêté par la maintenance, et ce que les imputations en ont consommé."
         >
           <dl>
-            <InfoRow label="Plafond imputable" hint="Arrêté dans l’onglet Coûts (Workflow 06 §7).">
+            <InfoRow label="Plafond imputable" hint="Arrêté dans l’onglet Coûts.">
               {!canSeeCosts ? (
                 <span className="text-muted">
                   Votre compte ne peut pas consulter les coûts de maintenance.
@@ -747,13 +747,13 @@ async function ImputationsTab({
               )}
             </InfoRow>
 
-            <InfoRow label="Déjà imputé" hint="Somme des imputations non annulées (§40).">
+            <InfoRow label="Déjà imputé" hint="Somme des imputations non annulées.">
               <span className="tabular">{formatAmount(budget.used)}</span>
             </InfoRow>
 
             <InfoRow
               label="Reste imputable"
-              hint="Plafond − déjà imputé. Contrôlé côté serveur (Module 07 §41)."
+              hint="Plafond − déjà imputé. Contrôlé côté serveur."
             >
               {budget.remaining === null ? (
                 <span className="text-muted">
@@ -767,8 +767,8 @@ async function ImputationsTab({
 
           {zeroCeiling && (
             <p className="mt-4 border-t border-line pt-4 text-sm text-muted">
-              Le montant imputable est <strong>nul</strong> : la dépense reste à la charge d’ADIKOM
-              (Workflow 06 §10). Aucune imputation fournisseur n’est possible.
+              Le montant imputable est <strong>nul</strong> : la dépense reste à la charge
+              d’ADIKOM. Aucune imputation fournisseur n’est possible.
             </p>
           )}
 
@@ -780,7 +780,7 @@ async function ImputationsTab({
           )}
         </Card>
 
-        <Card title="Imputations" description="Chaque imputation reste identifiable (§22).">
+        <Card title="Imputations" description="Chaque imputation reste identifiable.">
           {imputations.length === 0 ? (
             <EmptyState
               icon={FileText}

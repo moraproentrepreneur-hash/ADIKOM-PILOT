@@ -92,7 +92,7 @@ export function CreateCustomerInvoicePanel({
         label="Location facturée"
         name="rentalId"
         error={errors.rentalId}
-        hint="Facultatif. Seules les locations « À facturer » figurent ici : le retour doit être enregistré et le contrôle validé (§5)."
+        hint="Facultatif. Seules les locations « À facturer » figurent ici : le retour doit être enregistré et le contrôle validé."
       >
         <Select
           name="rentalId"
@@ -123,8 +123,8 @@ export function CreateCustomerInvoicePanel({
         error={errors.clientId}
         hint={
           chosen
-            ? 'Repris de la location : une facture s’adresse au client du contrat (§49).'
-            : 'Repris de la fiche client, jamais ressaisi (§6).'
+            ? 'Repris de la location : une facture s’adresse au client du contrat.'
+            : 'Repris de la fiche client, jamais ressaisi.'
         }
       >
         <Select
@@ -158,7 +158,7 @@ export function CreateCustomerInvoicePanel({
           label="Échéance"
           name="dueDate"
           error={errors.dueDate}
-          hint="Facultative (§21). Elle sert au suivi des retards."
+          hint="Facultative. Elle sert au suivi des retards."
         >
           <Input name="dueDate" type="date" error={errors.dueDate} />
         </Field>
@@ -335,7 +335,7 @@ export function AddCustomerInvoiceLinePanel({
           error={errors.unitPrice}
           hint={
             isRental && suggestedUnitPrice !== null
-              ? 'Tarif verrouillé du contrat, repris tel quel (§7, §8).'
+              ? 'Tarif verrouillé du contrat, repris tel quel.'
               : 'En KMF, sans décimale.'
           }
         >
@@ -355,7 +355,7 @@ export function AddCustomerInvoiceLinePanel({
       <Field
         label="Justification"
         name="justification"
-        hint="Recommandée pour un frais : elle explique ce que le client paie (§15)."
+        hint="Recommandée pour un frais : elle explique ce que le client paie."
       >
         <Textarea name="justification" rows={2} />
       </Field>

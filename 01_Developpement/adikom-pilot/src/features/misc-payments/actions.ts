@@ -9,7 +9,7 @@ import { requirePermission } from '@/lib/auth/dal'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { guarded, orNull, readText, toFieldErrors } from '@/lib/server-action'
 import type { FormState } from '@/lib/form-state'
-import { MISC_PAYMENT_CATEGORY_ORDER } from './constants'
+import { MISC_PAYMENT_CATEGORY_ORDER, MISC_PAYMENT_DIRECTIONS } from './constants'
 
 /**
  * Actions de paiement divers — Module 07 §43 à §47, LOT 17.
@@ -46,7 +46,11 @@ const ERROR_PATTERNS: readonly [RegExp, string][] = [
   ],
   [
     /motif du paiement est obligatoire/i,
-    'Indiquez le motif de ce paiement : Module 07 §43 exige qu’il soit suffisamment documenté.',
+    'Indiquez le motif de ce paiement : un mouvement sans cause écrite ne se contrôle pas.',
+  ],
+  [
+    /sens du paiement est obligatoire/i,
+    'Indiquez s’il s’agit d’un encaissement ou d’un décaissement.',
   ],
   [
     /n'est pas actif|n’est plus actif/i,
@@ -130,6 +134,21 @@ export async function createMiscPaymentAction(
         return { fieldErrors: { category: 'Choisissez la catégorie du paiement.' } }
       }
 
+      /*
+       * Le sens est OBLIGATOIRE (DEC-042 §b).
+       *
+       * Le déduire d'un défaut reviendrait à décider en silence qu'un paiement
+       * est une sortie — la base le refuse d'ailleurs pour la même raison.
+       */
+      const direction = readText(formData, 'direction')
+      if (!MISC_PAYMENT_DIRECTIONS.includes(direction as never)) {
+        return {
+          fieldErrors: {
+            direction: 'Indiquez s’il s’agit d’un encaissement ou d’un décaissement.',
+          },
+        }
+      }
+
       const parsed = schema.safeParse({
         accountId: readText(formData, 'accountId'),
         paidOn: readText(formData, 'paidOn'),
@@ -153,6 +172,7 @@ export async function createMiscPaymentAction(
         p_account_id: parsed.data.accountId,
         p_amount: amount,
         p_paid_on: parsed.data.paidOn,
+        p_direction: direction,
         p_category: category,
         p_beneficiary: parsed.data.beneficiary,
         p_purpose: parsed.data.purpose,
@@ -195,9 +215,14 @@ export async function validateMiscPaymentAction(
 
       revalidateMisc(paymentId)
 
+      /*
+       * Le message ne dit pas « débité » : le sens décide, et la moitié des
+       * paiements divers créditent désormais le compte (DEC-042 §b). Le
+       * formulaire, lui, annonçait déjà l'effet exact avant le clic.
+       */
       return {
         success:
-          'Le paiement est validé : le compte source est débité du montant payé, et l’écriture correspondante est enregistrée.',
+          'Le paiement est validé : le compte est mouvementé du montant, dans le sens du paiement, et l’écriture correspondante est enregistrée.',
       }
     },
     ERROR_PATTERNS

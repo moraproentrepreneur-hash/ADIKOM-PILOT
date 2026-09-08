@@ -62,12 +62,15 @@ export function PageHeader({
 /* -------------------------------------------------------------------------- */
 
 export function Card({
+  id,
   title,
   description,
   actions,
   children,
   className,
 }: {
+  /** Ancre de la carte : une barre d'actions peut y conduire (`#modifier`). */
+  id?: string
   title?: string
   description?: string
   actions?: ReactNode
@@ -76,7 +79,10 @@ export function Card({
 }) {
   return (
     <section
-      className={cn('rounded-card border border-line bg-white', className)}
+      id={id}
+      // Une ancre visée depuis la barre d'actions ne doit pas se coller au bord
+      // haut de la fenêtre : le titre de la carte resterait sous l'en-tête.
+      className={cn('scroll-mt-6 rounded-card border border-line bg-white', className)}
     >
       {(title || actions) && (
         // Empilé sur mobile : un titre et deux actions ne tiennent pas sur une

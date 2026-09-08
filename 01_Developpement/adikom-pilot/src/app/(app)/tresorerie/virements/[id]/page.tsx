@@ -110,7 +110,7 @@ export default async function TransferDetailPage(
         <div className="space-y-5 lg:col-span-2">
           <Card
             title="Trajet des fonds"
-            description="Un virement n’est ni une recette ni une dépense (Module 06 §28)."
+            description="Un virement n’est ni une recette ni une dépense."
           >
             <dl>
               <InfoRow label="Compte source" hint="Débité à la validation.">
@@ -153,7 +153,7 @@ export default async function TransferDetailPage(
           {canSeeEntries ? (
             <Card
               title="Écritures produites"
-              description="Une sortie et une entrée, liées au même virement (§31, §32)."
+              description="Une sortie et une entrée, liées au même virement."
             >
               {entries === null || entries.length === 0 ? (
                 <EmptyState
@@ -233,7 +233,7 @@ export default async function TransferDetailPage(
           {isDraft && canValidate && (
             <Card
               title="Valider"
-              description="Le contrôle du solde, puis les deux écritures (§30, §31)."
+              description="Le contrôle du solde, puis les deux écritures."
             >
               <ValidateTransferPanel
                 transferId={transfer.id}
@@ -248,7 +248,7 @@ export default async function TransferDetailPage(
           {transfer.status !== 'CANCELLED' && canCancel && (
             <Card
               title="Annuler"
-              description="Rien n’est supprimé : l’historique du virement demeure (§33)."
+              description="Rien n’est supprimé : l’historique du virement demeure."
             >
               <CancelTransferPanel
                 transferId={transfer.id}

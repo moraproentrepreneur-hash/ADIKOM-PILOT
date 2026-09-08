@@ -623,10 +623,28 @@ async function main() {
    * s'est étoffée. Ce n'était pas la règle : la règle est que rien ne bouge.
    * Une empreinte prise sur place la dit, quel que soit le jeu de données.
    */
-  const [{ count: demoClients0 }, { count: demoVehicles0 }] = await Promise.all([
+  const [clients0, vehicles0] = await Promise.all([
     admin.from('clients').select('id', { count: 'exact', head: true }).like('legal_name', '%DEMO%'),
     admin.from('vehicles').select('id', { count: 'exact', head: true }).like('model', '%DEMO%'),
   ])
+
+  /*
+   * Une empreinte qui n'a pas pu être prise n'est pas une empreinte de zéro.
+   * Un décompte en échec ramené à `null` ferait échouer la comparaison finale,
+   * des minutes plus tard, sous un intitulé qui accuse la fonctionnalité
+   * éprouvée. La mesure échoue donc tout de suite, en nommant sa cause.
+   */
+  for (const [scope, result] of [['clients', clients0], ['véhicules', vehicles0]]) {
+    if (result.error || result.count === null || result.count === undefined) {
+      throw new Error(
+        `L'empreinte du jeu de démonstration n'a pas pu être prise (${scope}) : ` +
+          `${result.error?.message ?? 'décompte absent'}.`
+      )
+    }
+  }
+
+  const demoClients0 = clients0.count
+  const demoVehicles0 = vehicles0.count
 
   const accounts = {}
   const sessions = {}
@@ -2659,17 +2677,57 @@ async function main() {
       const detteAveugle = await session('pil_dette_aveugle')
       const dette = await session('pil_dette')
 
-      /* --- `dashboard.view` seule n'ouvre RIEN ------------------------- */
+      /*
+       * `dashboard.view` OUVRE LES INDICATEURS AGRÉGÉS — DEC-042 §a.
+       *
+       * C'est l'inverse de ce que ce bloc vérifiait jusqu'au 08/09/2026.
+       *
+       * Chaque somme exigeait alors la capacité du MODULE qu'elle résume, et le
+       * refus était la bonne réponse : sous RLS, un comptage sur des lignes
+       * illisibles aurait valu « 0 », et « 0 retour en retard » se serait lu
+       * comme une bonne nouvelle (DEC-017).
+       *
+       * ADIKOM a tranché : voir un NOMBRE AGRÉGÉ n'est pas accéder au module.
+       * Les fonctions du pilotage sont devenues `SECURITY DEFINER` — elles
+       * lisent l'ensemble des données — et ne rendent que des nombres. Le refus
+       * disparaît donc pour les capacités de module, et lui seul.
+       *
+       * CE QUI RESTE EXIGÉ, ET QUE CE BLOC VÉRIFIE MAINTENANT :
+       *
+       *   `dashboard.view`            sans elle, rien ne s'ouvre ;
+       *   `dashboard.fleet.view`      pour la synthèse du parc ;
+       *   `dashboard.financial.view`  pour les cinq sommes financières.
+       *
+       * Ce sont trois capacités du CATALOGUE, attribuables séparément : la
+       * garantie n'a pas disparu, elle a changé de porte.
+       */
 
-      check(refused(await nu.rpc('dashboard_operations')), '`dashboard.view` seule : exploitation refusée')
       check(
-        refused(await nu.rpc('dashboard_reservations', { p_days: 7 })),
-        '`dashboard.view` seule : réservations refusées'
+        !refused(await nu.rpc('dashboard_operations')),
+        '`dashboard.view` seule : l’exploitation répond (DEC-042 §a)'
       )
-      check(refused(await nu.rpc('dashboard_fleet')), '`dashboard.view` seule : parc refusé')
+      check(
+        !refused(await nu.rpc('dashboard_reservations', { p_days: 7 })),
+        '`dashboard.view` seule : les réservations répondent'
+      )
+      check(
+        !refused(await nu.rpc('dashboard_activity', wide)),
+        '`dashboard.view` seule : l’activité de la période répond'
+      )
+      check(
+        !refused(await nu.rpc('dashboard_maintenance_open')),
+        '`dashboard.view` seule : les maintenances ouvertes répondent'
+      )
+
+      /* --- Mais elle n'ouvre NI le parc NI la finance ------------------- */
+
+      check(
+        refused(await nu.rpc('dashboard_fleet')),
+        '`dashboard.view` seule : le parc reste refusé (`dashboard.fleet.view`)'
+      )
       check(
         refused(await nu.rpc('dashboard_customer_invoiced', wide)),
-        '`dashboard.view` seule : facturé refusé'
+        '`dashboard.view` seule : facturé refusé (`dashboard.financial.view`)'
       )
       check(
         refused(await nu.rpc('dashboard_customer_collected', wide)),
@@ -2683,6 +2741,31 @@ async function main() {
         refused(await nu.rpc('dashboard_supplier_payables')),
         '`dashboard.view` seule : dettes fournisseurs refusées'
       )
+      check(
+        refused(await nu.rpc('dashboard_treasury_total')),
+        '`dashboard.view` seule : le total de trésorerie est refusé'
+      )
+
+      /* --- ET RIEN DU DÉTAIL N'EST OUVERT AU PASSAGE ------------------- */
+      //
+      // C'est la contrepartie de l'ajustement, et elle se vérifie ici : le
+      // chiffre s'affiche, les LIGNES restent fermées par RLS. Un compte qui
+      // n'a que `dashboard.view` ne lit ni une location, ni un client, ni une
+      // facture, ni un compte financier.
+
+      for (const [table, label] of [
+        ['rentals', 'les locations'],
+        ['reservations', 'les réservations'],
+        ['clients', 'les clients'],
+        ['customer_invoices', 'les factures clients'],
+        ['financial_accounts', 'les comptes financiers'],
+      ]) {
+        const { data } = await nu.from(table).select('id').limit(1)
+        check(
+          (data ?? []).length === 0,
+          `Le chiffre n’ouvre pas ${label} : RLS les masque toujours`
+        )
+      }
 
       /* --- Sans `dashboard.view`, la source ne suffit pas --------------- */
 
@@ -2699,27 +2782,23 @@ async function main() {
       const opsOk = await ops.rpc('dashboard_operations')
       check(
         !refused(opsOk) && Array.isArray(opsOk.data) && opsOk.data.length === 1,
-        'Avec `rental.rentals.view`, l’exploitation répond',
+        'Avec `rental.rentals.view` en plus, l’exploitation répond aussi',
         opsOk.error?.message ?? `${opsOk.data?.[0]?.running ?? '—'} en cours`
       )
       check(
-        refused(await opsMuet.rpc('dashboard_operations')),
-        'Voir les réservations n’autorise pas à compter les locations'
-      )
-      check(
         !refused(await opsMuet.rpc('dashboard_reservations', { p_days: 7 })),
-        'Et réciproquement : les réservations lui répondent'
+        'Et réciproquement : les réservations répondent'
       )
 
-      /* --- Parc : les deux capacités, dans les deux sens ---------------- */
+      /* --- Parc : la synthèse s'attribue seule -------------------------- */
 
       check(
-        refused(await parcAveugle.rpc('dashboard_fleet')),
-        '`dashboard.fleet.view` sans `rental.fleet.view` : parc refusé'
+        !refused(await parcAveugle.rpc('dashboard_fleet')),
+        '`dashboard.fleet.view` suffit désormais : le parc répond sans `rental.fleet.view`'
       )
       check(
         refused(await parcSansSynthese.rpc('dashboard_fleet')),
-        '`rental.fleet.view` sans `dashboard.fleet.view` : parc refusé aussi'
+        '`rental.fleet.view` sans `dashboard.fleet.view` : parc refusé'
       )
       const parcOk = await parc.rpc('dashboard_fleet')
       check(!refused(parcOk), 'Les deux réunies : le parc répond', parcOk.error?.message ?? '')
@@ -2738,18 +2817,51 @@ async function main() {
         refused(await argentSansSynthese.rpc('dashboard_supplier_payables')),
         '… dettes fournisseurs refusées'
       )
+      check(
+        refused(await argentSansSynthese.rpc('dashboard_treasury_total')),
+        '… et le total de trésorerie aussi'
+      )
 
-      /* --- Une somme muette est refusée, jamais approchée --------------- */
+      /* --- LA SOMME EST DÉSORMAIS COMPLÈTE, JAMAIS PARTIELLE ------------ */
+      //
+      // Avant l'ajustement, une somme dont une composante était illisible
+      // devait être REFUSÉE : la rendre partielle aurait menti. La lecture
+      // étant désormais celle du pilotage, la chaîne est TOUJOURS complète —
+      // et c'est cela qu'il faut vérifier : une créance calculée sans
+      // `customer_payments.view` ne doit pas valoir le total facturé.
 
       const factureOk = await facture.rpc('dashboard_customer_invoiced', wide)
-      check(!refused(factureOk), 'Avec `customer_invoices.view`, le facturé répond')
+      check(!refused(factureOk), 'Avec `dashboard.financial.view`, le facturé répond')
+
+      const encaisseOk = await facture.rpc('dashboard_customer_collected', wide)
       check(
-        refused(await facture.rpc('dashboard_customer_collected', wide)),
-        'Sans `customer_payments.view`, l’encaissé est refusé'
+        !refused(encaisseOk),
+        'L’encaissé répond aussi : la somme du pilotage ne dépend plus des modules'
       )
+
+      const creanceMuette = await facture.rpc('dashboard_customer_receivables')
       check(
-        refused(await facture.rpc('dashboard_customer_receivables')),
-        'Et la créance aussi : sans les règlements, elle vaudrait le total (050)'
+        !refused(creanceMuette) && Array.isArray(creanceMuette.data),
+        'La créance se calcule, règlements déduits'
+      )
+      if (!refused(creanceMuette) && !refused(factureOk) && creanceMuette.data?.[0]) {
+        // Le contrôle de fond : une créance qui vaudrait EXACTEMENT le facturé
+        // signalerait que les règlements n'ont pas été déduits (migration 050).
+        const reste = Number(creanceMuette.data[0].amount)
+        const encaisse = Number(encaisseOk.data ?? 0)
+        check(
+          encaisse === 0 || reste !== Number(factureOk.data ?? 0),
+          'La créance déduit les encaissements : elle ne vaut pas le total facturé',
+          `${reste} restant, ${encaisse} encaissé`
+        )
+      }
+
+      /* --- UNE IMPUTATION N'EST PAS UN PAIEMENT, ET N'EST PAS OUBLIÉE --- */
+
+      const detteMuette = await detteAveugle.rpc('dashboard_supplier_payables')
+      check(
+        !refused(detteMuette),
+        'La dette fournisseur répond sans `imputations.view`'
       )
 
       const creanceOk = await creance.rpc('dashboard_customer_receivables')
@@ -2758,19 +2870,35 @@ async function main() {
         'Les deux lectures réunies : la créance se calcule',
         creanceOk.error?.message ?? `${creanceOk.data?.[0]?.amount ?? '—'} KMF`
       )
-
-      /* --- LE CONTRÔLE CENTRAL : une imputation n'est pas un paiement --- */
-
       check(
-        refused(await detteAveugle.rpc('dashboard_supplier_payables')),
-        'Sans `imputations.view`, la dette fournisseur est REFUSÉE, jamais surévaluée'
+        Number(creanceOk.data?.[0]?.amount) === Number(creanceMuette.data?.[0]?.amount),
+        'Deux profils, une seule créance : la somme du pilotage ne dépend pas du lecteur'
       )
+
+      /*
+       * LE CONTRÔLE CENTRAL : une imputation n'est pas un paiement.
+       *
+       * Il a changé de forme avec DEC-042 §a, non de fond. Auparavant, une
+       * session sans `imputations.view` se voyait REFUSER la dette : la
+       * calculer lui aurait rendu le BRUT — la dette qu'une imputation a déjà
+       * réduite (CLAUDE.md §16, §57).
+       *
+       * La lecture étant désormais celle du pilotage, la chaîne est toujours
+       * complète : la dette répond, et elle répond la même valeur pour tous.
+       * C'est cela qu'il faut vérifier — deux sessions aux droits différents
+       * doivent lire le MÊME net, sans quoi l'une des deux se verrait le brut.
+       */
 
       const detteOk = await dette.rpc('dashboard_supplier_payables')
       check(
         !refused(detteOk) && Array.isArray(detteOk.data),
         'Avec les trois lectures, la dette nette se calcule',
         detteOk.error?.message ?? `${detteOk.data?.[0]?.amount ?? '—'} KMF`
+      )
+      check(
+        Number(detteOk.data?.[0]?.amount) === Number(detteMuette.data?.[0]?.amount),
+        'Deux profils, une seule dette : l’imputation n’est jamais oubliée pour l’un d’eux',
+        `${detteOk.data?.[0]?.amount} = ${detteMuette.data?.[0]?.amount}`
       )
 
       /*
@@ -2974,7 +3102,7 @@ async function main() {
       const { count: total } = await admin
         .from('permissions')
         .select('id', { count: 'exact', head: true })
-      check(total === 171, 'Catalogue conforme', `${total} permissions`)
+      check(total === 178, 'Catalogue conforme', `${total} permissions`)
 
       const [{ count: clients }, { count: vehicles }] = await Promise.all([
         admin

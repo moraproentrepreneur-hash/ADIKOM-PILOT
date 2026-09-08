@@ -424,23 +424,33 @@ begin
 end $$;
 
 
--- --- 13. Catalogue : 171 permissions, les quatre capacités servies présentes ---------------
+-- --- 13. Catalogue : 178 permissions, les six capacités servies présentes -----------------
 --
--- Quatre, et non six. `rental.reservations.download` et `.print` ont été
--- retirées le 26/08/2026 : aucun document de réservation n'existe, et un
--- catalogue qui déclare une capacité inexistante trompe qui attribue les
--- droits (CLAUDE.md §19 bis, migration 037).
+-- SIX, ET NON PLUS QUATRE — DEC-042 §c.
+--
+-- `rental.reservations.download` et `.print` avaient été RETIRÉES le 26/08/2026
+-- (migration 037) : aucun document de réservation n'existait, et un catalogue
+-- qui déclare une capacité inexistante trompe qui attribue les droits
+-- (CLAUDE.md §19 bis). Une recette veillait à ce qu'elles ne reviennent pas.
+--
+-- ADIKOM a demandé cette pièce le 08/09/2026 : une CONFIRMATION DE RÉSERVATION,
+-- remise au client. Le motif du retrait tombe avec le fait qui le fondait, et la
+-- migration 078 les rétablit.
+--
+-- LE CONTRÔLE NE DISPARAÎT PAS, IL CHANGE D'OBJET.
+--
+-- Ce qu'il gardait n'était pas « ces deux codes sont absents » mais « aucune
+-- capacité documentaire n'est attribuable sans document ». Il vérifie donc
+-- désormais que le document EXISTE : le registre de l'application le déclare, et
+-- la recette d'interface `verify:reservations` l'obtient réellement.
 do $$
 declare
   attendues text[] := array[
     'rental.reservations.export',
+    'rental.reservations.download', 'rental.reservations.print',
     'rental.rentals.export', 'rental.rentals.download', 'rental.rentals.print'
   ];
-  retirees text[] := array[
-    'rental.reservations.download', 'rental.reservations.print'
-  ];
   manquantes text[];
-  survivantes text[];
   total int;
   peu_sensibles int;
 begin
@@ -450,17 +460,6 @@ begin
 
   if manquantes is not null then
     raise exception 'Permissions documentaires manquantes : %', manquantes;
-  end if;
-
-  -- Le retrait est vérifié POSITIVEMENT : sans cela, une migration 037 non
-  -- appliquée passerait inaperçue tant que le total reste juste par ailleurs.
-  select array_agg(c) into survivantes
-  from unnest(retirees) c
-  where exists (select 1 from public.permissions p where p.code = c);
-
-  if survivantes is not null then
-    raise exception
-      'Permissions sans fonctionnalité encore au catalogue : %', survivantes;
   end if;
 
   -- DEC-025 §j : toutes sensibles — elles exposent client, période et montant.
@@ -473,11 +472,11 @@ begin
 
   select count(*) into total from public.permissions;
 
-  if total <> 171 then
-    raise exception 'Catalogue attendu à 171 permissions, obtenu %.', total;
+  if total <> 178 then
+    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', total;
   end if;
 
-  raise notice '[OK] 13. Catalogue : 171 permissions, les 4 capacités du cycle sont sensibles.';
+  raise notice '[OK] 13. Catalogue : 178 permissions, les 6 capacités du cycle sont sensibles.';
 end $$;
 
 
