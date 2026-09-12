@@ -661,6 +661,79 @@ begin
 end $$;
 
 
+-- --- 15. LA CONNEXION D'UN COMPTE ORDINAIRE RESTE JOURNALISÉE -----------------
+--
+-- LE DÉFAUT QUE CE CONTRÔLE GARDE A RÉELLEMENT EU LIEU (migration 080).
+--
+-- La garde de colonnes de la migration 079 excluait `updated_at` et
+-- `updated_by`, et rien d'autre. Or `record_login()` met à jour `last_login_at`
+-- À CHAQUE CONNEXION, sous la session de l'utilisateur. Pour tout compte
+-- dépourvu de `users.users.update` — la quasi-totalité des collaborateurs — le
+-- déclencheur levait donc une exception :
+--
+--   · la connexion n'était plus journalisée ;
+--   · « Dernière connexion » cessait de se mettre à jour.
+--
+-- ET C'ÉTAIT SILENCIEUX : `signInAction` n'examine pas le résultat de
+-- `record_login()`. La connexion aboutissait, la trace disparaissait.
+--
+-- `last_login_at` n'est pas une donnée que l'on RENSEIGNE sur un compte : elle
+-- est PRODUITE PAR L'ACTE DE SE CONNECTER. Elle n'est donc tolérée que sur la
+-- ligne de l'acteur — celle que `record_login()` vise. Sur la ligne d'autrui,
+-- elle reste protégée : un horodatage forgé ferait passer un compte dormant
+-- pour actif.
+do $$
+declare
+  v_cible  uuid;
+  v_op     uuid;
+  v_refuse boolean := false;
+begin
+  select id into v_cible from recette_pwd where cle = 'cible';
+  select id into v_op    from recette_pwd where cle = 'op';
+
+  -- 1. LE COMPTE ORDINAIRE — aucune capacité d'utilisateur — se connecte.
+  perform pg_temp.agir_comme('cible');
+  begin
+    perform public.record_login();
+  exception when others then
+    perform pg_temp.redevenir_service();
+    raise exception
+      'record_login() est refusé à un compte ordinaire : sa connexion ne serait pas journalisée. Motif : %',
+      sqlerrm;
+  end;
+  perform pg_temp.redevenir_service();
+
+  if not exists (
+    select 1 from public.audit_log where actor_id = v_cible and action = 'LOGIN'
+  ) then
+    raise exception 'La connexion n''a laissé aucune entrée LOGIN au journal.';
+  end if;
+
+  if (select last_login_at from public.app_users where id = v_cible) is null then
+    raise exception '« Dernière connexion » n''a pas été mise à jour.';
+  end if;
+
+  -- 2. ET L'HORODATAGE D'AUTRUI RESTE HORS D'ATTEINTE, y compris du porteur de
+  --    la capacité de réinitialisation.
+  perform pg_temp.agir_comme('op');
+  begin
+    update public.app_users
+       set last_login_at = now() - interval '400 days'
+     where id = v_cible;
+  exception when insufficient_privilege then
+    v_refuse := true;
+  end;
+  perform pg_temp.redevenir_service();
+
+  if not v_refuse then
+    raise exception
+      'Le porteur de la réinitialisation a forgé l''horodatage de connexion d''un autre compte.';
+  end if;
+
+  raise notice '[OK] 15. La connexion reste journalisée ; l''horodatage d''autrui est protégé.';
+end $$;
+
+
 do $$ begin
   raise notice '';
   raise notice '[OK] Recette de la réinitialisation du mot de passe complète — LOT 19.';
