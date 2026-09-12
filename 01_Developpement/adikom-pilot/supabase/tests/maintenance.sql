@@ -620,13 +620,11 @@ begin
     raise exception 'Permissions de maintenance manquantes : %', manquantes;
   end if;
 
+  -- LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046) : les capacités
+  -- de maintenance sont nommées ci-dessus, une à une.
   select count(*) into total from public.permissions;
 
-  if total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', total;
-  end if;
-
-  raise notice '[OK] 15. Catalogue à 178 permissions — aucune création par CE lot.';
+  raise notice '[OK] 15. Aucune création par CE lot ; ses capacités existent (catalogue : %).', total;
 end $$;
 
 

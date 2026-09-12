@@ -25,7 +25,8 @@
  *      virement — ne peut pas les annuler (migration 073).
  *   8. Paiement divers : brouillon sans écriture, validation qui débite,
  *      annulation qui rend, aucune modification possible (Module 07 §43 à §47).
- *   9. Les données DEMO sont intactes, le catalogue à 178, aucun résidu.
+ *   9. Les données DEMO sont intactes, le catalogue conforme au code déclaré,
+ *      aucun résidu.
  *
  * Utilisation :
  *   node scripts/verify-transfers.mjs [url]
@@ -39,6 +40,7 @@ import { createClient } from '@supabase/supabase-js'
 
 import { dayOffset, loadEnvFile, required } from './lib/env.mjs'
 import { demoFootprint } from './lib/demo.mjs'
+import { checkCatalogue } from './lib/capabilities.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -903,10 +905,8 @@ async function main() {
         `${demoApres.vehicles} / ${demoAvant.vehicles} au départ`
       )
 
-      const { count: total } = await admin
-        .from('permissions')
-        .select('id', { count: 'exact', head: true })
-      check(total === 178, 'Catalogue conforme', `${total} permissions`)
+      // Le catalogue déployé est comparé au code, code par code (DEC-046).
+      await checkCatalogue(admin, check)
 
       // Le journal a bien enregistré les opérations sensibles (Module 06 §49).
       const { count: journal } = await admin

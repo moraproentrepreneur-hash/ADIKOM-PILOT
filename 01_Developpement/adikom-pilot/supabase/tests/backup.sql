@@ -595,12 +595,9 @@ end $$;
 do $$
 declare v_total int;
 begin
-  select count(*) into v_total from public.permissions;
-
-  if v_total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
-  end if;
-
+  -- LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046) : ce que la
+  -- restauration ne doit pas avoir touché se nomme.
+  --
   -- AUCUNE permission n'a été créée par ce lot (DEC-041) : la sauvegarde suit
   -- le STATUT de Super Admin, pas une capacité attribuable.
   if exists (select 1 from public.permissions where code like 'settings.backup%') then
@@ -608,7 +605,28 @@ begin
       'Une permission de sauvegarde a été créée : elle ne serait jamais attribuable (CLAUDE.md §19 bis).';
   end if;
 
-  raise notice '[OK] 15. Catalogue à 178 permissions, aucune capacité de sauvegarde créée.';
+  /*
+   * Le catalogue est HORS PÉRIMÈTRE de sauvegarde : ni l'export, ni la
+   * réinitialisation, ni la restauration ne l'atteignent. La preuve ne demande
+   * donc aucun nombre — elle demande que les capacités les plus sensibles du
+   * SaaS soient encore là après les deux opérations exécutées ci-dessus.
+   */
+  select count(*) into v_total
+  from public.permissions
+  where code in (
+    'users.users.create', 'users.users.permissions.update',
+    'users.groups.permissions.update', 'users.users.password.reset',
+    'billing.imputations.validate', 'billing.supplier_payments.create',
+    'users.audit.view'
+  );
+
+  if v_total <> 7 then
+    raise exception
+      'Le catalogue a été altéré par la sauvegarde ou la restauration : % capacités sensibles sur 7 retrouvées.',
+      v_total;
+  end if;
+
+  raise notice '[OK] 15. Catalogue intact après réinitialisation et restauration, aucune capacité de sauvegarde créée.';
 end $$;
 
 

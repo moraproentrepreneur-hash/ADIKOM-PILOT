@@ -23,6 +23,7 @@
 import { createClient } from '@supabase/supabase-js'
 
 import { dayOffset, loadEnvFile, required } from './lib/env.mjs'
+import { checkCatalogue } from './lib/capabilities.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -3099,10 +3100,9 @@ async function main() {
     console.log('CATALOGUE ET DONNÉES DEMO\n')
 
     {
-      const { count: total } = await admin
-        .from('permissions')
-        .select('id', { count: 'exact', head: true })
-      check(total === 178, 'Catalogue conforme', `${total} permissions`)
+      // Le catalogue déployé est comparé au code, code par code : un total écrit
+      // en dur tombait à chaque capacité ajoutée ailleurs (DEC-046).
+      await checkCatalogue(admin, check)
 
       const [{ count: clients }, { count: vehicles }] = await Promise.all([
         admin

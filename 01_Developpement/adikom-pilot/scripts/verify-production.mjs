@@ -20,6 +20,7 @@
 import { createClient } from '@supabase/supabase-js'
 
 import { loadEnvFile, required } from './lib/env.mjs'
+import { catalogueSize, checkCatalogue } from './lib/capabilities.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -408,14 +409,27 @@ try {
   console.log('\n──────────────────────────────────────────────────────────────')
   console.log('8 — LE CATALOGUE, VU DE LA PRODUCTION\n')
 
-  const { count: total } = await admin
-    .from('permissions')
-    .select('id', { count: 'exact', head: true })
-  check(total === 178, 'Catalogue à 178 capacités', `${total}`)
+  // Le catalogue déployé est comparé au code, code par code (DEC-046) : un total
+  // écrit en dur ne disait pas QUELLE capacité manquait, et laissait passer un
+  // échange — une créée, une disparue.
+  await checkCatalogue(admin, check, 'Catalogue conforme au code déployé')
 
+  /*
+   * LA PAGE PUBLIQUE ANNONCE LE CATALOGUE RÉEL.
+   *
+   * Le nombre attendu vient de la base, et non de cette recette : la page le
+   * dérive elle-même du catalogue typé, dont la parité avec les migrations est
+   * garantie par `permissions.test.ts`. Les trois sources doivent dire la même
+   * chose — et si elles divergent, c'est le déploiement qui est en retard.
+   */
+  const total = await catalogueSize(admin)
   const home = await get('/', [])
   const homeText = text(home.body)
-  check(/178 capacités attribuables/.test(homeText), 'La page publique annonce le catalogue réel')
+  check(
+    new RegExp(`${total}\\s*capacités attribuables`).test(homeText),
+    'La page publique annonce le catalogue réel',
+    `${total} capacités`
+  )
 } catch (error) {
   console.log(`\n${RED}Recette interrompue : ${error.message}${RESET}`)
   failed += 1

@@ -46,6 +46,7 @@ import { chromium } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 
 import { loadEnvFile, required } from './lib/env.mjs'
+import { checkCatalogue } from './lib/capabilities.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -573,10 +574,10 @@ async function main() {
       'LE SUPER ADMIN D’ADIKOM EST TOUJOURS PRÉSENT ET ACTIF'
     )
 
-    const { count: permsAfter } = await admin
-      .from('permissions')
-      .select('*', { count: 'exact', head: true })
-    check(permsAfter === 178, 'Le catalogue des permissions est intact', `${permsAfter} permissions`)
+    // Le catalogue est HORS PÉRIMÈTRE de sauvegarde : après réinitialisation et
+    // restauration, il doit être exactement celui que le code déclare — code par
+    // code, et non « le bon nombre » (DEC-046).
+    await checkCatalogue(admin, check, 'Le catalogue des permissions est intact')
 
     const { count: settingsAfter } = await admin
       .from('company_settings')

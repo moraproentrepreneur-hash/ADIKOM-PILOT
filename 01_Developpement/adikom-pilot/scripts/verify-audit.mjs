@@ -48,6 +48,7 @@ import { chromium } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 
 import { dayOffset, loadEnvFile, required } from './lib/env.mjs'
+import { catalogueSize, checkCatalogue } from './lib/capabilities.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -829,11 +830,25 @@ async function main() {
         `${avant.count} → ${apres.count}`
       )
 
-      // Le catalogue n'a pas bougé : le lot n'ajoute aucune capacité.
-      const { count: catalogue } = await journal
-        .from('permissions')
-        .select('id', { count: 'exact', head: true })
-      check(catalogue === 178, 'Catalogue à 178 capacités', String(catalogue))
+      // Le catalogue déployé est comparé au code, code par code : le lot n'ajoute
+      // aucune capacité, et un total écrit en dur tombait à chaque ajout survenu
+      // ailleurs (DEC-046).
+      await checkCatalogue(admin, check, 'Catalogue conforme au code')
+
+      /*
+       * ET IL RESTE LISIBLE PAR UNE VRAIE SESSION.
+       *
+       * Le retrait du SELECT de table sur `audit_log` touchait les droits de
+       * `authenticated`. Une session ordinaire doit continuer de lire le
+       * catalogue — sans quoi l'onglet Permissions se viderait sans rien dire.
+       * Le nombre attendu vient de la base, pas d'une constante.
+       */
+      const vu = await journal.from('permissions').select('id', { count: 'exact', head: true })
+      check(
+        !vu.error && vu.count === (await catalogueSize(admin)),
+        'Le catalogue reste lisible par une session ordinaire',
+        vu.error ? String(vu.error.message).slice(0, 60) : `${vu.count} capacités`
+      )
 
       const { count: inventees } = await admin
         .from('permissions')

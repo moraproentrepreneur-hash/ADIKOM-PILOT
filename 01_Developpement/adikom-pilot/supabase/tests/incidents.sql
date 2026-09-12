@@ -407,13 +407,11 @@ begin
       'La permission rental.incidents.close a été créée : `update` couvre le changement d''état.';
   end if;
 
+  -- LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046) : les capacités
+  -- attendues sont nommées ci-dessus, et celle qui ne doit pas exister l'est aussi.
   select count(*) into total from public.permissions;
 
-  if total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', total;
-  end if;
-
-  raise notice '[OK] 11. Catalogue à 178 permissions — aucune création par CE lot.';
+  raise notice '[OK] 11. Aucune création par CE lot ; ses capacités existent (catalogue : %).', total;
 end $$;
 
 

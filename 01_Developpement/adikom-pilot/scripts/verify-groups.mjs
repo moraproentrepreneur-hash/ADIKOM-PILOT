@@ -43,6 +43,7 @@ import { createClient } from '@supabase/supabase-js'
 
 import { loadEnvFile, required } from './lib/env.mjs'
 import { referentialFootprint } from './lib/demo.mjs'
+import { catalogueSize, checkCatalogue } from './lib/capabilities.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -223,6 +224,15 @@ async function main() {
    * cessé d'être vrai dès que la démonstration s'est étoffée.
    */
   const demoAvant = await referentialFootprint(admin)
+
+  /*
+   * LA TAILLE DU CATALOGUE, LUE ET NON RECOPIÉE.
+   *
+   * Deux contrôles confrontent l'écran au catalogue complet — « Ce groupe
+   * accorde X sur Y ». Y était écrit en dur ; il vient désormais de la base
+   * (DEC-046).
+   */
+  const catalogue = await catalogueSize(admin)
 
   console.log(`\nCible : ${base}\n`)
 
@@ -405,10 +415,18 @@ async function main() {
         waitUntil: 'load',
       })
       const perms = await mainText(page)
+      /*
+       * L'ÉCRAN EST CONFRONTÉ À LA BASE, PAS À UN NOMBRE RECOPIÉ.
+       *
+       * La recette exigeait « sur 178 » : le total figurait donc une seconde
+       * fois ici, et une capacité ajoutée ailleurs faisait échouer un contrôle
+       * qui ne portait pas sur elle. Le nombre attendu vient désormais du
+       * catalogue lui-même (DEC-046).
+       */
       check(
-        perms.includes('Ce groupe accorde') && perms.includes('sur 178'),
+        perms.includes('Ce groupe accorde') && perms.includes(`sur ${catalogue}`),
         'L’onglet Permissions présente le catalogue complet',
-        '178 capacités'
+        `${catalogue} capacités`
       )
       check(
         perms.includes('Consultation seule'),
@@ -820,11 +838,8 @@ async function main() {
         .eq('entity_id', cible.id)
       check(typeof traces === 'number' && traces > 0, 'Les mouvements du groupe sont journalisés', `${traces} ligne(s)`)
 
-      // Le catalogue n'a pas bougé.
-      const { count: catalogue } = await admin
-        .from('permissions')
-        .select('id', { count: 'exact', head: true })
-      check(catalogue === 178, 'Le catalogue reste à 178 capacités', `${catalogue}`)
+      // Le catalogue déployé est comparé au code, code par code (DEC-046).
+      await checkCatalogue(admin, check, 'Le catalogue reste conforme au code')
 
       // Les données DEMO sont intactes.
       const apres = await referentialFootprint(admin)
@@ -887,7 +902,11 @@ async function main() {
       })
 
       const onglet = await mainText(page)
-      check(onglet.includes('sur 178'), 'L’arborescence présente le catalogue complet')
+      check(
+        onglet.includes(`sur ${catalogue}`),
+        'L’arborescence présente le catalogue complet',
+        `${catalogue} capacités`
+      )
       check(
         onglet.includes('Refusé (groupe)'),
         'Un refus hérité d’un groupe reste nommé comme tel (§48)'

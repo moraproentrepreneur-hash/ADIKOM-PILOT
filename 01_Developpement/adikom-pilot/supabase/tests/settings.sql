@@ -43,12 +43,9 @@ declare
   v_total int;
   v_lot   int;
 begin
-  select count(*)::int into v_total from public.permissions;
-
-  if v_total <> 178 then
-    raise exception 'Le catalogue compte % capacités, 178 attendues.', v_total;
-  end if;
-
+  -- LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046) : le module
+  -- Paramètres est compté DANS SON PÉRIMÈTRE, et ce qui ne doit pas exister
+  -- est nommé ci-dessous.
   select count(*)::int into v_lot
   from public.permissions
   where code like 'settings.%';
@@ -71,7 +68,8 @@ begin
     raise exception 'Une capacité a été créée pour une fonctionnalité que le lot ne livre pas.';
   end if;
 
-  raise notice '[OK] 1. Catalogue à 178 : le lot n''en crée aucune, et ses neuf existent.';
+  select count(*)::int into v_total from public.permissions;
+  raise notice '[OK] 1. Le lot ne crée aucune capacité, et ses neuf existent (catalogue : %).', v_total;
 end $$;
 
 

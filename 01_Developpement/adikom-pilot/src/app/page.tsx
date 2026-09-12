@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 
 import { AdikomLogo } from '@/components/brand/adikom-logo'
+import { PERMISSIONS } from '@/lib/auth/permissions'
 
 /**
  * Landing page publique — DEC-003.
@@ -28,8 +29,16 @@ import { AdikomLogo } from '@/components/brand/adikom-logo'
  *
  * Chaque module cité est livré, chaque étape du cycle est celle que le système
  * fait réellement franchir, et les seuls chiffres affichés sont vérifiables :
- * neuf modules, cent soixante et onze capacités au catalogue, un référentiel.
- * Aucun indicateur inventé, aucune capture fabriquée (CLAUDE.md §55).
+ * neuf modules, le catalogue des capacités, un référentiel. Aucun indicateur
+ * inventé, aucune capture fabriquée (CLAUDE.md §55).
+ *
+ * LE NOMBRE DE CAPACITÉS EST COMPTÉ, PAS RECOPIÉ.
+ *
+ * Il l'était : la page annonçait « 178 » en clair, et ce nombre figurait en dur
+ * dans trente-cinq fichiers. Une capacité de plus rendait donc la page
+ * faussement précise. Il est désormais dérivé du catalogue typé, dont
+ * `permissions.test.ts` garantit l'égalité, code par code, avec le catalogue en
+ * base (DEC-046).
  *
  * PALETTE INCHANGÉE. Bleu ADIKOM, encre, gris moyen, blanc — celles de la
  * charte, et elles seules (Design System §11).
@@ -82,7 +91,7 @@ const CYCLE = [
 const FACTS = [
   { value: '9', label: 'modules ouverts', hint: 'Aucune entrée de navigation n’est « à venir ».' },
   {
-    value: '178',
+    value: String(Object.keys(PERMISSIONS).length),
     label: 'capacités attribuables',
     hint: 'Consulter, exporter, imprimer : trois droits distincts.',
   },

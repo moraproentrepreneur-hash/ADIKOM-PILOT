@@ -658,12 +658,36 @@ begin
     raise exception 'Aucune écriture d''audit pour les règlements clients.';
   end if;
 
-  select count(*) into v_total from public.permissions;
-  if v_total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
+  /*
+   * LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046). Les trois
+   * capacités que CE lot emploie se nomment ; le nombre du catalogue est
+   * affirmé une seule fois, dans la migration qui le rend vrai.
+   */
+  select count(*) into v_total
+  from public.permissions
+  where code in (
+    'billing.customer_payments.view', 'billing.customer_payments.create',
+    'billing.customer_payments.cancel'
+  );
+
+  if v_total <> 3 then
+    raise exception
+      'Les trois capacités des règlements clients ne sont pas au catalogue (% trouvée(s)).', v_total;
   end if;
 
-  raise notice '[OK] 18. Encaissements journalisés (% entrées) ; catalogue à 178.', v_count;
+  -- DEC-029 §c reste ouverte : un règlement client naît validé, aucune capacité
+  -- de validation n'existe. En créer une serait trancher sans décision.
+  if exists (
+    select 1 from public.permissions
+    where code in (
+      'billing.customer_payments.validate', 'billing.customer_payments.update',
+      'billing.customer_payments.delete'
+    )
+  ) then
+    raise exception 'Une capacité a été créée pour une fonctionnalité que le lot ne livre pas.';
+  end if;
+
+  raise notice '[OK] 18. Encaissements journalisés (% entrées) ; leurs trois capacités existent.', v_count;
 end $$;
 
 

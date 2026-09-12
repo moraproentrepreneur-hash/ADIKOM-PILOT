@@ -811,11 +811,9 @@ declare
   v_total   int;
   v_missing text[];
 begin
-  select count(*) into v_total from public.permissions;
-  if v_total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
-  end if;
-
+  -- LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046) : les trois
+  -- capacités du pilotage se nomment, et rien d'autre ne doit exister sous
+  -- `dashboard.`.
   select array_agg(code) into v_missing
   from unnest(array['dashboard.view', 'dashboard.financial.view', 'dashboard.fleet.view']) as code
   where not exists (select 1 from public.permissions p where p.code = code);
@@ -832,7 +830,8 @@ begin
     raise exception 'Une capacité `dashboard.*` a été ajoutée sans décision (DEC-024).';
   end if;
 
-  raise notice '[OK] 12. Catalogue à 178 ; trois capacités de pilotage, pas une de plus.';
+  select count(*) into v_total from public.permissions;
+  raise notice '[OK] 12. Trois capacités de pilotage, pas une de plus (catalogue : %).', v_total;
 end $$;
 
 

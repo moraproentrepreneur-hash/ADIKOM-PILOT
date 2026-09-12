@@ -664,12 +664,34 @@ begin
     raise exception 'Aucune écriture d''audit pour la trésorerie.';
   end if;
 
-  select count(*) into v_total from public.permissions;
-  if v_total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
+  /*
+   * LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046). Les capacités
+   * que CE lot emploie se nomment ; le nombre du catalogue est affirmé une
+   * seule fois, dans la migration qui le rend vrai.
+   */
+  select count(*) into v_total
+  from public.permissions
+  where code in (
+    'treasury.accounts.view', 'treasury.accounts.create', 'treasury.accounts.update',
+    'treasury.accounts.archive', 'treasury.balances.view',
+    'treasury.entries.view', 'treasury.entries.create', 'treasury.entries.export'
+  );
+
+  if v_total <> 8 then
+    raise exception
+      'Les huit capacités de trésorerie ne sont pas au catalogue (% trouvée(s)).', v_total;
   end if;
 
-  raise notice '[OK] 19. Trésorerie journalisée (% entrées) ; catalogue à 178.', v_count;
+  -- DEC-024 : une écriture ne se modifie ni ne se supprime (Module 06 §33).
+  if exists (
+    select 1 from public.permissions
+    where code in ('treasury.entries.update', 'treasury.entries.delete',
+                   'treasury.accounts.delete')
+  ) then
+    raise exception 'Une capacité a été créée pour une fonctionnalité que le lot ne livre pas.';
+  end if;
+
+  raise notice '[OK] 19. Trésorerie journalisée (% entrées) ; ses huit capacités existent.', v_count;
 end $$;
 
 

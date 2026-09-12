@@ -28,6 +28,7 @@ import { createClient } from '@supabase/supabase-js'
 
 import { dayOffset, loadEnvFile, required } from './lib/env.mjs'
 import { demoFootprint } from './lib/demo.mjs'
+import { checkCatalogue } from './lib/capabilities.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -616,10 +617,8 @@ async function main() {
         `${demoApres.vehicles} / ${demoAvant.vehicles} au départ`
       )
 
-      const { count: total } = await admin
-        .from('permissions')
-        .select('id', { count: 'exact', head: true })
-      check(total === 178, 'Catalogue conforme', `${total} permissions`)
+      // Le catalogue déployé est comparé au code, code par code (DEC-046).
+      await checkCatalogue(admin, check)
     }
   } finally {
     await browser.close()

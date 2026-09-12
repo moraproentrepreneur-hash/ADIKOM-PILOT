@@ -891,15 +891,49 @@ end $$;
 
 
 -- --- 20. Catalogue inchangé -------------------------------------------------------------------
+--
+-- LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046).
+--
+-- Comparer le catalogue entier à un nombre écrit en dur ne prouvait rien de la
+-- facturation fournisseur : les capacités que CE lot emploie se nomment, et ce
+-- sont elles qui conditionnent ses écrans.
 do $$
-declare v_total int;
+declare
+  v_total   int;
+  v_missing text[];
 begin
-  select count(*) into v_total from public.permissions;
-  if v_total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
+  select array_agg(c) into v_missing
+  from unnest(array[
+    'billing.supplier_invoices.view',     'billing.supplier_invoices.create',
+    'billing.supplier_invoices.update',   'billing.supplier_invoices.validate',
+    'billing.supplier_invoices.cancel',   'billing.supplier_invoices.export',
+    'billing.supplier_payments.view',     'billing.supplier_payments.create',
+    'billing.supplier_payments.cancel',
+    'billing.imputations.view',           'billing.imputations.create',
+    'billing.imputations.update',         'billing.imputations.validate',
+    'billing.imputations.cancel'
+  ]) c
+  where not exists (select 1 from public.permissions p where p.code = c);
+
+  if v_missing is not null then
+    raise exception 'Capacités de facturation fournisseur absentes : %.',
+      array_to_string(v_missing, ', ');
   end if;
 
-  raise notice '[OK] 20. Catalogue à 178 permissions : aucune capacité créée par le LOT 5.';
+  -- DEC-024 : le lot ne supprime aucune facture, et n'ouvre pas le paiement par
+  -- la validation. Une capacité de plus ne fermerait rien.
+  if exists (
+    select 1 from public.permissions
+    where code in (
+      'billing.supplier_invoices.delete', 'billing.supplier_payments.update',
+      'billing.imputations.delete'
+    )
+  ) then
+    raise exception 'Une capacité a été créée pour une fonctionnalité que le lot ne livre pas.';
+  end if;
+
+  select count(*) into v_total from public.permissions;
+  raise notice '[OK] 20. Les 14 capacités de facturation fournisseur existent (catalogue : %).', v_total;
 end $$;
 
 

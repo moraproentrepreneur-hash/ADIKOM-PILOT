@@ -750,12 +750,35 @@ begin
     raise exception 'Aucune écriture d''audit pour la facturation client.';
   end if;
 
-  select count(*) into v_total from public.permissions;
-  if v_total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
+  /*
+   * LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046).
+   *
+   * Comparer le catalogue entier à un nombre écrit en dur ne prouvait rien de la
+   * facturation client : les capacités que CE lot emploie se nomment, et c'est
+   * leur présence qui conditionne ses écrans.
+   */
+  select count(*) into v_total
+  from public.permissions
+  where code in (
+    'billing.customer_invoices.view', 'billing.customer_invoices.create',
+    'billing.customer_invoices.update', 'billing.customer_invoices.issue',
+    'billing.customer_invoices.cancel', 'billing.customer_invoices.export'
+  );
+
+  if v_total <> 6 then
+    raise exception
+      'Les six capacités de facturation client ne sont pas au catalogue (% trouvée(s)).', v_total;
   end if;
 
-  raise notice '[OK] 20. Facturation client journalisée (% entrées) ; catalogue à 178.', v_count;
+  -- DEC-024 : ni suppression, ni validation séparée de l'émission.
+  if exists (
+    select 1 from public.permissions
+    where code in ('billing.customer_invoices.delete', 'billing.customer_invoices.validate')
+  ) then
+    raise exception 'Une capacité a été créée pour une fonctionnalité que le lot ne livre pas.';
+  end if;
+
+  raise notice '[OK] 20. Facturation client journalisée (% entrées) ; ses six capacités existent.', v_count;
 end $$;
 
 

@@ -217,14 +217,19 @@ end $$;
 
 
 -- --- 4. LE CATALOGUE NE BOUGE PAS ------------------------------------------------------
+--
+-- LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL.
+--
+-- Il comparait le catalogue entier au nombre 178, écrit ici et dans trente-quatre
+-- autres fichiers : chaque capacité ajoutée par un lot ultérieur faisait tomber
+-- cette recette pour une raison sans rapport avec ce qu'elle éprouve. Le total est
+-- désormais affirmé une seule fois, dans la migration qui le rend vrai (DEC-046).
+--
+-- Ce que ce contrôle doit prouver est intact : les quatre capacités que le LOT 11
+-- EMPLOIE existent, et il n'en a créé aucune pour lui-même.
 do $$
 declare v_total int;
 begin
-  select count(*) into v_total from public.permissions;
-  if v_total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
-  end if;
-
   if not exists (
     select 1 from public.permissions
     where code in ('billing.customer.stats.view', 'billing.customer.reports.view',
@@ -234,7 +239,18 @@ begin
     raise exception 'Les quatre capacités de statistiques et rapports ne sont pas au catalogue.';
   end if;
 
-  raise notice '[OK] 4. Catalogue à 178 : le LOT 11 ne crée aucune permission.';
+  -- Aucune capacité propre au LOT 11 : les synthèses n'ouvrent rien que les
+  -- lectures dont elles dépendent n'ouvrent déjà (DEC-034).
+  if exists (
+    select 1 from public.permissions
+    where code like 'billing.%.stats.%' and code not like '%.view'
+       or code like 'billing.%.reports.%' and code not like '%.view'
+  ) then
+    raise exception 'Une capacité de statistiques ou de rapports a été créée sans décision (DEC-024).';
+  end if;
+
+  select count(*) into v_total from public.permissions;
+  raise notice '[OK] 4. Le LOT 11 ne crée aucune permission ; ses quatre lectures existent (catalogue : %).', v_total;
 end $$;
 
 

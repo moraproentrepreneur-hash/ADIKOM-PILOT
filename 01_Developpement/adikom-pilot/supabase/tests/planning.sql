@@ -82,11 +82,9 @@ declare
   v_projects int;
   v_extra    text;
 begin
-  select count(*) into v_total from public.permissions;
-  if v_total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
-  end if;
-
+  -- LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046) : le module
+  -- Projets est compté DANS SON PÉRIMÈTRE, et chacune de ses capacités est
+  -- nommée ci-dessous.
   select count(*) into v_projects from public.permissions where code like 'projects.%';
   if v_projects <> 21 then
     raise exception 'Vingt et une capacités attendues pour le module Projets, obtenu %.', v_projects;
@@ -114,7 +112,8 @@ begin
     raise exception 'Capacité créée d''office pour le module Projets : % (DEC-024).', v_extra;
   end if;
 
-  raise notice '[OK] 2. Catalogue à 178 ; 21 capacités pour Projets, aucune de plus.';
+  select count(*) into v_total from public.permissions;
+  raise notice '[OK] 2. 21 capacités pour Projets, aucune de plus (catalogue : %).', v_total;
 end $$;
 
 

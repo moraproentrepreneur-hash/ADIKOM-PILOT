@@ -929,9 +929,10 @@ end $$;
 do $$
 declare v_total int;
 begin
-  select count(*) into v_total from public.permissions;
-  if v_total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
+  -- LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046) : ce que ce lot
+  -- doit prouver est que `notifications.view` existe et est SEULE sous son préfixe.
+  if not exists (select 1 from public.permissions where code = 'notifications.view') then
+    raise exception 'La capacité `notifications.view` est absente du catalogue.';
   end if;
 
   if exists (
@@ -941,7 +942,8 @@ begin
     raise exception 'Une capacité de notifications a été créée d''office (DEC-024).';
   end if;
 
-  raise notice '[OK] 15. Catalogue à 178 permissions, `notifications.view` seule.';
+  select count(*) into v_total from public.permissions;
+  raise notice '[OK] 15. `notifications.view` seule sous son préfixe (catalogue : %).', v_total;
 end $$;
 
 

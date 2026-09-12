@@ -691,11 +691,8 @@ declare
   v_total int;
   v_tasks int;
 begin
-  select count(*) into v_total from public.permissions;
-  if v_total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
-  end if;
-
+  -- LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046) : les tâches
+  -- sont comptées DANS LEUR PÉRIMÈTRE, et chacune est nommée ci-dessous.
   select count(*) into v_tasks
   from public.permissions
   where code like 'projects.tasks.%';
@@ -717,7 +714,8 @@ begin
     raise exception 'Une capacité a été créée d''office pour les tâches (DEC-024).';
   end if;
 
-  raise notice '[OK] 20. Catalogue à 178 ; quatre capacités de tâches, aucune de plus.';
+  select count(*) into v_total from public.permissions;
+  raise notice '[OK] 20. Quatre capacités de tâches, aucune de plus (catalogue : %).', v_total;
 end $$;
 
 

@@ -39,6 +39,7 @@ import { chromium } from '@playwright/test'
 import { createClient } from '@supabase/supabase-js'
 
 import { loadEnvFile, required } from './lib/env.mjs'
+import { checkCatalogue } from './lib/capabilities.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -866,10 +867,9 @@ async function main() {
       check(!page.url().includes('/acces-refuse'), 'Le tableau de bord s’ouvre toujours')
       await context.close()
 
-      const { count: catalogue } = await admin
-        .from('permissions')
-        .select('id', { count: 'exact', head: true })
-      check(catalogue === 178, 'Catalogue à 178 capacités', String(catalogue))
+      // Le catalogue déployé est comparé au code, code par code (DEC-046). Le
+      // périmètre du module, lui, se compte — et reste vérifié ci-dessous.
+      await checkCatalogue(admin, check)
 
       const { count: settingsCaps } = await admin
         .from('permissions')

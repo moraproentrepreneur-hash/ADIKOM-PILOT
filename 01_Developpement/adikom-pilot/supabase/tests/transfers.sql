@@ -108,11 +108,8 @@ declare
   v_total   int;
   v_missing text[];
 begin
-  select count(*) into v_total from public.permissions;
-  if v_total <> 178 then
-    raise exception 'Le catalogue compte % capacités, 178 attendues.', v_total;
-  end if;
-
+  -- LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046) : les capacités
+  -- du lot sont nommées ci-dessous, et celles qui ne doivent pas exister aussi.
   select array_agg(c) into v_missing
   from unnest(array[
     'treasury.transfers.view', 'treasury.transfers.create',
@@ -134,7 +131,8 @@ begin
     raise exception 'Capacité non prévue créée : le catalogue a été surchargé.';
   end if;
 
-  raise notice '[OK] 2. Catalogue à 178 : la lecture des virements est créée, rien d''autre.';
+  select count(*) into v_total from public.permissions;
+  raise notice '[OK] 2. La lecture des virements est créée, rien d''autre (catalogue : %).', v_total;
 end $$;
 
 

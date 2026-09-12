@@ -26,8 +26,8 @@
  *  10. §36    — la vue personnelle montre ce qui est attribué, et rien de plus.
  *  11. §38    — la veille apprend les échéances et les retards de tâches ; une
  *               source fermée est NOMMÉE, jamais silencieuse (DEC-017).
- *  12.        — aucun effet de bord : DEMO intactes, catalogue à 178, aucun
- *               autre module modifié.
+ *  12.        — aucun effet de bord : DEMO intactes, catalogue conforme au code
+ *               déclaré, aucun autre module modifié.
  *
  * AUCUNE DATE EN DUR : les échéances se posent par rapport au jour d'exécution.
  *
@@ -40,6 +40,7 @@ import { createClient } from '@supabase/supabase-js'
 
 import { dayOffset, loadEnvFile, required } from './lib/env.mjs'
 import { demoFootprint } from './lib/demo.mjs'
+import { checkCatalogue } from './lib/capabilities.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -1057,10 +1058,8 @@ async function main() {
         `${demoApres.vehicles} / ${demoAvant.vehicles} au départ`
       )
 
-      const { count: total } = await admin
-        .from('permissions')
-        .select('id', { count: 'exact', head: true })
-      check(total === 178, 'Catalogue conforme', `${total} permissions`)
+      // Le catalogue déployé est comparé au code, code par code (DEC-046).
+      await checkCatalogue(admin, check)
 
       // Le LOT 13 a porté le module à vingt et une capacités (migration 059).
       // Celles des TÂCHES restent quatre : c'est ce que ce lot-ci garantit.

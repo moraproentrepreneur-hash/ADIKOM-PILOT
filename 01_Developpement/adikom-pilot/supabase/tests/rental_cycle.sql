@@ -424,7 +424,7 @@ begin
 end $$;
 
 
--- --- 13. Catalogue : 178 permissions, les six capacités servies présentes -----------------
+-- --- 13. Catalogue : les six capacités servies sont présentes et sensibles ----------------
 --
 -- SIX, ET NON PLUS QUATRE — DEC-042 §c.
 --
@@ -470,13 +470,11 @@ begin
     raise exception '% permission(s) du cycle non marquée(s) sensible(s).', peu_sensibles;
   end if;
 
+  -- LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046) : les six
+  -- capacités du cycle sont nommées ci-dessus, et leur sensibilité vérifiée.
   select count(*) into total from public.permissions;
 
-  if total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', total;
-  end if;
-
-  raise notice '[OK] 13. Catalogue : 178 permissions, les 6 capacités du cycle sont sensibles.';
+  raise notice '[OK] 13. Les 6 capacités du cycle existent et sont sensibles (catalogue : %).', total;
 end $$;
 
 

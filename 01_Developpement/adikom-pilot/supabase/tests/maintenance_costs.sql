@@ -442,12 +442,23 @@ begin
     raise exception 'rental.maintenance.cost.view n''est pas marquée sensible.';
   end if;
 
-  select count(*) into v_total from public.permissions;
-  if v_total <> 178 then
-    raise exception 'Catalogue attendu à 178 permissions, obtenu %.', v_total;
+  /*
+   * LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL (DEC-046).
+   *
+   * Ce que ce lot doit prouver : `cost.view` existe, elle est sensible, et
+   * AUCUNE autre capacité de coût n'a été créée — consulter un coût et le saisir
+   * sont deux capacités, pas trois ni quatre (DEC-024).
+   */
+  select count(*) into v_total
+  from public.permissions
+  where code like 'rental.maintenance.cost.%';
+
+  if v_total <> 2 then
+    raise exception
+      'Deux capacités de coût attendues (`cost.view`, `cost.update`), obtenu %.', v_total;
   end if;
 
-  raise notice '[OK] 13. Catalogue à 178 : cost.view créée et sensible, aucune autre.';
+  raise notice '[OK] 13. `cost.view` créée et sensible ; deux capacités de coût, aucune autre.';
 end $$;
 
 

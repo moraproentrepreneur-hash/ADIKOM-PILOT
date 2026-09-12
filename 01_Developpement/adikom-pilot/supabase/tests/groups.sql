@@ -61,12 +61,9 @@ declare
   v_total int;
   v_lot   int;
 begin
-  select count(*)::int into v_total from public.permissions;
-
-  if v_total <> 178 then
-    raise exception 'Le catalogue compte % capacités, 178 attendues.', v_total;
-  end if;
-
+  -- LE CONTRÔLE PORTE SUR DES CODES, PAS SUR UN TOTAL. Le nombre du catalogue
+  -- est affirmé une seule fois, dans la migration qui le rend vrai (DEC-046) ;
+  -- ce que cette recette doit prouver est nominatif, et l'était déjà.
   select count(*)::int into v_lot
   from public.permissions
   where code in (
@@ -90,7 +87,8 @@ begin
     raise exception 'Une capacité a été créée pour une fonctionnalité que le lot ne livre pas.';
   end if;
 
-  raise notice '[OK] 1. Catalogue à 178 : le lot n''en crée aucune, et ses six existent.';
+  select count(*)::int into v_total from public.permissions;
+  raise notice '[OK] 1. Le lot ne crée aucune capacité, et ses six existent (catalogue : %).', v_total;
 end $$;
 
 
