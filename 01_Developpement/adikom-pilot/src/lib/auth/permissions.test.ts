@@ -169,4 +169,84 @@ describe('catalogue des permissions', () => {
     const invalid = catalogCodes.filter((code) => !/^[a-z0-9_]+(\.[a-z0-9_]+){1,3}$/.test(code))
     expect(invalid, `Codes non conformes : ${invalid.join(', ')}`).toEqual([])
   })
+
+  /**
+   * LE TOTAL DU CATALOGUE N'EST AFFIRMÉ QUE DANS UNE MIGRATION — DEC-046.
+   *
+   * Il l'était dans TRENTE-CINQ fichiers de recette : `if v_total <> 178`,
+   * `check(total === 178, …)`, `sur 178`. Chaque capacité ajoutée par un lot
+   * faisait donc tomber trente-cinq recettes pour une raison sans rapport avec
+   * ce qu'elles éprouvent — et chaque édition était une occasion d'en casser
+   * une. Le Plan 02 chiffre le coût des six lots à venir : plus de deux cents
+   * éditions.
+   *
+   * UNE MIGRATION, ELLE, ÉNONCE UN FAIT DATÉ : le total au moment où elle
+   * s'applique. Elle n'a jamais à être rouverte, et les migrations ne sont
+   * rejouées que dans l'ordre. Elles sont donc le seul endroit légitime.
+   *
+   * Ce contrôle ferme la porte plutôt que de compter sur la discipline : il
+   * cherche la FORME d'une comparaison au total — le nombre courant du
+   * catalogue, précédé d'un opérateur ou d'une préposition de dénombrement — et
+   * refuse qu'elle reparaisse ailleurs. Il se met à jour tout seul : le nombre
+   * cherché est celui du catalogue lu.
+   */
+  it('n’affirme le total du catalogue que dans une migration', () => {
+    const total = String(catalogCodes.length)
+    const root = resolve(import.meta.dirname, '../../..')
+
+    const suspects = [
+      ...readdirSync(resolve(root, 'supabase/tests'))
+        .filter((name) => name.endsWith('.sql'))
+        .map((name) => `supabase/tests/${name}`),
+      ...readdirSync(resolve(root, 'scripts'))
+        .filter((name) => name.endsWith('.mjs'))
+        .map((name) => `scripts/${name}`),
+      'src/app/page.tsx',
+    ]
+
+    /*
+     * `<> 179`, `=== 179`, `sur 179`, `à 179` — et non « 179 » seul : un
+     * montant, un kilométrage ou un identifiant de démonstration peut
+     * légitimement valoir ce nombre, et un contrôle qui les confondrait
+     * finirait par être désactivé.
+     */
+    const shape = new RegExp(
+      // `\b` ne borne pas « à » : hors du mode Unicode, l'accent n'est pas un
+      // caractère de mot, et la frontière n'existerait donc pas.
+      String.raw`(?:<>|!==?|===?|==|>=|<=|\bsur\s|à\s)\s*` + total + String.raw`\b`
+    )
+
+    const guilty = suspects.filter((relative) => {
+      const source = readFileSync(resolve(root, relative), 'utf8')
+      return source
+        .split('\n')
+        .some((line) => !line.trimStart().startsWith('*') && shape.test(line))
+    })
+
+    expect(
+      guilty,
+      `Le total du catalogue (${total}) est comparé en dur hors migration : ${guilty.join(', ')}. ` +
+        'Nommer les capacités éprouvées, ou lire le total depuis la base.'
+    ).toEqual([])
+  })
+
+  /**
+   * La capacité de réinitialisation existe, et elle est SEULE sous son
+   * sous-menu — DEC-046.
+   *
+   * Le SaaS ne propose ni l'envoi d'un lien, ni la lecture d'un mot de passe :
+   * une permission qui ne débloque rien ne s'attribue pas (CLAUDE.md §19 bis).
+   */
+  it('porte la réinitialisation du mot de passe, et rien d’autre sous ce sous-menu', () => {
+    expect(catalogCodes).toContain('users.users.password.reset')
+
+    const surnumeraires = catalogCodes.filter(
+      (code) => code.startsWith('users.users.password.') && code !== 'users.users.password.reset'
+    )
+
+    expect(
+      surnumeraires,
+      `Ces capacités ne débloqueraient aucune fonctionnalité : ${surnumeraires.join(', ')}`
+    ).toEqual([])
+  })
 })

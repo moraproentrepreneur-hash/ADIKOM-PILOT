@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { Search, ShieldCheck, UserPlus, Users } from 'lucide-react'
+import { KeyRound, Search, ShieldCheck, UserPlus, Users } from 'lucide-react'
 
 import {
   Badge,
@@ -216,9 +216,20 @@ export default async function UsersPage(props: PageProps<'/utilisateurs'>) {
                         {user.groups.length > 0 ? user.groups.join(', ') : '—'}
                       </td>
                       <td className="px-5 py-3">
-                        <Badge tone={STATUS_TONES[user.status as UserStatus]}>
-                          {STATUS_LABELS[user.status as UserStatus]}
-                        </Badge>
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <Badge tone={STATUS_TONES[user.status as UserStatus]}>
+                            {STATUS_LABELS[user.status as UserStatus]}
+                          </Badge>
+                          {/* La liste porte l'INFORMATION, jamais l'acte : la
+                              réinitialisation a lieu sur la fiche, où l'identité
+                              est sous les yeux (DEC-046). */}
+                          {user.mustChangePassword && (
+                            <Badge tone="warning">
+                              <KeyRound className="mr-1 size-3" aria-hidden />
+                              Mot de passe temporaire
+                            </Badge>
+                          )}
+                        </span>
                       </td>
                       <td className="px-5 py-3 text-muted tabular">
                         {formatDate(user.lastLoginAt)}
@@ -249,9 +260,17 @@ export default async function UsersPage(props: PageProps<'/utilisateurs'>) {
                         </p>
                         <p className="truncate text-xs text-muted">{user.username}</p>
                       </div>
-                      <Badge tone={STATUS_TONES[user.status as UserStatus]}>
-                        {STATUS_LABELS[user.status as UserStatus]}
-                      </Badge>
+                      <span className="flex shrink-0 flex-col items-end gap-1.5">
+                        <Badge tone={STATUS_TONES[user.status as UserStatus]}>
+                          {STATUS_LABELS[user.status as UserStatus]}
+                        </Badge>
+                        {user.mustChangePassword && (
+                          <Badge tone="warning">
+                            <KeyRound className="mr-1 size-3" aria-hidden />
+                            Mot de passe temporaire
+                          </Badge>
+                        )}
+                      </span>
                     </div>
                     <dl className="mt-3 space-y-1 text-xs text-muted">
                       {user.jobTitle && <dd>{user.jobTitle}</dd>}

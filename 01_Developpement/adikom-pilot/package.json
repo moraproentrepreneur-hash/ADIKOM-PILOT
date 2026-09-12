@@ -78,6 +78,8 @@
     "verify:settings": "node scripts/verify-settings.mjs",
     "db:verify:transfers": "node scripts/run-sql.mjs supabase/tests/transfers.sql",
     "verify:transfers": "node scripts/verify-transfers.mjs",
+    "db:verify:password-reset": "node scripts/run-sql.mjs supabase/tests/password_reset.sql",
+    "verify:password-reset": "node scripts/verify-password-reset.mjs",
     "verify:ajustements": "node scripts/verify-ajustements.mjs",
     "verify:production": "node scripts/verify-production.mjs"
   },

@@ -35,6 +35,14 @@ export type UserListItem = {
   groups: string[]
   lastLoginAt: string | null
   createdAt: string
+  /**
+   * Un mot de passe temporaire est en attente de remplacement.
+   *
+   * La liste porte cette INFORMATION, jamais l'acte de réinitialisation
+   * (DEC-046) : elle permet de voir d'un coup d'œil qui n'a pas encore défini
+   * son mot de passe personnel.
+   */
+  mustChangePassword: boolean
 }
 
 export type UserDetail = UserListItem & {
@@ -72,6 +80,7 @@ type RawUserRow = {
   is_super_admin: boolean
   last_login_at: string | null
   created_at: string
+  must_change_password: boolean
   user_departments:
     | { department_id: string; is_manager: boolean; departments: { name: string } | null }[]
     | null
@@ -86,7 +95,7 @@ type RawUserRow = {
  */
 const LIST_SELECT = `
   id, username, first_name, last_name, email, job_title, status,
-  is_super_admin, last_login_at, created_at,
+  is_super_admin, last_login_at, created_at, must_change_password,
   user_departments!user_id ( department_id, is_manager, departments ( name ) ),
   user_groups!user_id ( group_id, groups ( name ) )
 `
@@ -119,6 +128,7 @@ function toListItem(row: RawUserRow): UserListItem {
       .filter((name): name is string => Boolean(name)),
     lastLoginAt: row.last_login_at,
     createdAt: row.created_at,
+    mustChangePassword: row.must_change_password,
   }
 }
 

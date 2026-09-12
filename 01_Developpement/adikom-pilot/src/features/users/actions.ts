@@ -110,6 +110,18 @@ function friendlyError(message: string): string {
   if (/row-level security|insufficient_privilege|permission denied/i.test(message)) {
     return 'Vous ne disposez pas des droits nécessaires pour cette opération.'
   }
+  /*
+   * Les refus que la base formule elle-même sont écrits POUR L'UTILISATEUR :
+   * « un compte archivé ne se réinitialise pas », « seul un Super Admin peut… ».
+   * Les remplacer par un message générique priverait l'administrateur du seul
+   * élément utile — ce qu'il doit faire pour aboutir. Ils ne révèlent ni
+   * structure de données, ni détail technique (CLAUDE.md §43).
+   */
+  if (/^Op[ée]ration refus[ée]e/i.test(message)) return message
+  if (/^Droit insuffisant/i.test(message)) {
+    return 'Vous ne disposez pas des droits nécessaires pour cette opération.'
+  }
+  if (/^Utilisateur introuvable/i.test(message)) return 'Utilisateur introuvable.'
   if (/Super Admin/i.test(message)) return message
   return 'L’opération n’a pas pu être effectuée. Veuillez vérifier les informations saisies.'
 }
@@ -441,6 +453,103 @@ async function setUserStatusInner(
   revalidatePath('/utilisateurs')
   revalidatePath(`/utilisateurs/${userId}`)
   return { success: 'Le statut a été mis à jour.' }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Réinitialisation du mot de passe                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Remet un mot de passe temporaire à un utilisateur existant — DEC-046.
+ *
+ * LE MÉCANISME EXISTANT EST REJOUÉ, PAS RÉÉCRIT.
+ *
+ * Le mot de passe est celui que le NAVIGATEUR de l'administrateur a généré avec
+ * `generateTemporaryPassword()` — le même qu'à la création d'un compte. Il
+ * traverse cette action une fois, est transmis à Supabase Auth, puis abandonné :
+ * il n'est ni journalisé, ni renvoyé dans le résultat, ni écrit dans aucune
+ * table. C'est le navigateur, et lui seul, qui l'affiche — le serveur ne le
+ * renvoie jamais.
+ *
+ * DEUX ÉCRITURES, DANS CET ORDRE, ET PAS DANS L'AUTRE
+ *
+ *   1. `require_password_reset` lève `must_change_password` en base, sous la
+ *      session de l'administrateur : capacité vérifiée, trois refus opposés,
+ *      acte journalisé.
+ *   2. Supabase Auth enregistre ensuite le mot de passe temporaire.
+ *
+ * Si la seconde étape échoue, l'utilisateur garde son ancien mot de passe mais
+ * devra le changer : dégradé, sûr, réessayable. L'ordre inverse produirait un
+ * temporaire SANS obligation de le changer — donc un mot de passe définitif
+ * connu de l'administrateur.
+ */
+export async function resetUserPasswordAction(
+  prevState: UserFormState,
+  formData: FormData
+): Promise<UserFormState> {
+  return guarded('réinitialisation du mot de passe', () =>
+    resetUserPasswordInner(prevState, formData)
+  )
+}
+
+async function resetUserPasswordInner(
+  _prevState: UserFormState,
+  formData: FormData
+): Promise<UserFormState> {
+  // Première barrière. La base en oppose deux autres — policy dédiée et
+  // déclencheur —, y compris sur appel direct sans passer par cet écran.
+  const actor = await requirePermission(PERMISSIONS.USERS_PASSWORD_RESET)
+
+  const userId = String(formData.get('userId') ?? '')
+  if (!userId) return { error: 'Utilisateur introuvable.' }
+
+  const password = String(formData.get('password') ?? '')
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    return {
+      error:
+        'Aucun mot de passe temporaire n’a été généré. Relancez la réinitialisation depuis la fiche.',
+    }
+  }
+
+  // Contrôlé aussi en base ; répété ici pour rendre un message clair plutôt
+  // qu'une erreur technique.
+  if (userId === actor.id) {
+    return {
+      error:
+        'Cette action ne réinitialise pas votre propre mot de passe. Utilisez l’écran de changement de mot de passe.',
+    }
+  }
+
+  const supabase = await createSupabaseServerClient()
+
+  const { error: flagError } = await supabase.rpc('require_password_reset', {
+    p_user_id: userId,
+  })
+
+  // Le motif exact vient de la base — compte archivé, Super Admin, droit
+  // insuffisant : il est fonctionnel, et se transmet tel quel.
+  if (flagError) return { error: friendlyError(flagError.message) }
+
+  // Le mot de passe n'est écrit qu'une fois l'obligation de changement imposée.
+  const admin = createSupabaseAdminClient()
+  const { error: authError } = await admin.auth.admin.updateUserById(userId, { password })
+
+  if (authError) {
+    return {
+      error:
+        'Le mot de passe temporaire n’a pas pu être enregistré. L’utilisateur conserve son mot de passe actuel, mais devra le changer à sa prochaine connexion : relancez l’opération.',
+    }
+  }
+
+  revalidatePath('/utilisateurs')
+  revalidatePath(`/utilisateurs/${userId}`)
+
+  // AUCUN MOT DE PASSE DANS CE RETOUR. L'administrateur lit celui que son
+  // propre navigateur a généré ; le serveur confirme seulement l'opération.
+  return {
+    success:
+      'Mot de passe réinitialisé. Communiquez le mot de passe temporaire au collaborateur par un canal sûr.',
+  }
 }
 
 /* -------------------------------------------------------------------------- */

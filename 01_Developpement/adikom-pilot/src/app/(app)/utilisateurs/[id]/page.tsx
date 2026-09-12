@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, Pencil, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, KeyRound, Pencil, ShieldCheck } from 'lucide-react'
 
 import { Badge, Card, Empty, InfoRow, PageHeader } from '@/components/ui/primitives'
 import { can, getCurrentUser, requirePermissionOrRedirect } from '@/lib/auth/dal'
@@ -15,6 +15,7 @@ import {
   STATUS_LABELS,
   STATUS_TONES,
 } from '@/features/users/data'
+import { PasswordResetForm } from '@/features/users/password-reset-form'
 import { PermissionsPanel } from '@/features/users/permissions-panel'
 import { StatusForm } from '@/features/users/status-form'
 import { UserForm } from '@/features/users/user-form'
@@ -55,10 +56,27 @@ export default async function UserDetailPage(props: PageProps<'/utilisateurs/[id
   const editing = searchParams.mode === 'edition'
   const justCreated = searchParams.cree === '1'
 
-  const [canUpdate, canArchive] = await Promise.all([
+  const [canUpdate, canArchive, canResetPassword, actor] = await Promise.all([
     can(PERMISSIONS.USERS_UPDATE),
     can(PERMISSIONS.USERS_ARCHIVE),
+    can(PERMISSIONS.USERS_PASSWORD_RESET),
+    getCurrentUser(),
   ])
+
+  /*
+   * L'encart n'est proposé que là où l'acte peut aboutir — DEC-046. Les trois
+   * refus sont opposés par la base, y compris sur appel direct : ce masquage
+   * n'est qu'un confort de lecture, jamais la protection.
+   *
+   * `is_super_admin` est réservé au Super Admin : sinon la capacité devient un
+   * chemin de prise de contrôle. `ARCHIVED` se réactive d'abord. Et nul ne se
+   * réinitialise par cette voie — l'écran de changement existe pour cela.
+   */
+  const resettable =
+    canResetPassword &&
+    actor?.id !== id &&
+    user.status !== 'ARCHIVED' &&
+    (!user.isSuperAdmin || Boolean(actor?.isSuperAdmin))
 
   /* La fiche comporte exactement deux onglets — exigence du Module 08 §17. */
   const tabs = [
@@ -111,6 +129,12 @@ export default async function UserDetailPage(props: PageProps<'/utilisateurs/[id
           <Badge tone="info">
             <ShieldCheck className="mr-1 size-3.5" aria-hidden />
             Super Admin
+          </Badge>
+        )}
+        {user.mustChangePassword && (
+          <Badge tone="warning">
+            <KeyRound className="mr-1 size-3.5" aria-hidden />
+            Mot de passe temporaire
           </Badge>
         )}
         <span className="text-sm text-muted">{user.username}</span>
@@ -226,6 +250,22 @@ export default async function UserDetailPage(props: PageProps<'/utilisateurs/[id
                   description="La désactivation empêche la connexion sans supprimer l’historique."
                 >
                   <StatusForm userId={id} currentStatus={user.status} />
+                </Card>
+              )}
+
+              {/* Accès & sécurité — l'acte a lieu sur la fiche, où l'identité
+                  est sous les yeux, et non dans la liste (DEC-046). */}
+              {resettable && (
+                <Card
+                  title="Accès & sécurité"
+                  description="Le mot de passe actuel de l’utilisateur n’est jamais consultable."
+                >
+                  <PasswordResetForm
+                    userId={id}
+                    fullName={user.fullName}
+                    username={user.username}
+                    pending={user.mustChangePassword}
+                  />
                 </Card>
               )}
             </div>

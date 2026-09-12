@@ -76,6 +76,14 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-040 | Virement interne & Paiements divers — LOT 17 | Arbitrages, capacité et **deux défauts préexistants** | Appliquée — **achève les Modules 06 et 07** | 2026-09-06 |
 | DEC-041 | Sauvegarde, réinitialisation et restauration — LOT 18 | Capacités, sécurité et exploitation | Appliquée — **complète le Module 09** | 2026-09-06 |
 | DEC-042 | Ajustements fonctionnels et UX du SaaS | Arbitrages ADIKOM, capacités et sécurité | Appliquée — **révise DEC-032 et le retrait de la migration 037** | 2026-09-08 |
+| DEC-043 | *Historisation des prix* | *Réservée au Plan 02 §5 — LOT 20* | **Non consignée** | — |
+| DEC-044 | *Confidentialité des tarifs fournisseur* | *Réservée au Plan 02 §6 — LOT 21* | **Non consignée** | — |
+| DEC-045 | *Avenant de location* | *Réservée au Plan 02 §7.3 — LOT 22* | **Non consignée** | — |
+| DEC-046 | Réinitialisation du mot de passe — LOT 19 | Capacité indépendante, garde en base, trois refus | Appliquée — **complète le Module 08** | 2026-09-12 |
+
+> **DEC-043 à DEC-045 sont réservées, pas oubliées.** Le Plan 02 leur a assigné un
+> objet ; les lots qui les portent n'ont pas encore été développés. Leur numéro ne
+> doit pas être réemployé.
 
 ---
 
@@ -4404,6 +4412,151 @@ saurait plus viser. Il disparaît avec le jeu de démonstration lui-même.
 - **Aucune règle métier n'est inventée.** La rentabilité suit §43 et en énonce
   les limites ; le sens du paiement divers est un arbitrage d'ADIKOM ; les
   conditions de partenariat, faute de modèle, restent absentes.
+
+
+---
+
+## DEC-046 — Réinitialisation du mot de passe (LOT 19)
+
+**Date :** 12 septembre 2026
+**Portée :** capacité indépendante, garde en base, trois refus de sécurité
+**Statut :** appliquée · **complète le Module 08**
+
+### Contexte — un oubli, et personne pour le réparer
+
+Le SaaS savait remettre un mot de passe temporaire **une seule fois** : à la
+création du compte. Passé ce moment, un collaborateur qui oubliait le sien
+n'avait aucun recours, et l'administrateur aucun geste à faire. Le compte
+restait ouvert et inaccessible.
+
+### a. Le mécanisme existant est validé et ne bouge pas
+
+C'est la décision du demandeur, et elle commande tout le reste. Le parcours
+demeure celui-ci, dans cet ordre :
+
+```
+mot de passe temporaire remis une fois
+        ↓
+connexion avec le temporaire
+        ↓
+détournement obligatoire vers l'écran de changement
+        ↓
+l'utilisateur choisit son mot de passe définitif
+```
+
+La réinitialisation n'ajoute donc **aucun mécanisme** : elle **rejoue** celui-là.
+`generateTemporaryPassword()` reste le même, exécuté **dans le navigateur de
+l'administrateur** ; `requireUser()` détourne toujours vers l'écran de
+changement ; `changePasswordAction` lève toujours l'indicateur par le client
+d'administration, jamais par l'utilisateur.
+
+**L'administrateur ne connaît jamais le mot de passe définitif.** Il connaît un
+temporaire, qui cesse d'être valable dès que son titulaire en choisit un autre.
+
+### b. Une capacité, indépendante de « modifier un utilisateur »
+
+| Code | Module | Menu | Sous-menu | Action | Sensible |
+|---|---|---|---|:-:|:-:|
+| `users.users.password.reset` | `users` | `users` | `password` | `ADMIN` | ✓ |
+
+**Pourquoi pas `users.users.update`.** DEC-024 : corriger un numéro de téléphone
+et **rendre un accès** ne sont pas le même geste. Un poste chargé de tenir les
+fiches à jour n'a aucune raison de pouvoir ouvrir un compte à la place de son
+titulaire.
+
+**Pourquoi `ADMIN` et non `UPDATE`.** Le précédent est `rental.pricing.override`
+(« Forcer un tarif manuellement »). Réinitialiser ne modifie pas une donnée de la
+fiche : c'est un acte d'administration **sur un compte**.
+
+**Catalogue : 178 → 179.**
+
+### c. La garde ne peut pas porter sur le mot de passe — elle porte sur l'indicateur
+
+L'écriture du mot de passe dans Supabase Auth **exige la clé de service** : elle
+ne peut pas, par nature, être gardée par RLS. La garde en base porte donc sur ce
+qui est gardable : **l'indicateur `must_change_password` et le journal**.
+
+Trois couches, aucune ne suffisant seule :
+
+1. **L'action serveur** exige `users.users.password.reset` avant tout.
+2. **Une policy dédiée** — `app_users_password_reset` — ouvre l'écriture à cette
+   capacité seule. Sans elle, il aurait fallu se contenter de `app_users_update`,
+   c'est-à-dire rendre la réinitialisation **implicitement incluse** dans
+   « modifier un utilisateur » : exactement ce que DEC-024 interdit.
+3. **Un déclencheur** — `fn_password_reset_guard` — refuse, par cette voie, toute
+   écriture portant sur une autre colonne que `must_change_password`. RLS est
+   **ROW-level** : sans ce déclencheur, la policy aurait ouvert la ligne entière,
+   donc le nom, l'email, le statut et le rôle Super Admin.
+
+La forme est celle de `fn_prevent_self_promotion`, qui restreint déjà des
+**colonnes** par déclencheur. Aucune fonction métier `SECURITY DEFINER` n'est
+créée.
+
+### d. L'ordre des deux écritures n'est pas indifférent
+
+| Ordre | Si la seconde étape échoue |
+|---|---|
+| **Indicateur, puis Auth** ✓ | L'utilisateur garde son ancien mot de passe **mais devra le changer**. Dégradé, sûr, réessayable |
+| Auth, puis indicateur | L'utilisateur a un temporaire **sans obligation de le changer** : le temporaire devient définitif, **connu de l'administrateur**. Inacceptable |
+
+L'indicateur est donc levé d'abord, par la base, sous la session de
+l'administrateur. Le mot de passe n'est écrit qu'ensuite.
+
+### e. Trois refus, opposés par la base et non par l'écran
+
+| Refus | Pourquoi |
+|---|---|
+| **Nul ne réinitialise son propre mot de passe par cette voie** | L'écran de changement existe déjà. Passer par ici n'apporterait rien et brouillerait le journal. Précédent : le statut de son propre compte est déjà refusé |
+| **Un non-Super-Admin ne réinitialise jamais le mot de passe d'un Super Admin** | Sinon la capacité devient **un chemin de prise de contrôle** : qui réinitialise le mot de passe du Super Admin se connecte à sa place, et s'attribue tout le reste |
+| **Un compte `ARCHIVED` ne se réinitialise pas** | On le réactive d'abord. Réinitialiser un compte archivé rendrait un accès à quelqu'un qui n'en a plus |
+
+Les trois sont opposés par le déclencheur, donc **y compris sur appel direct** à
+l'API, sans passer par aucun écran. Le refus du compte archivé est une règle de
+**cohérence** : il vaut pour tout acteur, la clé de service comprise.
+
+### f. Le journal dit qu'une réinitialisation a eu lieu — et rien de plus
+
+Il enregistre **qui, sur qui, quand, et que l'opération a eu lieu**. Il
+n'enregistre **jamais** le mot de passe temporaire, ni son empreinte, ni aucune
+valeur permettant de le retrouver. `app_users` ne comporte d'ailleurs aucune
+colonne de mot de passe, et le journal redacte par construction toute clé nommée
+`password`.
+
+Une entrée explicite accompagne le changement d'indicateur : sans elle, une
+réinitialisation portant sur un compte **déjà** en attente de changement
+n'aurait laissé aucune trace, le déclencheur d'audit ne journalisant que les
+écritures qui modifient réellement une donnée.
+
+### g. La liste porte une information, l'acte a lieu sur la fiche
+
+L'action vit sur la **fiche**, dans un encart « Accès & sécurité » voisin du
+statut — là où vivent déjà les actes sensibles. L'identité est alors **sous les
+yeux** : réinitialiser le mauvais compte verrouille une personne qui n'avait rien
+demandé.
+
+La **liste**, elle, porte un badge « Mot de passe temporaire » dérivé de
+l'indicateur : il permet de voir d'un coup d'œil qui n'a pas encore défini le
+sien. Elle ne porte pas l'acte.
+
+### h. Le total du catalogue ne se compte plus en trente-cinq endroits
+
+Le nombre `178` était écrit en dur dans **35 fichiers de recette**. Chaque
+capacité ajoutée faisait donc tomber 35 recettes pour une raison sans rapport
+avec ce qu'elles éprouvent.
+
+**Le total est désormais affirmé une seule fois**, dans la migration du lot — au
+moment où il est vrai. Les recettes portent :
+
+- la **présence nominative** des codes qu'elles éprouvent, et l'**absence
+  nominative** de ceux que leur lot ne doit pas avoir créés — ce qu'elles
+  faisaient déjà par ailleurs ;
+- pour les recettes applicatives, la **variation** du catalogue entre le début et
+  la fin de leur propre passage, et non sa valeur absolue : ce qu'elles doivent
+  prouver est qu'**elles** n'ont rien ajouté.
+
+Aucune vérification n'est affaiblie : la parité TypeScript ↔ SQL reste une
+**égalité d'ensembles**, code par code, et la page publique annonce désormais le
+total réel du catalogue au lieu d'un nombre recopié.
 
 
 ---

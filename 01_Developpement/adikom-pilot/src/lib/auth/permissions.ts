@@ -266,6 +266,17 @@ export const PERMISSIONS = {
   USERS_CREATE: 'users.users.create',
   USERS_UPDATE: 'users.users.update',
   USERS_ARCHIVE: 'users.users.archive',
+  /*
+   * Réinitialiser le mot de passe est un acte d'administration SUR UN COMPTE,
+   * pas la modification d'une donnée de la fiche : action `ADMIN`, comme
+   * `rental.pricing.override` (DEC-046, migration 079).
+   *
+   * ELLE N'EST PAS INCLUSE DANS `users.users.update` — DEC-024. Corriger un
+   * numéro de téléphone et rendre un accès ne sont pas le même geste. La base
+   * l'impose : la policy `app_users_password_reset` garde l'indicateur, et
+   * `fn_password_reset_guard` refuse à son porteur toute autre colonne.
+   */
+  USERS_PASSWORD_RESET: 'users.users.password.reset',
   USER_PERMISSIONS_VIEW: 'users.users.permissions.view',
   USER_PERMISSIONS_UPDATE: 'users.users.permissions.update',
   HIERARCHY_VIEW: 'users.hierarchy.view',
