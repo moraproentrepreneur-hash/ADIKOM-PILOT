@@ -532,8 +532,9 @@ refusé de s'appliquer.
 |---|---|
 | **Branche** | `main` |
 | **Dépôt** | `moraproentrepreneur-hash/ADIKOM-PILOT` |
-| **Commits** | `f1f799d` · `0d0e5a0` · `8cf4c47` · `bc1627d` |
-| **SHA déployé** | **`bc1627d`** |
+| **Commits** | `f1f799d` · `0d0e5a0` · `8cf4c47` · `bc1627d` · `7444b36` |
+| **SHA du code éprouvé en production** | **`bc1627d`** |
+| **SHA déployé** | **`7444b36`** — `bc1627d` **plus ce rapport**, sans aucune modification de code |
 | **URL de production** | **https://adikom-pilot.vercel.app** |
 | **État Vercel** | `READY` · `production` |
 
@@ -545,6 +546,12 @@ refusé de s'appliquer.
 | `0d0e5a0` | `refactor: le total du catalogue des capacites ne s affirme plus en trente-cinq endroits` |
 | `8cf4c47` | `feat: reinitialisation du mot de passe par un administrateur autorise` |
 | `bc1627d` | `fix: un horodatage de connexion n est pas une donnee du compte` |
+| `7444b36` | `docs: le rapport du LOT 19, contre le sha bc1627d reellement deploye` |
+
+**Les recettes de production ont été exécutées contre `bc1627d`**, dernier
+commit portant du code. `7444b36` n'ajoute que ce rapport : le `diff` entre les
+deux ne touche aucun fichier de `01_Developpement/`, et le déploiement de
+`7444b36` sert exactement le même applicatif.
 
 **Aucun secret n'a été commis.** Le diff a été relu au motif
 (`service_role_key`, `eyJ…`, `sbp_`, `ghp_`, `SUPABASE_SERVICE`) : rien. `.env.local`
