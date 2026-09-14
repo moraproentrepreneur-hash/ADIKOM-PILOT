@@ -9,8 +9,10 @@ import {
   CarFront,
   CheckSquare,
   ClipboardList,
+  ConciergeBell,
   FileText,
   FolderKanban,
+  FolderTree,
   Gavel,
   Handshake,
   History,
@@ -18,6 +20,7 @@ import {
   Layers,
   ListChecks,
   Network,
+  Package,
   ReceiptText,
   Settings,
   ShieldCheck,
@@ -256,6 +259,41 @@ export const NAVIGATION: NavEntry[] = [
         href: '/location/maintenance',
         icon: Wrench,
         permission: PERMISSIONS.MAINTENANCE_VIEW,
+        status: 'ready',
+      },
+    ],
+  },
+  /*
+   * Module 10 — ouvert par le LOT 20 (DEC-043).
+   *
+   * IL S'APPELLE « PRODUITS & SERVICES », ET SEULS LES SERVICES EXISTENT.
+   *
+   * Le nom large a été choisi avec le `module_code` : renommer un module après
+   * attribution de ses capacités coûterait cher, l'élargir ne coûte rien. Mais
+   * AUCUNE ENTRÉE « Produits » N'EST AFFICHÉE : le projet a retiré toutes ses
+   * entrées « à venir » (DEC-042 §d) et n'en réintroduit pas. Une entrée inerte
+   * promet ce que l'écran ne fait pas.
+   *
+   * Les VARIANTES et les PRIX ne sont pas des menus : ils vivent sur la fiche du
+   * service. Un menu de plus n'ouvrirait rien que la fiche n'ouvre déjà, et
+   * `CLAUDE.md` §37 demande de ne pas multiplier ce qui se ressemble.
+   */
+  {
+    label: 'Produits & Services',
+    icon: Package,
+    items: [
+      {
+        label: 'Services',
+        href: '/catalogue/services',
+        icon: ConciergeBell,
+        permission: PERMISSIONS.SERVICES_VIEW,
+        status: 'ready',
+      },
+      {
+        label: 'Catégories',
+        href: '/catalogue/categories',
+        icon: FolderTree,
+        permission: PERMISSIONS.SERVICE_CATEGORIES_VIEW,
         status: 'ready',
       },
     ],

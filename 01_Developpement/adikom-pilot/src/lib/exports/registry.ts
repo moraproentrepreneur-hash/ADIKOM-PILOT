@@ -25,6 +25,11 @@ import {
 import { listPricingRules } from '@/features/pricing/data'
 import { UNIT_LABELS } from '@/features/pricing/constants'
 import {
+  listServices,
+  PURPOSE_LABELS as SERVICE_PURPOSE_LABELS,
+  STATUS_LABELS as SERVICE_STATUS_LABELS,
+} from '@/features/catalog/data'
+import {
   displayStatus as displayReservationStatus,
   listReservations,
   STATUS_LABELS as RESERVATION_STATUS,
@@ -592,6 +597,61 @@ export const EXPORTS: Record<string, ExportDefinition> = {
         { header: 'Véhicules', width: 11, format: 'number', value: (r) => r.vehicleCount },
         { header: 'État', width: 14, value: (r) => (r.isActive ? 'Active' : 'Archivée') },
       ])
+    },
+  },
+
+  /*
+   * CATALOGUE DE SERVICES — LOT 20.
+   *
+   * L'export porte L'IDENTITÉ du catalogue : référence, libellé, catégorie,
+   * destination, nombre de variantes, statut. Il ne porte AUCUN PRIX, et ce
+   * n'est pas un oubli.
+   *
+   *   1. UN PRIX EST UNE LIGNE DATÉE. Le prix applicable se résout EN BASE, à
+   *      une date donnée (`resolve_service_price`, D16(c)). Le recalculer ici,
+   *      ligne par ligne, serait une SECONDE implémentation de la résolution —
+   *      celle qui finit par diverger de l'autre.
+   *
+   *   2. UN CLASSEUR CIRCULE. Il se transfère, se conserve et s'ouvre hors du
+   *      système. Un prix d'achat n'a rien à y faire, quelles que soient les
+   *      permissions du lecteur au moment de l'export — même raisonnement que
+   *      pour les coordonnées bancaires des fournisseurs.
+   *
+   * Les prix se lisent sur la fiche, où le résolveur s'applique et où la
+   * capacité de lecture des coûts est vérifiée à chaque affichage.
+   */
+  services: {
+    title: 'Services',
+    viewPermission: PERMISSIONS.SERVICES_VIEW,
+    permission: PERMISSIONS.SERVICES_EXPORT,
+    entityType: 'services',
+    moduleCode: 'catalog',
+    async build(filters) {
+      const rows = await listServices({
+        search: filters.q,
+        status: filters.statut,
+        categoryId: filters.categorie,
+        purpose: filters.destination,
+      })
+
+      return dataset(
+        rows,
+        [
+          { header: 'Référence', width: 14, value: (r) => r.serviceNo },
+          { header: 'Service', width: 36, value: (r) => r.label },
+          { header: 'Catégorie', width: 26, value: (r) => r.categoryLabel },
+          {
+            header: 'Destination',
+            width: 18,
+            value: (r) => SERVICE_PURPOSE_LABELS[r.purpose],
+          },
+          { header: 'Unité', width: 14, value: (r) => r.unitLabel },
+          { header: 'Variantes', width: 11, format: 'number', value: (r) => r.variantCount },
+          { header: 'Statut', width: 14, value: (r) => SERVICE_STATUS_LABELS[r.status] },
+          { header: 'Description', width: 46, value: (r) => r.description },
+        ],
+        'Identité du catalogue — les prix se lisent sur la fiche, à une date donnée'
+      )
     },
   },
 

@@ -110,6 +110,7 @@ export const MODULE_LABELS: Record<string, string> = {
   users: 'Utilisateurs & Groupes',
   parties: 'Tiers',
   rental: 'Gestion de location',
+  catalog: 'Produits & Services',
   billing: 'Facturation & Paiement',
   treasury: 'Banques & Caisses',
   projects: 'Projets & Planification',
@@ -120,6 +121,7 @@ export const MODULE_ORDER: readonly string[] = [
   'users',
   'parties',
   'rental',
+  'catalog',
   'billing',
   'treasury',
   'projects',
@@ -171,6 +173,13 @@ export const ENTITY_LABELS: Record<string, string> = {
   maintenance_quotes: 'Devis de maintenance',
   maintenance_costs: 'Coût de maintenance',
   maintenance_cost_lines: 'Ligne de coût de maintenance',
+
+  // Produits & Services
+  service_categories: 'Catégorie de services',
+  services: 'Service',
+  service_variants: 'Variante de service',
+  service_variant_prices: 'Prix de vente d’un service',
+  service_variant_costs: 'Prix d’achat d’un service',
 
   // Facturation & Paiement
   customer_invoices: 'Facture client',
@@ -240,6 +249,19 @@ export const ENTITIES_BY_MODULE: Record<string, readonly string[]> = {
     'maintenance_documents',
     'maintenance_costs',
     'maintenance_cost_lines',
+  ],
+  /*
+   * Les prix d'achat figurent au filtre, et le doivent : leur DÉTAIL reste
+   * fermé à qui n'a pas `catalog.services.cost.view` (`audit_detail_permission`,
+   * migration 081). Retirer la ligne du filtre masquerait l'ÉVÉNEMENT à qui a
+   * le droit de le voir, sans rien fermer de plus.
+   */
+  catalog: [
+    'service_categories',
+    'services',
+    'service_variants',
+    'service_variant_prices',
+    'service_variant_costs',
   ],
   billing: [
     'customer_invoices',
@@ -343,6 +365,19 @@ const FIELD_LABELS: Record<string, string> = {
   invoice_id: 'Facture',
   account_id: 'Compte',
   project_id: 'Projet',
+  // Catalogue de services — LOT 20
+  service_id: 'Service',
+  variant_id: 'Variante',
+  purpose: 'Destination',
+  unit_label: 'Unité',
+  sku: 'Référence',
+  is_default: 'Par défaut',
+  display_order: 'Ordre d’affichage',
+  valid_from: 'Applicable à partir du',
+  valid_to: 'Applicable jusqu’au',
+  deactivated_at: 'Retirée le',
+  deactivated_by: 'Retirée par',
+  deactivation_reason: 'Motif du retrait',
 }
 
 export function fieldLabel(field: string): string {

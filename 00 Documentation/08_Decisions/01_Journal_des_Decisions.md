@@ -76,14 +76,14 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-040 | Virement interne & Paiements divers — LOT 17 | Arbitrages, capacité et **deux défauts préexistants** | Appliquée — **achève les Modules 06 et 07** | 2026-09-06 |
 | DEC-041 | Sauvegarde, réinitialisation et restauration — LOT 18 | Capacités, sécurité et exploitation | Appliquée — **complète le Module 09** | 2026-09-06 |
 | DEC-042 | Ajustements fonctionnels et UX du SaaS | Arbitrages ADIKOM, capacités et sécurité | Appliquée — **révise DEC-032 et le retrait de la migration 037** | 2026-09-08 |
-| DEC-043 | *Historisation des prix* | *Réservée au Plan 02 §5 — LOT 20* | **Non consignée** | — |
+| DEC-043 | Historisation des prix — doctrine D16 — LOT 20 | Renversement du Plan 01, capacités et confidentialité | Appliquée — **ouvre le Module 10** | 2026-09-14 |
 | DEC-044 | *Confidentialité des tarifs fournisseur* | *Réservée au Plan 02 §6 — LOT 21* | **Non consignée** | — |
 | DEC-045 | *Avenant de location* | *Réservée au Plan 02 §7.3 — LOT 22* | **Non consignée** | — |
 | DEC-046 | Réinitialisation du mot de passe — LOT 19 | Capacité indépendante, garde en base, trois refus | Appliquée — **complète le Module 08** | 2026-09-12 |
 
-> **DEC-043 à DEC-045 sont réservées, pas oubliées.** Le Plan 02 leur a assigné un
-> objet ; les lots qui les portent n'ont pas encore été développés. Leur numéro ne
-> doit pas être réemployé.
+> **DEC-044 et DEC-045 sont réservées, pas oubliées.** Le Plan 02 leur a assigné
+> un objet ; les lots qui les portent n'ont pas encore été développés. Leur numéro
+> ne doit pas être réemployé.
 
 ---
 
@@ -4557,6 +4557,197 @@ moment où il est vrai. Les recettes portent :
 Aucune vérification n'est affaiblie : la parité TypeScript ↔ SQL reste une
 **égalité d'ensembles**, code par code, et la page publique annonce désormais le
 total réel du catalogue au lieu d'un nombre recopié.
+
+
+---
+
+# DEC-043 — Historisation des prix et catalogue de services (LOT 20)
+
+| | |
+| --- | --- |
+| Date | 14 septembre 2026 |
+| Origine | Exigence écrite de la Direction (Plan 02 §5.1) + décisions **A-2**, **A-8**, **A-14** |
+| Nature | **Renversement** d'une position du Plan 01, doctrine nouvelle, capacités nouvelles |
+| Portée | Module 10 · Produits & Services — **Services seulement** |
+| Révise | Plan 01 §14.6 (« historique des prix : aucune table dédiée ») |
+
+## a. Ce que la Direction a demandé, et qui renverse le Plan 01
+
+> « Il ne suffit pas de conserver uniquement le prix actuel dans la fiche du
+> service. »
+
+Le Plan 01 avait tranché l'inverse : *« aucune table dédiée ; l'audit
+`PRICE_CHANGE` conserve l'avant/après, les lignes conservent la copie »*.
+
+Ce raisonnement protégeait bien une opération **déjà enregistrée** — sa ligne
+porte le prix copié, et aucune hausse ultérieure ne l'atteint. **Il ne répond pas
+à la demande**, sur trois points :
+
+| Ce que la copie seule ne sait pas faire | Conséquence |
+| --- | --- |
+| **Saisir un prix futur** | « À partir du 1ᵉʳ juillet, ce sera 60 000 » ne peut pas s'enregistrer. Il faudrait y penser le 1ᵉʳ juillet au matin ; un oubli facture au mauvais prix |
+| **Tarifer une saisie rétroactive** | Une prestation rendue le 15/06 et saisie le 20/07 prendrait le prix du 20/07. Erreur de facturation, invisible |
+| **Expliquer un montant** | Le journal sait qu'un prix est passé de 50 000 à 60 000 ; il n'est **pas une structure de calcul**. On ne résout pas un tarif depuis un journal |
+
+**Les deux mécanismes ne sont pas concurrents, ils sont complémentaires** — et le
+SaaS le prouve depuis le premier jour : `pricing_rules` porte `valid_from` /
+`valid_to`, `resolve_pricing_rule(client, véhicule, **date**)` les applique, **et**
+le tarif retenu est recopié dans `rentals.locked_*`.
+
+Ce que la Direction demande pour les services est donc **ce que le SaaS fait déjà
+pour les locations**. Il ne s'agit pas d'inventer un mécanisme : il s'agit de
+**généraliser celui qui est éprouvé**.
+
+## b. La doctrine — D16
+
+> **D16 — Un prix est une ligne datée ; une opération en garde la copie.**
+>
+> **(a) Versionnement.** Tout prix vit dans une ligne portant `valid_from` et
+> `valid_to`. Changer un prix, c'est **clore la version courante et en ouvrir une
+> nouvelle** — jamais réécrire une colonne.
+>
+> **(b) Copie.** Toute opération commerciale ou contractuelle **copie** dans ses
+> propres colonnes le prix résolu, son unité, l'identifiant de la version
+> appliquée et l'horodatage de la résolution.
+>
+> **(c) Résolution.** Un prix se lit **toujours** par un résolveur prenant une
+> **date d'effet**, jamais par une lecture directe de « la » ligne de prix.
+>
+> **(d) Absence.** Aucune version applicable à une date ⇒ **aucune ligne
+> renvoyée**. Un prix absent n'est jamais un prix nul (DEC-008, DEC-017).
+>
+> **(e) Irréversibilité.** Corriger une version passée **ne modifie jamais** une
+> opération déjà enregistrée : celle-ci porte sa copie.
+
+Le LOT 20 pose **(a)**, **(c)**, **(d)** et **(e)** sur les services. **(b)**
+n'a pas d'objet ici : aucune opération commerciale n'existe encore. Elle sera
+tenue par les lots qui les créeront.
+
+## c. Le chevauchement est refusé par la base, non par un contrôle applicatif
+
+Deux versions **actives** de la même variante ne peuvent pas se recouvrir. La
+garde est une **contrainte d'exclusion**, et non un déclencheur : elle ferme la
+**course entre deux saisies simultanées**, qu'aucun contrôle applicatif ne voit.
+La leçon est celle de DEC-028, déjà apprise sur les occupations de véhicules.
+
+**Un trou entre deux versions reste permis**, et il signifie « pas de prix à
+cette date ». Le résolveur ne renvoie rien, l'écran le dit, rien ne se facture.
+C'est un refus explicite, pas un zéro silencieux.
+
+## d. « Au moins un prix » n'est pas une contrainte de base — et c'est délibéré
+
+Le Plan 02 §7.4 énonce, pour la cohérence destination / prix : « `SALE` : au
+moins une version de prix de vente **en vigueur** ». Lu comme une contrainte de
+base, cet énoncé **entre en contradiction** avec le §5.5 du même plan, qui
+autorise expressément un trou entre deux versions — et il rendrait toute création
+impossible, un service naissant nécessairement sans prix.
+
+**Arbitrage, et la contradiction est nommée plutôt que tranchée en silence
+(`CLAUDE.md` §6)** — l'énoncé se lit en **deux moitiés de nature différente** :
+
+| Moitié | Nature | Où elle est tenue |
+| --- | --- | --- |
+| **Ce qui est interdit** — un prix de vente sur un service destiné au seul achat, et réciproquement | **Invariant** | **La base**, par déclencheur. Y compris en appel direct |
+| **« Au moins un prix en vigueur »** | **État d'exploitabilité**, pas invariant | **L'écran**, qui nomme le service sans prix applicable et refuse de le proposer |
+
+Un service sans prix applicable existe donc, et **il n'est pas utilisable**. Le
+système le **dit** au lieu de l'interdire à la création ou d'inventer un montant.
+
+## e. Le coût est une donnée séparée, parce que RLS ne masque pas une colonne
+
+🟩 **Décision A-8, cochée « Oui » sur le document rendu par la Direction.**
+
+> **Réserve de lecture, signalée et non dissimulée.** La croix de A-8 figure dans
+> le **rendu visuel** du document signé, mais **pas dans la couche texte** du PDF,
+> contrairement à celles de A-9 et des autres points : elle a probablement été
+> ajoutée par annotation plutôt que saisie.
+>
+> Le LOT 20 traite A-8 comme **validée — Oui**, ce que le rendu montre, et le
+> signale ici. **Le coût de l'erreur est asymétrique** : si A-8 = Oui et qu'on ne
+> le fait pas, le module est à refaire ; si A-8 = Non et qu'on le fait, on aura
+> construit une table de coûts que personne ne remplit, sans dégât sur le reste.
+
+Le prix d'achat vit donc dans **sa propre table**, `service_variant_costs`, dont
+la lecture est gardée par `catalog.services.cost.view`. Ce n'est pas une
+préférence de modélisation : **RLS filtre des lignes, pas des colonnes**. Un coût
+rangé à côté du libellé serait rendu par un `select` direct à qui détient la
+simple lecture du service. Le précédent est `maintenance_costs` (DEC-024).
+
+## f. Les douze capacités, et ce qui n'est pas créé
+
+`catalog.services` : `view` · `create` · `update` · `archive` · `export` ✓ ·
+`price.update` ✓ · `cost.view` ✓ · `cost.update` ✓
+`catalog.categories` : `view` · `create` · `update` · `archive`
+
+**Ne sont pas créées** : `catalog.products.*` (la partie Produits n'existe pas),
+`catalog.services.price.history.view` (l'historique de vente ne montre rien de
+plus que la lecture du service, et l'historique d'achat vit dans une table déjà
+gardée — une capacité de plus ne fermerait **rien**), et toute capacité de marge
+(une marge est la différence de deux grandeurs déjà gouvernées).
+
+**`catalog.services.update` n'ouvre ni `price.update` ni `cost.update`** :
+corriger une description et changer un prix ne sont pas le même geste. Le
+précédent est `parties.clients.pricing.manage`, distincte de
+`parties.clients.update` (DEC-024, A-14).
+
+**`catalog.services.cost.update` exige explicitement `catalog.services.view`** :
+une écriture sous RLS lit d'abord les lignes qu'elle vise ; sans droit de lecture
+elle ne modifierait rien **et ne dirait rien**. La capacité est donc demandée,
+puis l'**effet** est vérifié — la leçon de DEC-046.
+
+## g. Les Produits sont nommés, et rien de plus
+
+Le module s'appelle **« Produits & Services »**, code `catalog` : choisir le nom
+large maintenant évite de renommer un module après attribution de ses capacités.
+
+**Aucune table produit, aucune capacité `catalog.products.*`, et aucune entrée de
+navigation « à venir »** — le projet les a toutes retirées (DEC-042 §d) et n'en
+réintroduit pas. Une entrée inerte promet ce que l'écran ne fait pas.
+
+`CLAUDE.md` §10 énumérait neuf modules. Il en énumère désormais **dix** : la
+documentation ne se modifie pas pour justifier une implémentation
+(`CLAUDE.md` §52), mais elle se met à jour quand une décision de la Direction
+l'étend, et celle-ci est écrite.
+
+## h. 🟥 Ce que cette décision NE tranche pas — P-5
+
+> « Le prix d'achat d'un service est-il **unique**, ou peut-il **varier selon le
+> fournisseur** ? »
+
+**Aucune décision de la Direction n'y répond**, et **aucune règle n'a été
+inventée pour combler ce vide** (`CLAUDE.md` §55).
+
+Le LOT 20 enregistre **un coût par variante et par période**, sans portée
+fournisseur — la lecture la plus simple, et la seule qui n'ajoute rien à ce qui a
+été dit. **L'évolution reste ouverte et additive** : une colonne `supplier_id`
+nullable sur les versions de coût, et la contrainte d'exclusion étendue à cette
+colonne. Les versions déjà saisies signifieront alors « coût sans fournisseur
+désigné », ce qui sera exact.
+
+**Question à poser à la Direction** :
+
+> « Un même service acheté auprès de deux fournisseurs différents peut-il avoir
+> deux prix d'achat distincts au même moment, ou ADIKOM retient-elle un coût de
+> référence unique par service ? »
+
+## i. Ce que l'historisation ne fait pas
+
+- **Elle ne rejoue pas le passé.** Aucune facture, aucune location, aucune ligne
+  existante n'est retarifée.
+- **Elle ne remplace pas l'audit.** La table de versions dit **quel prix
+  s'applique** ; le journal dit **qui l'a décidé et pourquoi**. Deux questions,
+  deux réponses, aucun doublon.
+- **Elle n'automatise rien.** Aucun ordonnanceur ne « bascule » un prix à
+  minuit : le résolveur calcule à la lecture, ce qui est juste à la seconde près
+  et ne dépend d'aucune tâche qui pourrait ne pas s'exécuter.
+
+## j. Le jour est comorien, pas UTC
+
+La date d'effet par défaut d'un résolveur s'écrit
+`(now() at time zone 'Indian/Comoro')::date`, jamais `current_date`. L'écart
+n'apparaît qu'entre 21 h et minuit UTC : il est invisible en recette de journée,
+et il ferait tarifer une prestation du soir au prix de la veille le jour d'un
+changement de tarif (DEC-025 §e).
 
 
 ---

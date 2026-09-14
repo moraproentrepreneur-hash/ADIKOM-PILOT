@@ -316,6 +316,16 @@ Les modules définis sont :
 
 9\. Paramètres
 
+10\. Produits \& Services
+
+
+
+Le module \*\*Produits \& Services\*\* (code `catalog`) a été ajouté au LOT 20 sur décision de la Direction (DEC-043, Plan 02 §7.1).
+
+
+
+\*\*Seule la partie Services est développée.\*\* Aucune table de produit, aucune capacité `catalog.products.*`, aucune entrée de navigation « à venir ».
+
 
 
 Respecte cette architecture.

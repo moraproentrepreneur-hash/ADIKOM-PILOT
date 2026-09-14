@@ -288,6 +288,45 @@ export const PERMISSIONS = {
   AUDIT_VIEW: 'users.audit.view',
   AUDIT_EXPORT: 'users.audit.export',
 
+  // --- Produits & Services ---------------------------------------------------
+  /*
+   * Module `catalog`, ouvert par le LOT 20 (DEC-043, migration 081).
+   *
+   * Le module s'appelle « Produits & Services » et SEULS LES SERVICES existent :
+   * choisir le nom large évitait de renommer un `module_code` après attribution
+   * de ses capacités. Aucune capacité `catalog.products.*` n'est créée — une
+   * permission qui ne débloque rien ne s'attribue pas (CLAUDE.md §19 bis).
+   *
+   * TROIS SÉPARATIONS, ET AUCUNE N'EST DÉCORATIVE (DEC-024) :
+   *
+   *   · `update` n'ouvre pas `price.update` — corriger une description et
+   *     changer un prix ne sont pas le même geste. Précédent :
+   *     `parties.clients.pricing.manage`, distincte de `parties.clients.update` ;
+   *   · `price.update` n'ouvre pas `cost.view` — fixer un prix de vente n'a
+   *     jamais supposé de connaître le coût ;
+   *   · `cost.view` est la seule lecture des prix d'achat, qui vivent dans leur
+   *     PROPRE TABLE : RLS étant ROW-level, c'est la seule construction qui
+   *     rende la confidentialité applicable à la donnée (précédent
+   *     `maintenance_costs`).
+   *
+   * AUCUNE capacité d'historique des prix : l'historique de vente ne montre rien
+   * de plus que `catalog.services.view` n'ouvre déjà, et l'historique d'achat vit
+   * dans une table déjà gardée. Une capacité de plus ne fermerait rien.
+   */
+  SERVICES_VIEW: 'catalog.services.view',
+  SERVICES_CREATE: 'catalog.services.create',
+  SERVICES_UPDATE: 'catalog.services.update',
+  SERVICES_ARCHIVE: 'catalog.services.archive',
+  SERVICES_EXPORT: 'catalog.services.export',
+  SERVICES_PRICE_UPDATE: 'catalog.services.price.update',
+  SERVICES_COST_VIEW: 'catalog.services.cost.view',
+  SERVICES_COST_UPDATE: 'catalog.services.cost.update',
+
+  SERVICE_CATEGORIES_VIEW: 'catalog.categories.view',
+  SERVICE_CATEGORIES_CREATE: 'catalog.categories.create',
+  SERVICE_CATEGORIES_UPDATE: 'catalog.categories.update',
+  SERVICE_CATEGORIES_ARCHIVE: 'catalog.categories.archive',
+
   // --- Paramètres ------------------------------------------------------------
   SETTINGS_COMPANY_VIEW: 'settings.company.view',
   SETTINGS_COMPANY_UPDATE: 'settings.company.update',

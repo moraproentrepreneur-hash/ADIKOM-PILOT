@@ -63,9 +63,18 @@ async function idsWhere(admin, table, apply, column = 'id') {
 /**
  * Supprime les lignes désignées, et dit combien.
  *
- * `.select('id')` après un `delete` renvoie les lignes RÉELLEMENT supprimées :
- * c'est la seule façon de compter juste. Un compteur qui annonce zéro pendant
- * qu'il vide une table ne sert à rien, et masquerait un défaut de filtre.
+ * LE DÉCOMPTE VIENT DU SERVEUR, NON D'UNE COLONNE SUPPOSÉE.
+ *
+ * Il était obtenu par `.select('id')` après le `delete` — ce qui exige que la
+ * table PORTE une colonne `id`. Quatre n'en ont pas : les participants à une
+ * réunion, ceux d'un rendez-vous, les membres d'un projet et les marques de
+ * lecture des notifications sont identifiés par un couple de clés étrangères.
+ * Le retrait s'interrompait donc sur « column … .id does not exist » dès que
+ * l'une d'elles contenait une ligne, et laissait le jeu de démonstration à
+ * moitié retiré. Défaut relevé au LOT 20, antérieur à lui.
+ *
+ * `{ count: 'exact' }` demande le décompte à PostgREST : il vaut pour TOUTE
+ * table, quelle que soit sa clé.
  *
  * UNE CLÉ ÉTRANGÈRE QUI RÉSISTE N'EST PAS UNE PANNE. Elle signale qu'une donnée
  * NON marquée DEMO s'appuie sur celle-ci : le retrait s'arrête là, le dit, et ne
@@ -73,9 +82,9 @@ async function idsWhere(admin, table, apply, column = 'id') {
  * exactement l'inverse de ce que ce script promet.
  */
 async function purge(admin, table, apply, label) {
-  const query = admin.from(table).delete()
+  const query = admin.from(table).delete({ count: 'exact' })
   apply(query)
-  const { data, error } = await query.select('id')
+  const { count, error } = await query
 
   if (error) {
     if (error.code === '23503') {
@@ -88,7 +97,7 @@ async function purge(admin, table, apply, label) {
     fail(`suppression dans ${table}`, error)
   }
 
-  const n = data?.length ?? 0
+  const n = count ?? 0
   removed += n
   console.log(
     `  ${n > 0 ? GREEN : DIM}${String(n).padStart(4)}${RESET} ${table.padEnd(34)} ${DIM}${label}${RESET}`
@@ -175,6 +184,21 @@ async function main() {
     q.eq('notes', DEMO_NOTE).eq('is_super_admin', false)
   )
 
+  /*
+   * CATALOGUE DE SERVICES — LOT 20.
+   *
+   * Les catégories se reconnaissent à leur CODE, comme celles du parc ; les
+   * services à leur marqueur. Les variantes et les prix suivent leur service :
+   * ils n'existent pas indépendamment de lui.
+   */
+  const serviceCategories = await idsWhere(admin, 'service_categories', (q) =>
+    q.like('code', 'DEMO-SRV-%')
+  )
+  const services = await idsWhere(admin, 'services', (q) => q.eq('notes', DEMO_NOTE))
+  const serviceVariants = await idsWhere(admin, 'service_variants', (q) =>
+    q.in('service_id', safe(services))
+  )
+
   console.log('Suppression, des enfants vers les parents\n')
 
   /* --- Projets et planification -------------------------------------------- */
@@ -251,6 +275,18 @@ async function main() {
   await purge(admin, 'rental_inspections', (q) => q.in('id', safe(inspections)), 'états des lieux')
   await purge(admin, 'rentals', (q) => q.in('id', safe(rentals)), 'locations')
   await purge(admin, 'reservations', (q) => q.in('id', safe(reservations)), 'réservations')
+
+  /* --- Catalogue de services ------------------------------------------------ */
+  // Les prix avant les variantes, les variantes avant les services : une
+  // suppression dans le désordre échouerait sur une clé étrangère.
+  await purge(admin, 'service_variant_prices',
+    (q) => q.in('variant_id', safe(serviceVariants)), 'prix de vente de services')
+  await purge(admin, 'service_variant_costs',
+    (q) => q.in('variant_id', safe(serviceVariants)), 'prix d’achat de services')
+  await purge(admin, 'service_variants', (q) => q.in('id', safe(serviceVariants)), 'variantes')
+  await purge(admin, 'services', (q) => q.in('id', safe(services)), 'services')
+  await purge(admin, 'service_categories',
+    (q) => q.in('id', safe(serviceCategories)), 'catégories de services')
 
   /* --- Référentiel ---------------------------------------------------------- */
   await purge(admin, 'financial_accounts', (q) => q.in('id', safe(accounts)), 'comptes financiers')

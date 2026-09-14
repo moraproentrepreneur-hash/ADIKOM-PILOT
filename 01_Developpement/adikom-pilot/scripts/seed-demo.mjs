@@ -396,6 +396,7 @@ async function main() {
   const ids = {
     clients: {}, suppliers: {}, partners: {}, categories: {},
     vehicles: {}, accounts: {}, users: {}, projects: {},
+    serviceCategories: {}, services: {},
   }
 
   /* --- Utilisateurs de démonstration -------------------------------------- */
@@ -541,6 +542,8 @@ async function main() {
     report('compte', account.label, null, true)
   }
 
+  await seedCatalog(admin, ids)
+
   await seedRentalCycle(admin, ids)
   await seedMaintenance(admin, ids)
   await seedSupplierBilling(admin, ids)
@@ -558,6 +561,204 @@ async function exists(admin, table, match) {
   for (const [column, value] of Object.entries(match)) query.eq(column, value)
   const { data } = await query.maybeSingle()
   return Boolean(data)
+}
+
+/* ========================================================================== */
+/*  Catalogue de services — Module 10, LOT 20                                 */
+/* ========================================================================== */
+
+/**
+ * Trois services, et surtout UNE CHRONOLOGIE DE PRIX.
+ *
+ * Le Plan 02 §19.6 l'exige explicitement : « les jeux DEMO devront comporter des
+ * services à PLUSIEURS VERSIONS DE PRIX, dont une ÉCHUE et une FUTURE — sans
+ * quoi l'historisation ne serait jamais éprouvée en recette ».
+ *
+ * Un seul prix par service montrerait un écran qui marche et ne prouverait rien.
+ * Le transfert aéroport porte donc trois versions : celle d'il y a trois mois,
+ * close ; celle d'aujourd'hui ; et celle qui prendra effet dans un mois — saisie
+ * AVANT sa date d'effet, ce qui est tout l'objet de D16.
+ *
+ * Les trois destinations sont représentées, parce que chacune ferme quelque
+ * chose de différent : l'une refuse les coûts, l'autre refuse les prix de vente.
+ */
+const SERVICE_CATEGORIES = [
+  {
+    code: 'DEMO-SRV-TRANSPORT',
+    label: 'DEMO Transport & Transfert',
+    description: DEMO_NOTE,
+    display_order: 1,
+  },
+  {
+    code: 'DEMO-SRV-TOURISME',
+    label: 'DEMO Prestations touristiques',
+    description: DEMO_NOTE,
+    display_order: 2,
+  },
+  {
+    code: 'DEMO-SRV-TECHNIQUE',
+    label: 'DEMO Services techniques',
+    description: DEMO_NOTE,
+    display_order: 3,
+  },
+]
+
+const SERVICES = [
+  {
+    key: 'transfert',
+    label: 'SERVICE DEMO 01 — Transfert aéroport',
+    categoryCode: 'DEMO-SRV-TRANSPORT',
+    purpose: 'BOTH',
+    unit_label: 'trajet',
+    description: 'Prise en charge à l’aéroport et transfert vers l’hébergement.',
+    variants: [
+      {
+        label: 'Standard',
+        // Trois versions : une échue, une en vigueur, une à venir.
+        prices: [
+          { amount: 50000, offset: -90, reason: 'Tarif d’ouverture' },
+          { amount: 60000, offset: -30, reason: 'Révision tarifaire' },
+          { amount: 65000, offset: 30, reason: 'Révision annoncée' },
+        ],
+        costs: [{ amount: 35000, offset: -90, reason: 'Coût d’acquisition négocié' }],
+      },
+      {
+        label: 'Premium',
+        sku: 'DEMO-TRF-PREM',
+        prices: [{ amount: 95000, offset: -60, reason: 'Véhicule haut de gamme' }],
+        costs: [{ amount: 62000, offset: -60, reason: 'Coût d’acquisition' }],
+      },
+    ],
+  },
+  {
+    key: 'excursion',
+    label: 'SERVICE DEMO 02 — Excursion Itsandra',
+    categoryCode: 'DEMO-SRV-TOURISME',
+    purpose: 'SALE',
+    unit_label: 'personne',
+    description: 'Excursion à la journée, guide inclus. Vendue, jamais achetée.',
+    variants: [
+      {
+        label: 'Standard',
+        prices: [{ amount: 28000, offset: -45, reason: 'Tarif saison' }],
+        costs: [],
+      },
+    ],
+  },
+  {
+    key: 'assistance',
+    label: 'SERVICE DEMO 03 — Assistance technique',
+    categoryCode: 'DEMO-SRV-TECHNIQUE',
+    purpose: 'PURCHASE',
+    unit_label: 'intervention',
+    description: 'Prestation achetée auprès d’un tiers. Elle ne se vend pas.',
+    variants: [
+      {
+        label: 'Standard',
+        prices: [],
+        costs: [{ amount: 45000, offset: -20, reason: 'Contrat d’assistance' }],
+      },
+    ],
+  },
+]
+
+async function seedCatalog(admin, ids) {
+  section('Catalogue de services')
+
+  for (const category of SERVICE_CATEGORIES) {
+    ids.serviceCategories[category.code] = await ensure(
+      admin,
+      'service_categories',
+      { code: category.code },
+      async () => category,
+      category.label,
+      'catégorie',
+      'code'
+    )
+  }
+
+  for (const service of SERVICES) {
+    const serviceId = await ensure(
+      admin,
+      'services',
+      { label: service.label },
+      async () => ({
+        service_no: await nextNumber(admin, 'service'),
+        label: service.label,
+        category_id: ids.serviceCategories[service.categoryCode],
+        purpose: service.purpose,
+        unit_label: service.unit_label,
+        description: service.description,
+        notes: DEMO_NOTE,
+      }),
+      service.label,
+      'service',
+      'service_no'
+    )
+
+    ids.services[service.key] = serviceId
+
+    for (const variant of service.variants) {
+      // La variante « Standard » est posée par la base à la création du service :
+      // on la RETROUVE plutôt que de la recréer.
+      const variantId = await ensure(
+        admin,
+        'service_variants',
+        { service_id: serviceId, label: variant.label },
+        async () => ({
+          service_id: serviceId,
+          label: variant.label,
+          sku: variant.sku ?? null,
+        }),
+        `${service.label} · ${variant.label}`,
+        'variante',
+        null
+      )
+
+      /*
+       * LES PRIX PASSENT PAR LA FONCTION, jamais par un `insert` : c'est elle
+       * qui clôt la version précédente et ouvre la suivante (D16(a)). Un
+       * `insert` direct produirait des versions qui se chevauchent, et la base
+       * les refuserait — à juste titre.
+       *
+       * La saisie n'a lieu QUE si la variante n'a encore aucune version : le
+       * script est idempotent, et rejouer une chronologie la fausserait.
+       */
+      await seedPriceTimeline(admin, 'service_variant_prices', 'set_service_price', variantId, variant.prices)
+      await seedPriceTimeline(admin, 'service_variant_costs', 'set_service_cost', variantId, variant.costs)
+    }
+  }
+}
+
+async function seedPriceTimeline(admin, table, fn, variantId, versions) {
+  if (!versions || versions.length === 0) return
+
+  const { count, error } = await admin
+    .from(table)
+    .select('id', { count: 'exact', head: true })
+    .eq('variant_id', variantId)
+
+  if (error) fail(`lecture ${table}`, error)
+  if (count > 0) {
+    reused += 1
+    return
+  }
+
+  // L'ordre chronologique est impératif : chaque version clôt la précédente.
+  for (const version of [...versions].sort((a, b) => a.offset - b.offset)) {
+    await rpc(
+      admin,
+      fn,
+      {
+        p_variant_id: variantId,
+        p_amount: version.amount,
+        p_valid_from: dayOffset(version.offset),
+        p_reason: version.reason,
+      },
+      `${fn} (${version.amount} KMF au ${dayOffset(version.offset)})`
+    )
+    created += 1
+  }
 }
 
 /* ========================================================================== */

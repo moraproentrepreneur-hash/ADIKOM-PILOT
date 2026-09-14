@@ -1474,3 +1474,36 @@ Chaque utilisateur doit voir principalement les fonctions correspondant à ses r
 
 La navigation doit ainsi accompagner l’organisation d’ADIKOM plutôt que la compliquer.
 
+
+
+\---
+
+
+
+\## Addendum — 14 septembre 2026 · Module 10 « Produits \& Services » (DEC-043)
+
+
+
+Ce document décrivait \*\*neuf\*\* modules. Une décision de la Direction en ajoute un dixième, et la navigation s’étend en conséquence.
+
+
+
+\*\*Produits \& Services\*\* — code `catalog`, position 10, après \*\*Paramètres\*\* dans le catalogue des capacités, et \*\*avant\*\* Paramètres dans la barre latérale, où Paramètres reste la dernière entrée.
+
+
+
+Deux entrées, et deux seulement :
+
+
+
+\- \*\*Services\*\* → `/catalogue/services` — permission `catalog.services.view`
+
+\- \*\*Catégories\*\* → `/catalogue/categories` — permission `catalog.categories.view`
+
+
+
+\*\*Aucune entrée « Produits ».\*\* La partie Produits est nommée dans le titre du module et dans `03_Modules/10_Produits_et_Services.md` ; elle n’a ni table, ni capacité, ni écran. Le projet a retiré toutes ses entrées « à venir » (DEC-042 §d) et n’en réintroduit pas : une entrée inerte promet ce que l’écran ne fait pas.
+
+
+
+Les \*\*variantes\*\* et les \*\*prix\*\* d’un service ne sont pas des menus : ils vivent sur la fiche du service. Un menu de plus n’ouvrirait rien que la fiche n’ouvre déjà.
