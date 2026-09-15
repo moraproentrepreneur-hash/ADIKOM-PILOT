@@ -1507,3 +1507,38 @@ Deux entrées, et deux seulement :
 
 
 Les \*\*variantes\*\* et les \*\*prix\*\* d’un service ne sont pas des menus : ils vivent sur la fiche du service. Un menu de plus n’ouvrirait rien que la fiche n’ouvre déjà.
+
+
+\---
+
+
+
+\## Addendum — 14 septembre 2026 · Tarifs fournisseurs (DEC-044, LOT 21)
+
+
+
+Le module \*\*Gestion de location\*\* reçoit une entrée de plus :
+
+
+
+\- \*\*Tarifs fournisseurs\*\* → `/location/tarifs-fournisseurs` — permission `rental.pricing.supplier.view`
+
+
+
+Elle est placée \*\*immédiatement après « Tarification »\*\*, dont elle est le pendant interne.
+
+
+
+\*\*Pourquoi une entrée distincte, et non un onglet de « Tarification »\*\*
+
+
+
+Un même menu aurait suggéré que les deux se lisent avec le même droit. Ce n’est pas le cas, et c’est tout l’objet du lot : ce qu’ADIKOM \*\*facture\*\* relève de `rental.pricing.view` ; ce qu’ADIKOM \*\*paie\*\* relève de `rental.pricing.supplier.view`, et la seconde n’est incluse dans aucune autre (décision A-2, DEC-024).
+
+
+
+L’entrée \*\*disparaît entièrement\*\* pour qui ne détient pas la capacité du coût — comme toute entrée de la barre latérale, dont le filtrage est un confort de lecture et jamais une protection.
+
+
+
+Le \*\*coût d’acquisition d’un véhicule\*\* se lit également sur sa fiche, onglet \*\*« Coût fournisseur »\*\*, et sur le \*\*contrat de location\*\*, carte \*\*« Commission de location »\*\*. Ces deux surfaces exigent la même capacité, et disparaissent sans elle.

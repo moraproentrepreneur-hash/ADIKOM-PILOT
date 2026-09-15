@@ -67,8 +67,15 @@ import {
 import { listCustomerInvoices } from '@/features/customer-invoices/data'
 import { listImputations } from '@/features/imputations/data'
 import { getVehicleMaintenanceCosts } from '@/features/maintenance/costs-data'
+import {
+  listSupplierRates,
+  resolveStandardPrice,
+  resolveSupplierRate,
+} from '@/features/supplier-rates/data'
+import { CommissionBlock } from '@/features/supplier-rates/commission'
+import { SupplierRatesPanel } from '@/features/supplier-rates/rates-panel'
 import { formatAmount } from '@/lib/money'
-import { formatPeriod } from '@/lib/dates'
+import { formatPeriod, todayISO } from '@/lib/dates'
 
 export const metadata: Metadata = { title: 'Fiche véhicule' }
 
@@ -134,6 +141,21 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
     can(PERMISSIONS.IMPUTATIONS_VIEW),
   ])
 
+  /*
+   * COÛT FOURNISSEUR — LOT 21 (DEC-044).
+   *
+   * Onglet À PART, et capacité à part : ce qu'ADIKOM paie pour disposer du
+   * véhicule n'est pas ce qu'elle en facture. `rental.fleet.view` ouvre la
+   * fiche ; elle n'a jamais ouvert le coût (A-2, DEC-024). Sans
+   * `rental.pricing.supplier.view`, l'onglet DISPARAÎT plutôt que d'afficher un
+   * bloc vide qui se lirait « ce véhicule ne coûte rien » (DEC-017).
+   */
+  const [canSupplierCost, canCreateCost, canUpdateCost] = await Promise.all([
+    can(PERMISSIONS.PRICING_SUPPLIER_VIEW),
+    can(PERMISSIONS.PRICING_SUPPLIER_CREATE),
+    can(PERMISSIONS.PRICING_SUPPLIER_UPDATE),
+  ])
+
   const tabs: TabItem[] = [
     { key: 'fiche', label: 'Fiche', href: `/location/parc/${id}` },
     { key: 'disponibilite', label: 'Disponibilité', href: `/location/parc/${id}?onglet=disponibilite` },
@@ -143,6 +165,15 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
       : []),
     ...(canPricing
       ? [{ key: 'tarifs', label: 'Tarifs', href: `/location/parc/${id}?onglet=tarifs` }]
+      : []),
+    ...(canSupplierCost
+      ? [
+          {
+            key: 'cout-fournisseur',
+            label: 'Coût fournisseur',
+            href: `/location/parc/${id}?onglet=cout-fournisseur`,
+          },
+        ]
       : []),
     /*
      * DEC-017 : sans `rental.incidents.view`, l'onglet DISPARAÎT. Le laisser
@@ -253,6 +284,16 @@ export default async function VehicleDetailPage(props: PageProps<'/location/parc
         <DocumentsTab vehicleId={id} />
       ) : tab === 'tarifs' ? (
         <PricingTab vehicleId={id} categoryId={vehicle.categoryId} />
+      ) : tab === 'cout-fournisseur' ? (
+        <SupplierCostTab
+          vehicleId={id}
+          vehicleLabel={`${vehicle.brand} ${vehicle.model}`}
+          origin={vehicle.origin}
+          supplierLabel={vehicle.supplierLabel ?? null}
+          canPricing={canPricing}
+          canCreate={canCreateCost}
+          canUpdate={canUpdateCost}
+        />
       ) : tab === 'incidents' ? (
         <IncidentsTab vehicleId={id} />
       ) : tab === 'maintenance' ? (
@@ -664,6 +705,18 @@ async function ProfitabilityTab({
           charges générales : aucune de ces dépenses n’est enregistrée par véhicule dans
           ADIKOM PILOT. Les présenter comme nulles donnerait un résultat flatteur et faux.
         </p>
+        {/*
+          DEUX INDICATEURS, DEUX QUESTIONS — et le risque de les confondre est le
+          principal risque métier du LOT 21 (Plan 02 §16.1). Chaque écran nomme
+          donc le sien ET renvoie à l'autre, plutôt que de laisser le lecteur
+          supposer qu'il n'en existe qu'un.
+        */}
+        <p className="mt-3 text-sm text-muted">
+          Elle n’est pas non plus la <strong>commission de location</strong>, qui compare le
+          tarif facturé au client au coût d’acquisition versé au fournisseur, contrat par
+          contrat. Celle-ci se lit sur l’onglet « Coût fournisseur ». La marge d’exploitation
+          regarde la vie du véhicule ; la commission regarde une mise à disposition.
+        </p>
       </Card>
     </div>
   )
@@ -764,6 +817,80 @@ async function DocumentsTab({ vehicleId }: { vehicleId: string }) {
  * Tarifs applicables à ce véhicule : ceux qui le visent nommément, et ceux de
  * sa catégorie. Vue de lecture — la gestion se fait depuis l'écran Tarification.
  */
+/**
+ * Coût fournisseur du véhicule — LOT 21, DEC-044.
+ *
+ * L'ONGLET RÉPOND À DEUX QUESTIONS, ET LES SÉPARE :
+ *
+ *   1. « Combien ADIKOM paie-t-elle ce véhicule, et depuis quand ? » — la
+ *      chronologie datée, que rien ne réécrit (D16).
+ *   2. « Que lui reste-t-il sur le barème ? » — la COMMISSION, qui n'est pas la
+ *      marge d'exploitation de l'onglet « Rentabilité » et le dit.
+ *
+ * LA DATE DE RÉFÉRENCE EST LE JOUR COMORIEN (DEC-025 §e) : `current_date`
+ * s'évalue en UTC, et désignerait la veille entre 21 h et minuit à Moroni.
+ */
+async function SupplierCostTab({
+  vehicleId,
+  vehicleLabel,
+  origin,
+  supplierLabel,
+  canPricing,
+  canCreate,
+  canUpdate,
+}: {
+  vehicleId: string
+  vehicleLabel: string
+  origin: string
+  supplierLabel: string | null
+  canPricing: boolean
+  canCreate: boolean
+  canUpdate: boolean
+}) {
+  const today = todayISO()
+  const supplied = origin === 'SUPPLIED'
+
+  const [history, cost, standardPrice] = await Promise.all([
+    listSupplierRates({ vehicleId, includeRetired: true }),
+    supplied ? resolveSupplierRate(vehicleId, today) : Promise.resolve(null),
+    resolveStandardPrice(vehicleId, today),
+  ])
+
+  return (
+    <div className="space-y-5">
+      <Card
+        title="Commission de location"
+        description="Ce que la mise à disposition de ce véhicule laisse à ADIKOM, au tarif du barème."
+      >
+        <CommissionBlock
+          on={today}
+          priceLabel="Tarif client standard"
+          priceHint="Tarif du barème applicable à ce véhicule aujourd’hui, hors condition consentie à un client. Le tarif réellement facturé est celui verrouillé sur chaque contrat."
+          clientPrice={standardPrice}
+          cost={cost}
+          canSeeCost
+          canSeeClientPrice={canPricing || standardPrice !== null}
+          supplied={supplied}
+        />
+      </Card>
+
+      <Card
+        title="Coût d’acquisition — chronologie"
+        description="Chaque version est datée. Changer un coût clôt la version en cours et en ouvre une nouvelle : aucun montant n’est réécrit, et aucune location passée n’est retarifée."
+      >
+        <SupplierRatesPanel
+          context={{ vehicleId, vehicleLabel, supplied, supplierLabel }}
+          today={today}
+          history={history}
+          canCreate={canCreate}
+          canUpdate={canUpdate}
+          readable
+        />
+      </Card>
+    </div>
+  )
+}
+
 async function PricingTab({ vehicleId, categoryId }: { vehicleId: string; categoryId: string }) {
   const [vehicleRules, categoryRules] = await Promise.all([
     listPricingRules({ vehicleId }),

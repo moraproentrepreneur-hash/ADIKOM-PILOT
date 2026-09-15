@@ -85,6 +85,7 @@ const ROUTES = [
   ['/location/locations', 'Locations'],
   ['/location/parc', 'Parc automobile'],
   ['/location/tarification', 'Tarification'],
+  ['/location/tarifs-fournisseurs', 'Tarifs fournisseurs'],
   ['/location/incidents', 'Incidents'],
   ['/location/maintenance', 'Maintenance'],
   ['/catalogue/services', 'Services'],

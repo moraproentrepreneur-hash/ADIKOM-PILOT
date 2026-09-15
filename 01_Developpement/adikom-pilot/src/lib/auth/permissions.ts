@@ -164,6 +164,36 @@ export const PERMISSIONS = {
   PRICING_DOWNLOAD: 'rental.pricing.download',
   PRICING_PRINT: 'rental.pricing.print',
 
+  /*
+   * Coût d'acquisition des véhicules — LOT 21 (DEC-044, migration 083).
+   *
+   * CE QU'ADIKOM PAIE N'EST PAS CE QU'ADIKOM FACTURE, et les deux ne se lisent
+   * pas avec la même capacité. La décision A-2 est explicite : « le tarif
+   * fournisseur est confidentiel ; seul le tarif facturé au client et les
+   * services liés apparaissent dans les documents ».
+   *
+   * `rental.pricing.view` N'OUVRE PAS `supplier.view`. Consulter la grille
+   * tarifaire — ce qu'ADIKOM demande à ses clients — n'a jamais supposé de
+   * connaître ce qu'elle verse à ses fournisseurs. Les coûts vivent donc dans
+   * leur PROPRE TABLE, `supplier_vehicle_rates` : RLS étant ROW-level, c'est la
+   * seule construction qui rende la confidentialité applicable à la donnée
+   * (précédents `maintenance_costs`, `service_variant_costs`).
+   *
+   * `create` OUVRE une version datée — et clore celle qu'elle remplace en est la
+   * conséquence mécanique (D16(a)). `update` RETIRE une version, ou corrige ses
+   * conditions écrites : retirer un coût sans qu'aucun autre ne le remplace
+   * change ce qui s'applique, et c'est un acte à part (DEC-024, A-14).
+   *
+   * AUCUNE CAPACITÉ DE MARGE n'est créée : la commission est la différence de
+   * DEUX grandeurs déjà gouvernées — `rental.pricing.supplier.view` d'un côté,
+   * `rental.rentals.financial.view` de l'autre. Une capacité de plus ne
+   * fermerait rien (CLAUDE.md §19 bis, Plan 02 §10.3).
+   */
+  PRICING_SUPPLIER_VIEW: 'rental.pricing.supplier.view',
+  PRICING_SUPPLIER_CREATE: 'rental.pricing.supplier.create',
+  PRICING_SUPPLIER_UPDATE: 'rental.pricing.supplier.update',
+  PRICING_SUPPLIER_EXPORT: 'rental.pricing.supplier.export',
+
   MAINTENANCE_VIEW: 'rental.maintenance.view',
   MAINTENANCE_CREATE: 'rental.maintenance.create',
   MAINTENANCE_UPDATE: 'rental.maintenance.update',

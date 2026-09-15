@@ -77,13 +77,13 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-041 | Sauvegarde, réinitialisation et restauration — LOT 18 | Capacités, sécurité et exploitation | Appliquée — **complète le Module 09** | 2026-09-06 |
 | DEC-042 | Ajustements fonctionnels et UX du SaaS | Arbitrages ADIKOM, capacités et sécurité | Appliquée — **révise DEC-032 et le retrait de la migration 037** | 2026-09-08 |
 | DEC-043 | Historisation des prix — doctrine D16 — LOT 20 | Renversement du Plan 01, capacités et confidentialité | Appliquée — **ouvre le Module 10** | 2026-09-14 |
-| DEC-044 | *Confidentialité des tarifs fournisseur* | *Réservée au Plan 02 §6 — LOT 21* | **Non consignée** | — |
+| DEC-044 | Coût d'acquisition des véhicules et confidentialité — LOT 21 | Capacités, table séparée, **P-2 laissée ouverte**, §5.7 écarté | Appliquée — **complète le Module 05** | 2026-09-14 |
 | DEC-045 | *Avenant de location* | *Réservée au Plan 02 §7.3 — LOT 22* | **Non consignée** | — |
 | DEC-046 | Réinitialisation du mot de passe — LOT 19 | Capacité indépendante, garde en base, trois refus | Appliquée — **complète le Module 08** | 2026-09-12 |
 
-> **DEC-044 et DEC-045 sont réservées, pas oubliées.** Le Plan 02 leur a assigné
-> un objet ; les lots qui les portent n'ont pas encore été développés. Leur numéro
-> ne doit pas être réemployé.
+> **DEC-045 est réservée, pas oubliée.** Le Plan 02 lui a assigné un objet ; le
+> lot qui la porte n'a pas encore été développé. Son numéro ne doit pas être
+> réemployé.
 
 ---
 
@@ -4749,6 +4749,199 @@ n'apparaît qu'entre 21 h et minuit UTC : il est invisible en recette de journé
 et il ferait tarifer une prestation du soir au prix de la veille le jour d'un
 changement de tarif (DEC-025 §e).
 
+
+---
+
+# DEC-044 — Coût d'acquisition des véhicules et confidentialité (LOT 21)
+
+| | |
+| --- | --- |
+| Date | 14 septembre 2026 |
+| Origine | Décisions de la Direction du 11/09/2026 — **A-1**, **A-2**, **A-3**, **A-14** |
+| Nature | Structure nouvelle, capacités nouvelles, **une recommandation du Plan 02 écartée** |
+| Portée | Module 05 · Gestion de location — Tarification → Tarifs fournisseurs |
+| Réemploie | **D16** (DEC-043), sans la réinventer |
+
+## a. Ce que la Direction a décidé
+
+🟩 **A-2.** « Le tarif fournisseur est confidentiel ; seul le tarif facturé au
+client et les services liés apparaissent dans les documents. » Et la formule de
+construction du prix :
+
+```
+PRIX CLIENT  =  TARIF FOURNISSEUR  +  COMMISSION  +  SERVICES
+                └── confidentiel ──┘  └────── visible du client ──────┘
+```
+
+🟩 **A-1.** Un contrat fournisseur porte un **tarif journalier** (`DAY`) ou un
+**forfait par location** (`FLAT`). Le tarif mensuel n'est pas coché : il n'est
+pas créé. Des **conditions hors tarif ordinaire** existent et doivent être
+consignées.
+
+🟩 **A-14.** Permissions **indépendantes par action**.
+
+## b. Quatre notions, quatre noms, jamais confondus
+
+C'est le principal risque métier du lot, et il se traite par le vocabulaire.
+
+| Nom | Définition | Ouvert par |
+| --- | --- | --- |
+| **Coût d'acquisition** | Ce qu'ADIKOM paie au fournisseur pour disposer du véhicule | `rental.pricing.supplier.view` |
+| **Tarif client** | Ce qu'ADIKOM facture — l'unique montant des documents client | `rental.pricing.view` · `rental.rentals.financial.view` |
+| **Commission de location** | `Tarif client − coût d'acquisition`, sur la **seule** mise à disposition du véhicule | Les **deux** ci-dessus |
+| **Marge d'exploitation** | `Revenus facturés − coût d'entretien net`, sur la **vie** du véhicule | Onglet « Rentabilité » de la fiche véhicule |
+
+**Les deux dernières ne se mélangent jamais.** La commission regarde un
+contrat ; la marge d'exploitation regarde un véhicule sur sa durée,
+maintenances et imputations comprises. **Chaque écran nomme la sienne et
+énumère ce qu'elle ne couvre pas**, et renvoie à l'autre.
+
+## c. Le coût vit dans sa propre table, parce que RLS ne masque pas une colonne
+
+`supplier_vehicle_rates` est séparée de `vehicles`, et sa policy de lecture
+n'accepte **que** `rental.pricing.supplier.view` — ni `rental.fleet.view`, ni
+`rental.pricing.view`, ni `parties.suppliers.view`, ni
+`rental.rentals.financial.view`.
+
+Ce n'est pas une préférence de modélisation : **RLS filtre des lignes, pas des
+colonnes**. Un coût rangé sur la fiche du véhicule serait rendu par un `select`
+direct à quiconque consulte le parc. Précédents : `maintenance_costs` (DEC-024)
+et `service_variant_costs` (DEC-043 §e).
+
+**Trois barrières, parce qu'une seule ne suffit pas** : la table séparée, la
+policy dédiée, et des générateurs de documents qui ne reçoivent jamais ces
+colonnes — ce dernier point étant garanti à la source par un contrôle unitaire
+qui relit les modèles.
+
+## d. Quatre capacités, et ce qui n'est pas créé
+
+`rental.pricing.supplier` : `view` ✓ · `create` ✓ · `update` ✓ · `export` ✓
+— les quatre **sensibles**.
+
+`create` **ouvre** une version datée ; clore celle qu'elle remplace en est la
+conséquence mécanique (D16(a)). `update` **retire** une version, ou corrige ses
+conditions écrites : retirer un coût sans qu'aucun autre ne le remplace change
+ce qui s'applique, et c'est un acte à part (DEC-024, A-14).
+
+**Ne sont pas créées** : aucune capacité de **marge** — une commission est la
+différence de **deux grandeurs déjà gouvernées**, et une capacité de plus ne
+fermerait rien (`CLAUDE.md` §19 bis) ; aucune capacité documentaire — le lot ne
+produit aucun document ; aucune capacité d'historique — l'historique vit dans
+une table **déjà gardée**.
+
+## e. 🟥 P-2 — LA DÉCISION MANQUE, ET LE LOT NE LA REMPLACE PAS
+
+🟩 **A-3** dit : « Même modèle de tarification que chez les fournisseurs car on
+considère qu'ADIKOM est un fournisseur ». **Elle ne dit pas ce qu'est ce coût.**
+Le Plan 02 §3.2 pose la question et la marque bloquante :
+
+> « Le coût interne d'un véhicule ADIKOM est-il **(a)** un tarif de référence
+> fixé par la Direction, comme si ADIKOM se louait à elle-même, ou **(b)** un
+> coût de revient calculé — amortissement, assurance, entretien ? »
+
+**(b) est aujourd'hui impossible** : aucune de ces dépenses n'est enregistrée
+par véhicule. **(a) supposerait de décider** qu'ADIKOM se loue à elle-même.
+
+**Le LOT 21 ne tranche pas.** Un coût d'acquisition ne s'enregistre que sur un
+véhicule `SUPPLIED` ; le déclencheur refuse les autres et **nomme la décision
+manquante**. La marge d'un véhicule ADIKOM reste **non calculée** plutôt que
+fausse — ce que le Plan 02 §3.2 exige explicitement.
+
+**L'évolution reste additive** le jour où la Direction répondra : `supplier_id`
+devient nullable, un indicateur `is_internal` s'ajoute, et la contrainte
+d'exclusion — déjà posée sur le seul véhicule — n'a pas à changer. Aucune
+reprise de données. Même forme que l'ouverture laissée à P-5 par DEC-043 §h.
+
+**Aucune fiche fournisseur « ADIKOM » n'a été créée, et aucun véhicule ADIKOM
+n'est devenu `SUPPLIED`** : la voie (a) du Plan 02 §3.2 reste refusée.
+
+## f. 🟥 Un troisième cas, que le Plan 02 n'avait pas vu
+
+**Le véhicule de partenariat.** Deux véhicules du parc sont `PARTNERSHIP` : ils
+ne sont ni à ADIKOM, ni fournis par un fournisseur. Leur coût relève des
+conditions du partenariat, qu'aucun module ne gère. **Aucune décision n'existe
+sur ce point.** Le refus le dit, pour sa propre raison, sans le confondre avec
+P-2.
+
+**Question à poser à la Direction, en même temps que P-2** :
+
+> « Un véhicule mis à disposition dans le cadre d'un partenariat a-t-il un coût
+> pour ADIKOM, et si oui, sous quelle forme — un montant convenu, une part de
+> recette, une contrepartie ? »
+
+## g. ⚠️ Une précision sur le Plan 02 §3.2 : la contrainte citée a changé de nom
+
+Le plan nomme `vehicles_origin_supplier_coherent` (migration 015) et la donne
+pour en production. **Elle n'y est plus** : la migration 025 (Partenariats) l'a
+remplacée par `vehicles_origin_attachment_coherent`, qui couvre trois cas —
+`SUPPLIED` (un fournisseur), `PARTNERSHIP` (un partenaire), `OWNED`/`OTHER`
+(ni l'un ni l'autre).
+
+La substance du constat du plan tient : un véhicule ADIKOM ne peut toujours pas
+porter de fournisseur. Mais **un contrôle qui aurait vérifié le nom cité
+n'aurait rien vérifié du tout**.
+
+## h. 🟥 Le Plan 02 §5.7 est ÉCARTÉ : il contredit DEC-002
+
+Le §5.7 recommandait une **contrainte d'exclusion sur `pricing_rules`**,
+refusant deux règles de **portée identique** dont les périodes se recouvrent.
+Le recensement qu'il demandait a été mené : **zéro chevauchement en
+production**.
+
+**La contrainte a néanmoins été retirée**, pour une raison qui n'est pas de
+données mais de règle :
+
+> **DEC-002 : « À égalité de spécificité, le tarif le plus récemment créé
+> s'applique. »**
+
+Cette règle **suppose** que deux tarifs de portée identique coexistent — elle
+n'aurait aucun objet autrement. Elle est implémentée par `resolve_pricing_rule`
+(migration 017) et éprouvée par `supabase/tests/location.sql` §15, qui insère
+précisément deux règles `client + véhicule` concurrentes et vérifie que la plus
+récente l'emporte.
+
+**La contrainte recommandée fait donc échouer une règle métier en vigueur**, et
+`location.sql` avec elle — alors que le Plan 02 §18 et §20.1 exigent que cette
+recette passe **sans modification**. Modifier le test pour accommoder la
+contrainte aurait été exactement la faute inverse.
+
+**Arbitrage** : `pricing_rules` n'est pas touchée. La recette du lot **interdit
+désormais** qu'une telle contrainte y soit posée, et dit pourquoi.
+
+**Question à la Direction, si elle souhaite le comportement du §5.7** :
+
+> « Faut-il rouvrir DEC-002 ? Interdire deux tarifs de portée identique sur une
+> même période supprimerait la règle de départage par date de création, et
+> obligerait à clore explicitement un tarif avant d'en ouvrir un autre. »
+
+**Ce point ne bloque rien** : l'exigence « empêcher les chevauchements
+incohérents » est tenue là où elle a un sens — sur `supplier_vehicle_rates`, où
+un véhicule n'a qu'**un** coût à une date, et où la base le garantit par une
+contrainte d'exclusion.
+
+## i. La commission se recalcule ; elle ne se verrouille pas encore
+
+Une location porte son **tarif client verrouillé** (D13). Elle ne porte pas
+encore de **coût verrouillé** : `rental_segments.locked_cost_*` appartient au
+**LOT 22**, et ce lot ne le construit pas.
+
+La commission d'un contrat est donc **résolue à la lecture**, à la date de
+départ du contrat. Elle est stable parce qu'une version passée ne se réécrit
+jamais (D16(e)) : le déclencheur refuse toute modification du montant, de
+l'unité, de la date d'effet et du motif d'une version.
+
+**La limite, nommée** : une version ouverte **délibérément** à une date d'effet
+passée modifie la commission affichée des contrats de cette période. C'est un
+acte explicite, permissionné et journalisé — jamais un effet de bord d'un
+changement de tarif. Le verrouillage du coût sur le segment fermera ce dernier
+écart au LOT 22.
+
+## j. Le jour est comorien, pas UTC
+
+La date d'effet par défaut des résolveurs s'écrit
+`(now() at time zone 'Indian/Comoro')::date`, jamais `current_date`. Et la date
+d'effet d'une opération est **sa date métier** — le départ d'un contrat, non le
+jour de la consultation (Plan 02 §5.6, DEC-025 §e).
 
 ---
 

@@ -48,6 +48,9 @@ import { ExtendPanel } from '@/features/rentals/extend-panel'
 import { ControlPanel } from '@/features/rentals/control-panel'
 import { CloseRentalPanel } from '@/features/rentals/close-panel'
 import { getInvoiceForRental } from '@/features/customer-invoices/data'
+import { resolveSupplierRate } from '@/features/supplier-rates/data'
+import { businessDate } from '@/features/supplier-rates/constants'
+import { CommissionBlock } from '@/features/supplier-rates/commission'
 import { EntityHistoryPanel } from '@/features/audit/history-panel'
 import {
   CUSTOMER_INVOICE_STATUS_LABELS,
@@ -141,6 +144,24 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
   const invoice = canSeeInvoices
     ? await getInvoiceForRental(id, { canSeePayments: canSeeCustomerPayments })
     : null
+
+  /*
+   * COMMISSION DE LOCATION — LOT 21 (DEC-044).
+   *
+   * `rental.rentals.view` n'ouvre pas le coût d'acquisition, et
+   * `rental.rentals.financial.view` non plus : ce qu'ADIKOM PAIE relève de sa
+   * propre capacité (A-2, DEC-024). Sans elle, on ne résout même pas — la
+   * carte n'existe pas, et rien de ce coût n'atteint le navigateur.
+   *
+   * LA DATE D'EFFET EST CELLE DU CONTRAT, jamais celle du jour (Plan 02 §5.6) :
+   * le départ réel, ou à défaut le début de la période prévue.
+   */
+  const canSupplierCost = await can(PERMISSIONS.PRICING_SUPPLIER_VIEW)
+  const commissionOn = businessDate(rental.startedAt ?? rental.plannedFrom)
+  const supplierCost =
+    canSupplierCost && rental.vehicleOrigin === 'SUPPLIED'
+      ? await resolveSupplierRate(rental.vehicleId, commissionOn)
+      : null
 
   const shown = displayStatus(rental.status, rental.expectedReturnAt)
   const beforeDeparture = rental.status === 'PREPARING' || rental.status === 'CONFIRMED'
@@ -326,6 +347,52 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
                 </InfoRow>
                 <InfoRow label="Verrouillé le">{formatDateTime(rental.lockedAt)}</InfoRow>
               </dl>
+            </Card>
+          )}
+
+          {/*
+            COMMISSION DE LOCATION — LOT 21 (DEC-044).
+
+            LA CARTE EXIGE LES DEUX CAPACITÉS, et aucune ne suffit : le tarif
+            client relève de `rental.rentals.financial.view`, le coût
+            d'acquisition de `rental.pricing.supplier.view`. Sans la seconde, la
+            carte DISPARAÎT — elle n'a rien à dire, et un bloc « commission :
+            — » laisserait croire que le véhicule ne coûte rien (DEC-017, A-2).
+
+            LA DATE D'EFFET EST CELLE DU CONTRAT, pas celle du jour (Plan 02
+            §5.6). Un contrat parti le 22 août relève du coût du 22 août, même
+            consulté en décembre : c'est ce que l'historisation garantit, et
+            c'est ce qui rend la commission stable dans le temps.
+          */}
+          {canSeeAmounts && canSupplierCost && (
+            <Card
+              title="Commission de location"
+              description={`Ce que ce contrat laisse à ADIKOM sur la mise à disposition du véhicule, au ${formatDate(commissionOn)}.`}
+            >
+              {rental.vehicleOrigin === null ? (
+                /*
+                  Le véhicule n'est pas lisible : sans son origine, on ne peut
+                  dire ni « aucun coût » ni « véhicule non fourni » — les deux
+                  seraient des affirmations qu'un refus de lecture ne permet pas
+                  (DEC-017). L'écran nomme la capacité qui manque.
+                */
+                <Notice tone="info">
+                  Le véhicule de ce contrat ne vous est pas lisible, et la commission suppose de
+                  connaître son origine. Capacité requise en plus : <strong>« Consulter le
+                  parc »</strong>.
+                </Notice>
+              ) : (
+                <CommissionBlock
+                  on={commissionOn}
+                  priceLabel="Tarif verrouillé au contrat"
+                  priceHint="Le montant réellement engagé envers le client, copié à la création du contrat. Une révision du barème ne l’atteint pas."
+                  clientPrice={{ amount: rental.lockedAmount, unit: rental.lockedUnit }}
+                  cost={supplierCost}
+                  canSeeCost
+                  canSeeClientPrice
+                  supplied={rental.vehicleOrigin === 'SUPPLIED'}
+                />
+              )}
             </Card>
           )}
 

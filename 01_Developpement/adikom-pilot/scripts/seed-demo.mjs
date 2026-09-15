@@ -543,6 +543,7 @@ async function main() {
   }
 
   await seedCatalog(admin, ids)
+  await seedSupplierRates(admin, ids)
 
   await seedRentalCycle(admin, ids)
   await seedMaintenance(admin, ids)
@@ -758,6 +759,104 @@ async function seedPriceTimeline(admin, table, fn, variantId, versions) {
       `${fn} (${version.amount} KMF au ${dayOffset(version.offset)})`
     )
     created += 1
+  }
+}
+
+/* ========================================================================== */
+/*  Coûts d'acquisition des véhicules — LOT 21, DEC-044                       */
+/* ========================================================================== */
+
+/**
+ * Ce qu'ADIKOM PAIE pour disposer de ses véhicules fournis.
+ *
+ * UNE CHRONOLOGIE, ET NON UN MONTANT — même raison qu'au LOT 20 : un coût unique
+ * montrerait un écran qui marche et ne prouverait rien. Le jeu porte donc une
+ * version ÉCHUE, une EN VIGUEUR et une À VENIR, afin que l'historisation soit
+ * visible sans attendre le calendrier.
+ *
+ * LE RÉSULTAT DE LA DIRECTION, SANS TOUCHER AU BARÈME EXISTANT :
+ *
+ *   VEHICULE DEMO 02 — barème client 40 000 KMF/jour (catégorie DEMO-02)
+ *                      coût d'acquisition en vigueur 30 000
+ *                   →  COMMISSION DE 10 000 KMF/JOUR
+ *
+ * Le mémo de la Direction illustre 40 000 payés pour 50 000 facturés. L'écart
+ * qu'elle décrit — 10 000 KMF par jour — est celui que montre la démonstration ;
+ * les deux montants sont ceux du barème DÉJÀ en place, qu'un jeu de données ne
+ * doit pas déplacer pour faire joli. Le cas à la lettre, lui, est joué par
+ * `verify:supplier-rates` sur son propre décor.
+ *
+ * AUCUN COÛT SUR LES VÉHICULES ADIKOM NI DE PARTENARIAT : la décision manque
+ * (P-2 pour les premiers, aucune décision pour les seconds), et un jeu de
+ * démonstration ne tranche pas ce que la Direction n'a pas tranché. L'écran
+ * montre alors « sans objet », ce qui est la vérité.
+ *
+ * VEHICULE DEMO 05 reste SANS COÛT, délibérément : c'est le cas « coût absent »,
+ * celui où la commission n'est pas calculée — et surtout pas égale au tarif.
+ */
+const SUPPLIER_RATES = [
+  {
+    vehicleModel: 'VEHICULE DEMO 02',
+    versions: [
+      { offset: -400, amount: 26000, reason: 'Contrat initial de mise à disposition' },
+      { offset: -90, amount: 30000, reason: 'Révision annuelle du contrat' },
+      { offset: 45, amount: 34000, reason: 'Hausse convenue, applicable à terme' },
+    ],
+    conditions: 'Contrat annuel, révision au 1er trimestre. Carburant à la charge du locataire.',
+  },
+]
+
+async function seedSupplierRates(admin, ids) {
+  section('Coûts d’acquisition des véhicules')
+
+  for (const rate of SUPPLIER_RATES) {
+    const vehicleId = ids.vehicles[rate.vehicleModel]
+    if (!vehicleId) continue
+
+    /*
+     * Le script est IDEMPOTENT : rejouer une chronologie la fausserait. On ne
+     * saisit que si le véhicule n'a encore aucune version.
+     */
+    const { count, error } = await admin
+      .from('supplier_vehicle_rates')
+      .select('id', { count: 'exact', head: true })
+      .eq('vehicle_id', vehicleId)
+
+    if (error) fail('lecture des coûts d’acquisition', error)
+
+    if (count > 0) {
+      reused += 1
+      report('coût d’acquisition', rate.vehicleModel, null, false)
+      continue
+    }
+
+    /*
+     * LES COÛTS PASSENT PAR LA FONCTION, jamais par un `insert` : c'est elle qui
+     * clôt la version précédente et ouvre la suivante (D16(a)). Un `insert`
+     * direct produirait des versions qui se chevauchent, et la base les
+     * refuserait — à juste titre.
+     *
+     * L'ordre chronologique est impératif : chaque version clôt la précédente.
+     */
+    for (const version of [...rate.versions].sort((a, b) => a.offset - b.offset)) {
+      await rpc(
+        admin,
+        'set_supplier_vehicle_rate',
+        {
+          p_vehicle_id: vehicleId,
+          p_supplier_id: null,
+          p_amount: version.amount,
+          p_unit: 'DAY',
+          p_valid_from: dayOffset(version.offset),
+          p_conditions: rate.conditions,
+          p_reason: version.reason,
+        },
+        `coût d’acquisition (${version.amount} KMF au ${dayOffset(version.offset)})`
+      )
+      created += 1
+    }
+
+    report('coût d’acquisition', `${rate.vehicleModel} — 3 versions datées`, null, true)
   }
 }
 

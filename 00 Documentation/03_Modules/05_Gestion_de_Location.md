@@ -3199,3 +3199,104 @@ ADIKOM PILOT doit ainsi permettre à ADIKOM de savoir, à tout moment :
 
 \*\*Et quelle est la rentabilité réelle de l’activité ?\*\*
 
+
+
+\---
+
+
+
+\# Addendum — 14 septembre 2026 · Tarifs fournisseurs et commission (DEC-044, LOT 21)
+
+
+
+\## Ce que ce module savait, et ce qu’il ignorait
+
+
+
+Le module savait répondre à \*\*« à quel tarif ADIKOM loue-t-elle ce véhicule à son client ? »\*\*. Il ne savait pas répondre à \*\*« combien ce véhicule lui coûte-t-il ? »\*\*, ni donc à \*\*« que lui reste-t-il ? »\*\*.
+
+
+
+Le cas de référence écrit par la Direction :
+
+
+
+&#x20;   ADIKOM loue un véhicule à un fournisseur     40 000 KMF / jour
+
+&#x20;   ADIKOM le propose à son client               50 000 KMF / jour
+
+&#x20;   ────────────────────────────────────────────────────────────
+
+&#x20;   COMMISSION DE LOCATION                       10 000 KMF / jour
+
+
+
+\## Quatre notions, quatre noms, jamais confondus
+
+
+
+| Nom | Définition | Qui peut le voir |
+
+| --- | --- | --- |
+
+| \*\*Coût d’acquisition\*\* | Ce qu’ADIKOM verse au fournisseur pour disposer du véhicule | `rental.pricing.supplier.view` |
+
+| \*\*Tarif client\*\* | Ce qu’ADIKOM facture — l’unique montant des documents client | `rental.pricing.view` · `rental.rentals.financial.view` |
+
+| \*\*Commission de location\*\* | Tarif client − coût d’acquisition, sur la \*\*seule\*\* mise à disposition | Les \*\*deux\*\* ci-dessus |
+
+| \*\*Marge d’exploitation\*\* | Revenus facturés − coût d’entretien net, sur la \*\*vie\*\* du véhicule | Onglet « Rentabilité » de la fiche véhicule |
+
+
+
+\*\*Les deux dernières ne se mélangent jamais.\*\* La commission regarde \*\*un contrat\*\* ; la marge d’exploitation regarde \*\*un véhicule sur sa durée\*\*, maintenances et imputations comprises. Chaque écran nomme la sienne, énumère ce qu’elle ne couvre pas, et renvoie à l’autre.
+
+
+
+\## Un coût est une ligne datée
+
+
+
+Le coût d’acquisition suit la doctrine \*\*D16\*\* déjà posée sur les services (DEC-043) :
+
+
+
+\- changer un coût, c’est \*\*clore\*\* la version en cours et en \*\*ouvrir\*\* une nouvelle ; aucun montant n’est réécrit ;
+
+\- un coût futur se saisit \*\*à l’avance\*\* — « 40 000 jusqu’au 30/09, 45 000 à partir du 01/10 » ;
+
+\- un coût se lit \*\*toujours\*\* à une \*\*date d’effet\*\*, qui est la date métier de l’opération — le départ d’un contrat, non le jour de la consultation ;
+
+\- \*\*aucune version applicable ⇒ aucun montant\*\*. Un coût absent n’est jamais un coût de 0, et la commission n’est alors pas calculée.
+
+
+
+À une date donnée, un véhicule n’a qu’\*\*un\*\* coût d’acquisition : la base refuse deux versions qui se recouvrent.
+
+
+
+\## Le coût est confidentiel
+
+
+
+\*\*Aucun coût d’acquisition, aucune commission ne figure sur un document remis à un tiers\*\* : ni contrat de location, ni bon de départ, ni PV de retour, ni facture, ni devis, ni reçu.
+
+
+
+Consulter le parc, la grille tarifaire ou les montants d’une location \*\*n’ouvre pas\*\* le coût : il vit dans sa propre table, dont la lecture exige sa propre capacité.
+
+
+
+\## Ce qui n’est pas tranché, et n’a pas été inventé
+
+
+
+\*\*🟥 P-2 — le véhicule ADIKOM.\*\* La Direction a écrit « on considère qu’ADIKOM est un fournisseur », sans dire si son coût interne est un \*\*tarif de référence\*\* qu’elle fixe, ou un \*\*coût de revient calculé\*\* (amortissement, assurance, entretien). Le second est aujourd’hui impossible : aucune de ces charges n’est enregistrée par véhicule.
+
+
+
+\*\*Aucun coût n’est donc enregistré sur un véhicule ADIKOM\*\*, et sa commission reste \*\*non calculée\*\* plutôt que fausse. L’écran le dit et nomme la décision attendue.
+
+
+
+\*\*🟥 Le véhicule de partenariat.\*\* Ni à ADIKOM, ni fourni par un fournisseur. Son coût relève des conditions du partenariat, qu’aucun module ne gère et qu’aucune décision ne définit. Même traitement : rien n’est supposé.

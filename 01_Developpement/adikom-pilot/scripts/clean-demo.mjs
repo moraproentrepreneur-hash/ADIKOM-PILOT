@@ -288,6 +288,15 @@ async function main() {
   await purge(admin, 'service_categories',
     (q) => q.in('id', safe(serviceCategories)), 'catégories de services')
 
+  /* --- Coûts d'acquisition — LOT 21 ----------------------------------------- */
+  /*
+   * AVANT LES VÉHICULES ET LES FOURNISSEURS, qu'ils désignent tous les deux par
+   * une clé étrangère `on delete restrict` : les laisser ici bloquerait le
+   * retrait du parc de démonstration, et le jeu resterait à moitié retiré.
+   */
+  await purge(admin, 'supplier_vehicle_rates',
+    (q) => q.in('vehicle_id', safe(vehicles)), 'coûts d’acquisition')
+
   /* --- Référentiel ---------------------------------------------------------- */
   await purge(admin, 'financial_accounts', (q) => q.in('id', safe(accounts)), 'comptes financiers')
   await purge(admin, 'pricing_rules',

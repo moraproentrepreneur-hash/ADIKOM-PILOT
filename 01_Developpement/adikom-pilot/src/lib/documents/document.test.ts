@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { ClientSheetDocument } from '@/features/clients/documents/client-sheet'
@@ -620,6 +622,10 @@ const RENTAL: RentalDetail = {
   status: 'TO_CONTROL',
   lockedAmount: 120000,
   lockedUnit: 'DAY',
+  // LOT 21 : l'origine accompagne désormais le véhicule d'une location. Le
+  // véhicule de ce jeu est FOURNI — et c'est précisément le cas dont les
+  // documents client ne doivent RIEN laisser paraître (§6.4).
+  vehicleOrigin: 'SUPPLIED',
   reservationId: null,
   reservationNo: null,
   lockedRuleId: null,
@@ -781,5 +787,89 @@ describe('nommage des documents', () => {
     expect(documentFileName('Grille-tarifaire', null)).toMatch(
       /^ADIKOM_Grille-tarifaire_\d{8}\.pdf$/
     )
+  })
+})
+
+/* -------------------------------------------------------------------------- */
+/*  Confidentialité du coût d'acquisition — LOT 21, barrière n° 3              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * AUCUN DOCUMENT DESTINÉ À UN TIERS NE PORTE UN COÛT D'ACQUISITION.
+ *
+ * Plan 02 §6.3 pose trois barrières, et celle-ci est la seule qui tienne même
+ * lorsque le demandeur DÉTIENT la capacité de lire le coût : les générateurs ne
+ * reçoivent tout simplement pas ces colonnes.
+ *
+ * Une policy RLS ne suffirait pas. Un Super Admin qui télécharge un contrat a
+ * le droit de lire le coût — s'il figurait dans le modèle, il sortirait, et le
+ * fichier circulerait hors du système.
+ *
+ * CE CONTRÔLE EST STRUCTUREL, PAS COSMÉTIQUE. Il lit les sources des modèles et
+ * refuse toute référence au domaine du coût. Il vaut donc aussi pour les
+ * documents que les lots suivants ajouteront : une synthèse de location
+ * (LOT 24), un devis ou une facture (LOT 25) tomberaient sous la même règle.
+ */
+describe('aucun document client ne compose un coût d’acquisition', () => {
+  const RACINES = [
+    resolve(import.meta.dirname, '.'),
+    resolve(import.meta.dirname, '../../features'),
+  ]
+
+  /** Tout fichier de modèle documentaire du projet. */
+  function modeles(): string[] {
+    const trouves: string[] = []
+
+    const parcourir = (chemin: string) => {
+      for (const entree of readdirSync(chemin, { withFileTypes: true })) {
+        const complet = resolve(chemin, entree.name)
+        if (entree.isDirectory()) {
+          if (entree.name === 'node_modules' || entree.name === 'fonts') continue
+          parcourir(complet)
+          continue
+        }
+        // Les modèles vivent dans `documents/`, et le registre les assemble.
+        if (!/\.(ts|tsx)$/.test(entree.name)) continue
+        if (entree.name.endsWith('.test.ts') || entree.name.endsWith('.test.tsx')) continue
+        if (complet.includes(`${sep}documents${sep}`) || complet.endsWith(`${sep}registry.ts`)) {
+          trouves.push(complet)
+        }
+      }
+    }
+
+    for (const racine of RACINES) parcourir(racine)
+    return trouves
+  }
+
+  const INTERDITS = [
+    'supplier_vehicle_rates',
+    'resolve_supplier_rate',
+    'supplier-rates',
+    'CommissionBlock',
+    'Coût d’acquisition',
+  ]
+
+  it('aucun modèle documentaire ne touche au domaine du coût fournisseur', () => {
+    const fichiers = modeles()
+
+    // Un balayage qui ne trouverait aucun modèle passerait triomphalement et à
+    // tort : mieux vaut échouer que se féliciter du vide.
+    expect(fichiers.length, 'Aucun modèle documentaire trouvé.').toBeGreaterThan(5)
+
+    const fautes: string[] = []
+
+    for (const fichier of fichiers) {
+      // Le registre des EXPORTS n'est pas un document remis à un tiers : c'est
+      // un classeur interne, gardé par `rental.pricing.supplier.export`.
+      if (fichier.includes(`exports${sep}registry.ts`)) continue
+
+      const source = readFileSync(fichier, 'utf8')
+      for (const terme of INTERDITS) {
+        if (source.includes(terme)) fautes.push(`${fichier} → ${terme}`)
+      }
+    }
+
+    expect(fautes, `Un modèle documentaire compose un coût d’acquisition :\n${fautes.join('\n')}`)
+      .toEqual([])
   })
 })

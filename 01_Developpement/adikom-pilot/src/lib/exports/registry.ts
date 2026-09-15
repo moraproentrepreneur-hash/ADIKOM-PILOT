@@ -3,7 +3,7 @@ import 'server-only'
 import { PERMISSIONS, type PermissionCode } from '@/lib/auth/permissions'
 import { can } from '@/lib/auth/dal'
 import { dataset, toExcelDate, type ExportDataset } from './workbook'
-import { formatDateTime } from '@/lib/dates'
+import { formatDateTime, todayISO } from '@/lib/dates'
 
 import {
   listClients,
@@ -24,6 +24,7 @@ import {
 } from '@/features/fleet/data'
 import { listPricingRules } from '@/features/pricing/data'
 import { UNIT_LABELS } from '@/features/pricing/constants'
+import { listSupplierRates } from '@/features/supplier-rates/data'
 import {
   listServices,
   PURPOSE_LABELS as SERVICE_PURPOSE_LABELS,
@@ -697,6 +698,72 @@ export const EXPORTS: Record<string, ExportDefinition> = {
         mayReadClientPricing
           ? 'Tarifs standard et conditions préférentielles'
           : 'Tarifs standard'
+      )
+    },
+  },
+
+  /*
+   * TARIFS FOURNISSEURS — LOT 21, DEC-044.
+   *
+   * POURQUOI CET EXPORT PORTE LES MONTANTS, ALORS QUE CELUI DES SERVICES NE
+   * PORTE AUCUN PRIX
+   *
+   * L'export des services refuse les prix parce que son objet est l'IDENTITÉ du
+   * catalogue : y ajouter un prix supposerait de le résoudre à une date, donc de
+   * réimplémenter la résolution dans un classeur (§8.4 du Rapport 12).
+   *
+   * Ici, le montant EST l'objet : un export de tarifs fournisseurs sans tarif ne
+   * serait pas un export, et `rental.pricing.supplier.export` ne débloquerait
+   * rien — ce que `CLAUDE.md` §19 bis proscrit. La date de résolution est donc
+   * portée par le classeur lui-même, et chaque ligne dit à quelle date son coût
+   * s'appliquait.
+   *
+   * DEUX GARDES, ET LA SECONDE N'EST PAS FACULTATIVE
+   *
+   *   · `viewPermission` = `rental.pricing.supplier.view` : on n'exporte pas ce
+   *     qu'on n'a pas le droit de voir. Sans elle, RLS rendrait un classeur VIDE,
+   *     et le lecteur croirait qu'aucun coût n'existe (DEC-017) ;
+   *   · `permission` = `rental.pricing.supplier.export` : emporter un fichier
+   *     n'est pas consulter un écran (DEC-024). UN CLASSEUR CIRCULE — il se
+   *     transfère, se conserve et s'ouvre hors du système. C'est exactement
+   *     pourquoi cette capacité est SENSIBLE, et attribuée à part.
+   *
+   * Le classeur porte l'avertissement en sous-titre : ce qu'il contient ne se
+   * remet à aucun client (Plan 02 §6.4).
+   */
+  'tarifs-fournisseurs': {
+    title: 'Tarifs fournisseurs',
+    viewPermission: PERMISSIONS.PRICING_SUPPLIER_VIEW,
+    permission: PERMISSIONS.PRICING_SUPPLIER_EXPORT,
+    entityType: 'supplier_vehicle_rates',
+    moduleCode: 'rental',
+    async build(filters) {
+      const on = /^\d{4}-\d{2}-\d{2}$/.test(filters.au ?? '') ? filters.au : todayISO()
+
+      /*
+       * L'HISTORIQUE ENTIER, versions retirées comprises — et non le seul coût
+       * du jour. C'est précisément ce qu'un export sert à emporter : « quel coût
+       * s'appliquait, et depuis quand ? ». Chaque ligne porte sa période, et
+       * l'état dit si la version compte encore.
+       */
+      const rows = await listSupplierRates({ includeRetired: true })
+
+      return dataset(
+        rows,
+        [
+          { header: 'Véhicule', width: 34, value: (r) => r.vehicleLabel },
+          { header: 'Référence', width: 14, value: (r) => r.vehicleNo },
+          { header: 'Fournisseur', width: 30, value: (r) => r.supplierLabel },
+          { header: 'Coût d’acquisition', width: 18, format: 'amount', value: (r) => r.amount },
+          { header: 'Unité', width: 12, value: (r) => (r.unit ? UNIT_LABELS[r.unit] : null) },
+          { header: 'Du', width: 13, format: 'date', value: (r) => toExcelDate(r.validFrom) },
+          { header: 'Au', width: 13, format: 'date', value: (r) => toExcelDate(r.validTo) },
+          { header: 'État', width: 13, value: (r) => (r.isActive ? 'En vigueur' : 'Retirée') },
+          { header: 'Conditions', width: 40, value: (r) => r.conditions },
+          { header: 'Motif', width: 30, value: (r) => r.reason },
+          { header: 'Motif du retrait', width: 30, value: (r) => r.deactivationReason },
+        ],
+        `Coûts internes ADIKOM — état au ${on}. Document interne : ne pas remettre à un client.`
       )
     },
   },

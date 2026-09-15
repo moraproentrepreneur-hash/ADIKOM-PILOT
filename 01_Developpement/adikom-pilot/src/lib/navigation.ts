@@ -247,6 +247,25 @@ export const NAVIGATION: NavEntry[] = [
         permission: PERMISSIONS.PRICING_VIEW,
         status: 'ready',
       },
+      /*
+       * Tarifs fournisseurs — LOT 21 (DEC-044).
+       *
+       * UNE ENTRÉE DISTINCTE DE « TARIFICATION », et c'est le point.
+       *
+       * Le même menu aurait suggéré que les deux se lisent avec le même droit.
+       * Ils ne se lisent PAS avec le même droit : ce qu'ADIKOM facture relève de
+       * `rental.pricing.view`, ce qu'elle paie de
+       * `rental.pricing.supplier.view`, et la seconde n'est pas incluse dans la
+       * première (A-2, DEC-024). L'entrée disparaît donc entièrement pour qui ne
+       * détient pas la capacité du coût.
+       */
+      {
+        label: 'Tarifs fournisseurs',
+        href: '/location/tarifs-fournisseurs',
+        icon: Wallet,
+        permission: PERMISSIONS.PRICING_SUPPLIER_VIEW,
+        status: 'ready',
+      },
       {
         label: 'Dommages & Incidents',
         href: '/location/incidents',

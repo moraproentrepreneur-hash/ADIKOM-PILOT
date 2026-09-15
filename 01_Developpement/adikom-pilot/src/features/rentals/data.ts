@@ -41,6 +41,15 @@ export type RentalListItem = {
   status: RentalStatus
   lockedAmount: number
   lockedUnit: PricingUnit
+  /**
+   * Origine du véhicule — LOT 21.
+   *
+   * `null` signifie « véhicule non lisible avec vos droits » (la jointure
+   * respecte `vehicles_select`, qui exige `rental.fleet.view`), JAMAIS « sans
+   * origine » : une location porte toujours un véhicule. Les écrans qui s'en
+   * servent doivent distinguer les deux (DEC-017).
+   */
+  vehicleOrigin: string | null
 }
 
 export type RentalDetail = RentalListItem & {
@@ -94,7 +103,16 @@ type RawRow = {
     legal_name: string
     first_name: string | null
   } | null
-  vehicles?: { vehicle_no: string; brand: string; model: string; plate: string | null } | null
+  vehicles?: {
+    vehicle_no: string
+    brand: string
+    model: string
+    plate: string | null
+    /* Une colonne de plus sur une jointure DÉJÀ présente — LOT 21. Elle
+       n'ouvre aucun accès : `vehicles_select` s'applique à l'embarqué comme au
+       reste, et un lecteur sans `rental.fleet.view` ne recevait déjà rien. */
+    origin: string
+  } | null
 }
 
 const BASE_SELECT = `
@@ -102,7 +120,7 @@ const BASE_SELECT = `
   started_at, expected_return_at, returned_at, status,
   locked_amount, locked_unit,
   clients ( type, legal_name, first_name ),
-  vehicles ( vehicle_no, brand, model, plate )
+  vehicles ( vehicle_no, brand, model, plate, origin )
 `
 
 /** Même composition que la fiche client : un particulier porte son prénom. */
@@ -139,6 +157,7 @@ function toListItem(row: RawRow): RentalListItem {
     status: row.status,
     lockedAmount: row.locked_amount,
     lockedUnit: row.locked_unit,
+    vehicleOrigin: row.vehicles?.origin ?? null,
   }
 }
 
