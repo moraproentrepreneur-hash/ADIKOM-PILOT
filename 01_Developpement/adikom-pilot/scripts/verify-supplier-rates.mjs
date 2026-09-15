@@ -155,9 +155,32 @@ async function createProfile(admin, accounts, key, codes) {
   return accounts[key]
 }
 
+/**
+ * Ce que le navigateur signale, et que personne ne regarde jamais.
+ *
+ * Une exception non rattrapée ou une erreur de console ne fait échouer aucun
+ * contrôle : l'écran s'affiche, la recette passe, et le défaut vit sa vie
+ * jusqu'à ce qu'un utilisateur tombe dessus. Chaque page ouverte par cette
+ * recette est donc écoutée, et le verdict est rendu à la fin.
+ */
+const journalNavigateur = []
+
+function ecouter(page, origine) {
+  page.on('pageerror', (error) => {
+    journalNavigateur.push(`${origine} · exception : ${error.message}`)
+  })
+  page.on('console', (message) => {
+    if (message.type() === 'error') {
+      journalNavigateur.push(`${origine} · console : ${message.text()}`)
+    }
+  })
+}
+
 async function signIn(browser, base, account) {
   const context = await browser.newContext()
   const page = await context.newPage()
+
+  ecouter(page, account.username)
 
   await page.goto(`${base}/connexion`, { waitUntil: 'load' })
   await page.waitForFunction(() => document.querySelector('#username') !== null)
@@ -972,6 +995,28 @@ async function main() {
         .select('id', { count: 'exact', head: true })
         .like('code', '%.commission.%')
       check(marges === 0, 'Aucune capacité de commission n’a été créée', String(marges))
+
+      /*
+       * LE NAVIGATEUR N'A RIEN SIGNALÉ.
+       *
+       * Les images manquantes et les préchargements inutilisés sont du bruit
+       * d'hébergement, pas des défauts applicatifs : ils sont écartés nommément
+       * plutôt qu'ignorés en bloc.
+       */
+      const critiques = journalNavigateur.filter(
+        (ligne) =>
+          !/favicon|apple-touch-icon|preload|net::ERR_ABORTED|Download the React DevTools/i.test(
+            ligne
+          )
+      )
+
+      check(
+        critiques.length === 0,
+        'Aucune erreur de console ni exception sur les écrans parcourus',
+        critiques.length === 0
+          ? `${journalNavigateur.length} message(s) de bruit écarté(s)`
+          : critiques.slice(0, 3).join(' | ')
+      )
     }
   } finally {
     await browser.close()
