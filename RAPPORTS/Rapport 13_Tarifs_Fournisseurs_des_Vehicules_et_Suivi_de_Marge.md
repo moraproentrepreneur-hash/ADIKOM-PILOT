@@ -8,9 +8,9 @@
 | Lot | **LOT 21** du `Plan 02` — 3ᵉ des dix lots |
 | Décision | **DEC-044** — coût d'acquisition et confidentialité |
 | Sources métier | Direction, 11/09/2026 — **A-1**, **A-2**, **A-3**, **A-14** |
-| Commit | **`496fe60`** |
-| SHA éprouvé | **`496fe60`** |
-| SHA déployé | **`496fe60`** — déploiement Vercel `READY` |
+| Commit du lot | **`496fe60`** |
+| SHA **éprouvé** | **`496fe60`** — celui contre lequel la recette de production a tourné |
+| SHA **déployé** | **`534a273`** — le présent rapport, `READY`. **Aucune ligne de code applicatif n'en sépare les deux** |
 | Production | https://adikom-pilot.vercel.app |
 | Catalogue | **191 → 195 capacités** |
 | Sauvegarde | **49 → 50 tables** |
@@ -838,13 +838,22 @@ le commit.
 
 | | |
 | --- | --- |
-| SHA **éprouvé** | **`496fe60`** |
-| SHA **déployé** | **`496fe60`** |
-| État Vercel | **`READY`** |
+| SHA **éprouvé** | **`496fe60`** — la recette de production a tourné contre lui |
+| SHA **déployé** | **`534a273`** — le présent rapport |
+| État Vercel | **`READY`** pour les deux |
 | URL | https://adikom-pilot.vercel.app |
 
-Le sha déployé a été lu par l'API Vercel et **comparé au commit local** : la
-production porte exactement le code éprouvé.
+Les deux sha ont été lus par l'API Vercel et **comparés aux commits locaux**.
+
+**Ce qui les sépare : rien de fonctionnel.** `534a273` ajoute le présent rapport
+et l'écoute des erreurs de console dans la recette — aucune migration, aucune
+capacité, aucun écran, aucune action serveur. La production exécute donc
+exactement le code éprouvé.
+
+| Commit | Contenu | Touche l'application ? |
+| --- | --- | :-: |
+| `496fe60` | 4 migrations, 4 capacités, 3 écrans, l'export, la sauvegarde, les recettes | **Oui** |
+| `534a273` | Le rapport · l'écoute des erreurs de console dans la recette | **Non** |
 
 ---
 
