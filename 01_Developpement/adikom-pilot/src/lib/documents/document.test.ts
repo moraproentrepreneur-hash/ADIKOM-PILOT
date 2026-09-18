@@ -12,6 +12,9 @@ import {
   RentalContractDocument,
   ReturnReportDocument,
 } from '@/features/rentals/documents/rental-documents'
+import type { ContractPeriod } from '@/features/rentals/documents/rental-blocks'
+import { RentalAmendmentDocument } from '@/features/amendments/documents/rental-amendment'
+import type { RentalAmendment } from '@/features/amendments/data'
 import type { Inspection, RentalDetail } from '@/features/rentals/data'
 import { documentFileName, issuedOnLabel, renderDocument } from './render'
 import type { DocumentIdentity } from './identity'
@@ -773,6 +776,148 @@ describe('procès-verbal de retour', () => {
 })
 
 /* -------------------------------------------------------------------------- */
+/*  Avenant au contrat — LOT 22                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * 🟩 A-4 : « On garde le même contrat et on rajoute des avenants. »
+ *
+ * Le contrat garde son identifiant ; ce sont ses PÉRIODES qui se succèdent. Le
+ * document remis au client doit le dire, et montrer l'avant / après.
+ *
+ * `ContractPeriod` ne porte AUCUN coût gelé : le type lui-même écarte la colonne
+ * confidentielle, de sorte qu'aucun modèle ne puisse la révéler — même pour un
+ * Super Admin qui aurait le droit de la lire.
+ */
+const PERIODS: ContractPeriod[] = [
+  {
+    sequenceNo: 1,
+    vehicleLabel: 'Toyota Land Cruiser — AB-123-CD',
+    from: '2026-09-01T06:00:00.000Z',
+    to: '2026-09-02T08:00:00.000Z',
+    amount: 120000,
+    unit: 'DAY',
+    statusLabel: 'Terminé',
+  },
+  {
+    sequenceNo: 2,
+    vehicleLabel: 'Nissan Patrol — EF-456-GH',
+    from: '2026-09-02T08:00:00.000Z',
+    to: '2026-09-04T05:00:00.000Z',
+    amount: 150000,
+    unit: 'DAY',
+    statusLabel: 'En cours',
+  },
+]
+
+const AMENDMENT: RentalAmendment = {
+  id: '00000000-0000-0000-0000-000000000090',
+  amendmentNo: 'AVN-2026-000001',
+  sequenceNo: 1,
+  kind: 'VEHICLE_CHANGE',
+  effectiveAt: '2026-09-02T08:00:00.000Z',
+  reason: 'Panne immobilisante du véhicule initial',
+  notes: null,
+  rateOverride: false,
+  rateOverrideReason: null,
+  createdAt: '2026-09-02T09:00:00.000Z',
+  authorLabel: 'Recette ADIKOM',
+}
+
+const AMENDMENT_PARTS = {
+  identity: IDENTITY,
+  rental: RENTAL,
+  amendment: AMENDMENT,
+  periods: PERIODS,
+  openedSequenceNo: 2,
+  client: CLIENT,
+  showAmounts: true,
+  issuedOn: ISSUED,
+}
+
+describe('avenant au contrat de location', () => {
+  it('produit un PDF complet', async () => {
+    expectPdf(await renderDocument(RentalAmendmentDocument(AMENDMENT_PARTS)))
+  })
+
+  /** Sans droit financier, la colonne des tarifs disparaît — et le PDF tient. */
+  it('rend un avenant sans montants ni identité du client', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalAmendmentDocument({ ...AMENDMENT_PARTS, client: null, showAmounts: false })
+      )
+    )
+  })
+
+  /** Une dérogation tarifaire : sa raison figure sur le document du client. */
+  it('rend un avenant portant un tarif dérogatoire motivé', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalAmendmentDocument({
+          ...AMENDMENT_PARTS,
+          amendment: {
+            ...AMENDMENT,
+            rateOverride: true,
+            rateOverrideReason: 'ADIKOM absorbe l’écart : l’indisponibilité est de son fait',
+            notes: 'Remplacement de courtoisie.',
+          },
+        })
+      )
+    )
+  })
+
+  /**
+   * LE CAS VIDE, celui qui interrompait le rendu le 22/08/2026 : aucune période
+   * lisible — véhicules non communiqués — et aucun segment nommé par l'avenant.
+   */
+  it('rend un avenant sans période lisible', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalAmendmentDocument({
+          ...AMENDMENT_PARTS,
+          periods: [],
+          openedSequenceNo: null,
+        })
+      )
+    )
+  })
+
+  it('rend un avenant dont les véhicules ne sont pas lisibles', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalAmendmentDocument({
+          ...AMENDMENT_PARTS,
+          periods: PERIODS.map((period) => ({ ...period, vehicleLabel: null })),
+        })
+      )
+    )
+  })
+})
+
+describe('contrat de location segmenté', () => {
+  /** Le tableau des périodes ne paraît qu'à partir de DEUX périodes. */
+  it('produit un PDF portant les périodes successives', async () => {
+    expectPdf(
+      await renderDocument(RentalContractDocument({ ...FULL_PARTS, periods: PERIODS }))
+    )
+  })
+
+  it('n’affiche pas le tableau pour un contrat à une seule période', async () => {
+    expectPdf(
+      await renderDocument(RentalContractDocument({ ...FULL_PARTS, periods: [PERIODS[0]] }))
+    )
+  })
+
+  it('rend les périodes sans montants', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalContractDocument({ ...FULL_PARTS, periods: PERIODS, showAmounts: false })
+      )
+    )
+  })
+})
+
+/* -------------------------------------------------------------------------- */
 /*  Nommage des fichiers                                                       */
 /* -------------------------------------------------------------------------- */
 
@@ -847,6 +992,19 @@ describe('aucun document client ne compose un coût d’acquisition', () => {
     'supplier-rates',
     'CommissionBlock',
     'Coût d’acquisition',
+    /*
+     * LOT 22 — LE COÛT GELÉ D'UN SEGMENT.
+     *
+     * `rental_segments` s'ouvre par `rental.rentals.view` : les modèles
+     * documentaires reçoivent légitimement ses périodes. Son COÛT, lui, vit dans
+     * `rental_segment_costs` et n'a rien à faire sur un document remis à un
+     * tiers. Les modèles ne reçoivent d'ailleurs pas le segment entier mais un
+     * `ContractPeriod`, qui ne porte pas cette colonne — ces deux termes
+     * garantissent que personne ne revienne en arrière.
+     */
+    'rental_segment_costs',
+    'lockedCost',
+    'segmentCommission',
   ]
 
   it('aucun modèle documentaire ne touche au domaine du coût fournisseur', () => {

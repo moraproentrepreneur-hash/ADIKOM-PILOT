@@ -313,7 +313,44 @@ async function main() {
       await page.waitForURL('**/tableau-de-bord', { timeout: 60000 })
     }
 
-    for (const [route, libelle] of ROUTES) {
+    /*
+     * LA CHRONOLOGIE D'UN CONTRAT — LOT 22.
+     *
+     * Elle ne vit pas sur une route fixe : son identifiant est celui d'un
+     * contrat. La route est donc résolue à l'exécution, sur une location qui
+     * porte RÉELLEMENT plusieurs périodes — mesurer un contrat à période unique
+     * ne dirait rien du tableau, des cartes et du formulaire d'avenant.
+     *
+     * Aucune donnée n'est créée pour cela : si la base n'en porte aucune, la
+     * route est simplement omise, et la recette le dit plutôt que d'inventer un
+     * contrat pour se donner quelque chose à mesurer.
+     */
+    const routes = [...ROUTES]
+
+    const { data: segmente } = await admin
+      .from('rental_segments')
+      .select('rental_id, sequence_no')
+      .gt('sequence_no', 1)
+      .limit(1)
+
+    const { data: premier } = await admin.from('rentals').select('id').limit(1)
+
+    const contrat = segmente?.[0]?.rental_id ?? premier?.[0]?.id ?? null
+
+    if (contrat) {
+      routes.push([
+        `/location/locations/${contrat}?onglet=chronologie`,
+        segmente?.[0]
+          ? 'Location · Chronologie (contrat à plusieurs périodes)'
+          : 'Location · Chronologie',
+      ])
+    } else {
+      console.log(
+        `  ${DIM}Aucune location en base : la chronologie n’est pas mesurée.${RESET}`
+      )
+    }
+
+    for (const [route, libelle] of routes) {
       for (const [width, , format] of FORMATS) {
         mesures += await audit(pages, base, route, libelle, width, format)
       }

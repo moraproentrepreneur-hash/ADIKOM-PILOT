@@ -3300,3 +3300,139 @@ Consulter le parc, la grille tarifaire ou les montants d’une location \*\*n’
 
 
 \*\*🟥 Le véhicule de partenariat.\*\* Ni à ADIKOM, ni fourni par un fournisseur. Son coût relève des conditions du partenariat, qu’aucun module ne gère et qu’aucune décision ne définit. Même traitement : rien n’est supposé.
+
+
+
+\## Addendum — 18 septembre 2026 · Avenants et remplacement de véhicule (DEC-045, LOT 22)
+
+
+
+\### Un remplacement ne crée pas de contrat
+
+
+
+\*\*Décision A-4 de la Direction : « On garde le même contrat et on rajoute des avenants. »\*\*
+
+
+
+Lorsqu’un véhicule tombe en panne pendant une location, ADIKOM en fournit un autre — et le contrat ne change pas. Son \*\*identifiant\*\*, son \*\*client\*\*, sa \*\*réservation d’origine\*\* et son \*\*tarif initialement verrouillé\*\* demeurent. Ce qui change est consigné par un \*\*avenant\*\*.
+
+
+
+\### Trois mots, trois choses
+
+
+
+| Nom | Ce que c’est |
+
+| --- | --- |
+
+| \*\*Contrat\*\* | Ce qui lie ADIKOM au client. Il ne se dédouble jamais |
+
+| \*\*Avenant\*\* | L’\*\*acte\*\* : sa nature, sa date d’effet, son motif, son auteur. Il ne se réécrit pas |
+
+| \*\*Période\*\* | La \*\*conséquence\*\* : un véhicule, une période, un tarif verrouillé — et son coût gelé |
+
+
+
+Un contrat a un avenant de plus, et une période de plus. Il n’a jamais deux identités.
+
+
+
+\### Le cas de la Direction, tel que le système le tient
+
+
+
+```
+
+Contrat LOC-2026-000352        client inchangé, identifiant inchangé
+
+
+
+Période 1   01/09 → 05/09      Véhicule A     50 000 KMF/jour
+
+            panne au 05/09     →  AVENANT n° 1, motif écrit
+
+Période 2   05/09 → 10/09      Véhicule B     60 000 KMF/jour
+
+```
+
+
+
+L’\*\*instant de bascule appartient à la période suivante\*\*, et à elle seule : aucune journée n’est comptée deux fois, aucune ne manque. L’ancien véhicule est libéré à cet instant et revient au parc ; le nouveau est engagé à partir du même instant.
+
+
+
+\### Le tarif du remplacement — décision A-5
+
+
+
+\*\*« Généralement le client paie le nouveau tarif, toutefois des situations peuvent se présenter autrement et on les gère selon le contexte. »\*\*
+
+
+
+| Cas | Ce qui s’applique | Ce qu’il faut |
+
+| --- | --- | --- |
+
+| \*\*Ordinaire\*\* | Le tarif du nouveau véhicule, résolu par le barème | Rien de plus |
+
+| \*\*Exception\*\* | Le montant décidé — l’ancien tarif, ou tout autre | La capacité « Forcer un tarif manuellement » \*\*et une raison écrite\*\* |
+
+
+
+\*\*Une dérogation n’est jamais silencieuse\*\* : elle porte sa raison, elle apparaît sur la chronologie, elle figure au journal d’activité, et elle est imprimée sur l’avenant remis au client.
+
+
+
+\### Le changement de tarif seul
+
+
+
+Un contrat en cours peut changer de tarif sans changer de véhicule — passage en longue durée, condition renégociée. Le mécanisme est le même : un avenant, une date d’effet, un montant, une raison écrite. L’ancien tarif reste attaché à la période qu’il a couverte.
+
+
+
+\*\*🟥 Aucune pénalité n’est calculée.\*\* La Direction évoque « des pénalités de 20 à 100 % » sans dire de quoi elles se calculent, qui en fixe le taux, ni s’il s’agit d’une majoration du tarif ou d’une ligne de facture distincte. Le montant est donc \*\*saisi\*\*, et aucun pourcentage n’est proposé.
+
+
+
+\### Le coût est gelé au moment de l’engagement
+
+
+
+À l’ouverture d’une période — donc au moment où ADIKOM s’engage —, le coût d’acquisition applicable \*\*à la date de cette période\*\* est figé. Une révision ultérieure du tarif fournisseur, même saisie à une date d’effet passée, \*\*ne le déplace plus\*\*.
+
+
+
+Ce qui reste corrigible : les \*\*versions\*\* de tarif fournisseur, qui gouvernent les périodes \*\*à venir\*\*. Ce qui ne l’est plus : le \*\*coût gelé\*\* d’une période engagée.
+
+
+
+La \*\*commission\*\* se lit donc \*\*par période\*\* : 50 000 − 40 000 = 10 000, puis 60 000 − 45 000 = 15 000. Elle n’est \*\*pas totalisée\*\* : additionner des montants journaliers supposerait une règle de durée facturable qui n’est pas arrêtée.
+
+
+
+\### Ce qui ne se supprime pas, et ce qui ne se réécrit pas
+
+
+
+\- l’ancien véhicule reste dans l’historique du contrat, avec sa période et son tarif ;
+
+\- un avenant est un acte : il ne se modifie pas. Une erreur se corrige par l’avenant suivant, qui dit ce qu’il corrige ;
+
+\- une période ne réécrit ni son véhicule, ni son tarif verrouillé, ni son début ;
+
+\- rien ne se supprime.
+
+
+
+\### Ce qui n’est pas tranché, et n’a pas été inventé
+
+
+
+\*\*🟥 Le véhicule ADIKOM.\*\* La décision A-3 — « on considère qu’ADIKOM est un fournisseur » — est appliquée là où elle porte : \*\*un seul mécanisme\*\* de coût pour tous les véhicules. Mais elle ne dit toujours pas ce qu’EST ce coût interne. Aucun coût n’est donc enregistré sur un véhicule ADIKOM, et la commission de sa période reste \*\*non calculée\*\* plutôt que fausse.
+
+
+
+\*\*🟥 Le véhicule de partenariat.\*\* Aucune décision n’existe. Même traitement, pour sa propre raison.

@@ -135,6 +135,31 @@ export const PERMISSIONS = {
   RENTALS_RETURN: 'rental.rentals.return',
   RENTALS_CLOSE: 'rental.rentals.close',
   RENTALS_CANCEL: 'rental.rentals.cancel',
+  /*
+   * Remplacement de véhicule par avenant — LOT 22 (DEC-045, migration 087).
+   *
+   * 🟩 A-4 : « On garde le même contrat et on rajoute des avenants. » Remplacer
+   * le véhicule d'une location en cours ne crée donc PAS un nouveau contrat :
+   * l'acte clôt le segment du véhicule sortant, ouvre celui du véhicule entrant,
+   * déplace l'engagement du calendrier — et n'efface rien.
+   *
+   * ELLE N'EST INCLUSE DANS AUCUNE AUTRE (DEC-024, A-14). Ni `update`, ni
+   * `extend`, ni `checkout` : substituer un véhicule engage ADIKOM sur un autre
+   * bien, change ce que le calendrier bloque, et peut changer ce qui est facturé
+   * au client. C'est un acte à part, et il est sensible.
+   *
+   * ET ELLE N'OUVRE PAS `rental.pricing.override`. Le tarif du nouveau véhicule
+   * est RÉSOLU par le barème — « généralement le client paie le nouveau tarif »
+   * (A-5). S'en écarter est une DÉCISION distincte, qui exige sa propre capacité
+   * et une raison écrite.
+   *
+   * AUCUNE CAPACITÉ D'AVENANT n'est créée par ailleurs : consulter les avenants
+   * et les segments, c'est consulter l'histoire du contrat, que
+   * `rental.rentals.view` ouvre déjà. Une capacité de plus ne fermerait qu'un
+   * onglet (DEC-036 §d). Et l'avenant imprimable est le QUATRIÈME document du
+   * cycle, sous `rental.rentals.download` / `.print` (Plan 02 §10.3).
+   */
+  RENTALS_SWAP: 'rental.rentals.swap',
   RENTALS_FINANCIAL_VIEW: 'rental.rentals.financial.view',
   RENTALS_EXPORT: 'rental.rentals.export',
   RENTALS_DOWNLOAD: 'rental.rentals.download',

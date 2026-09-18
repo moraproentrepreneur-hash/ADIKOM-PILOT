@@ -51,6 +51,14 @@ import { getInvoiceForRental } from '@/features/customer-invoices/data'
 import { resolveSupplierRate } from '@/features/supplier-rates/data'
 import { businessDate } from '@/features/supplier-rates/constants'
 import { CommissionBlock } from '@/features/supplier-rates/commission'
+import {
+  listRentalAmendments,
+  listRentalSegments,
+  listSwapCandidates,
+} from '@/features/amendments/data'
+import { AMENDMENT_KIND_LABELS } from '@/features/amendments/constants'
+import { RentalTimeline } from '@/features/amendments/timeline'
+import { AmendmentActions } from '@/features/amendments/amend-panels'
 import { EntityHistoryPanel } from '@/features/audit/history-panel'
 import {
   CUSTOMER_INVOICE_STATUS_LABELS,
@@ -163,6 +171,49 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
       ? await resolveSupplierRate(rental.vehicleId, commissionOn)
       : null
 
+  /*
+   * CHRONOLOGIE DU CONTRAT — LOT 22 (DEC-045).
+   *
+   * 🟩 A-4 : « On garde le même contrat et on rajoute des avenants. » Les
+   * segments et les avenants sont L'HISTOIRE de ce contrat — quel véhicule, sur
+   * quelle période, à quel tarif, par quel acte et pourquoi. Ils se lisent donc
+   * avec `rental.rentals.view`, comme le reste du contrat : une capacité de plus
+   * ne fermerait qu'un onglet (DEC-036 §d).
+   *
+   * Ce qui EST confidentiel dans un segment — son COÛT GELÉ — vit dans sa propre
+   * table, gardée par `rental.pricing.supplier.view`, et par elle seule.
+   */
+  const [segments, amendments] = await Promise.all([
+    listRentalSegments(id),
+    listRentalAmendments(id),
+  ])
+
+  const activeSegment = segments.find((segment) => segment.status === 'ACTIVE') ?? null
+
+  /*
+   * LES DEUX ACTES DU LOT, ET LEURS DEUX CAPACITÉS DISTINCTES (A-14, DEC-024).
+   *
+   *   · remplacer le véhicule → `rental.rentals.swap`
+   *   · forcer un tarif       → `rental.pricing.override`
+   *
+   * Ni l'une ni l'autre n'est incluse dans `rental.rentals.update`. Et les deux
+   * panneaux n'apparaissent que si le contrat a une période OUVERTE : un contrat
+   * rendu, clôturé ou annulé ne reçoit plus d'avenant, et la base le refuse.
+   */
+  const [canSwap, canOverride] = await Promise.all([
+    can(PERMISSIONS.RENTALS_SWAP),
+    can(PERMISSIONS.PRICING_OVERRIDE),
+  ])
+
+  const amendable =
+    activeSegment !== null &&
+    ['PREPARING', 'CONFIRMED', 'IN_PROGRESS', 'EXTENDED'].includes(rental.status)
+
+  // La liste n'est chargée que si elle peut servir : un écran ne prépare pas un
+  // formulaire qu'il n'affichera pas.
+  const swapCandidates =
+    canSwap && amendable && activeSegment ? await listSwapCandidates(activeSegment.vehicleId) : []
+
   const shown = displayStatus(rental.status, rental.expectedReturnAt)
   const beforeDeparture = rental.status === 'PREPARING' || rental.status === 'CONFIRMED'
   const running = rental.status === 'IN_PROGRESS' || rental.status === 'EXTENDED'
@@ -172,6 +223,17 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
 
   const tabs: TabItem[] = [
     { key: 'informations', label: 'Informations', href: `/location/locations/${id}` },
+    /*
+     * CHRONOLOGIE — LOT 22. L'onglet est TOUJOURS présent : même un contrat qui
+     * n'a jamais changé de véhicule a une période, et la montrer apprend au
+     * lecteur que cette lecture existe. La masquer quand il n'y a qu'un segment
+     * ferait de la chronologie une surprise le jour d'un remplacement.
+     */
+    {
+      key: 'chronologie',
+      label: 'Chronologie',
+      href: `/location/locations/${id}?onglet=chronologie`,
+    },
     { key: 'etats', label: 'États des lieux', href: `/location/locations/${id}?onglet=etats` },
     { key: 'controle', label: 'Contrôle', href: `/location/locations/${id}?onglet=controle` },
     ...(canViewHistory
@@ -285,6 +347,55 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
           entityId={id}
           description="Le cycle réellement parcouru par ce contrat : changements d’état, départ, prolongation, retour, contrôle, clôture. Rien n’est reconstitué — chaque ligne est un événement journalisé."
         />
+      ) : tab === 'chronologie' ? (
+        <div className="space-y-5">
+          <RentalTimeline
+            segments={segments}
+            amendments={amendments}
+            canSeeAmounts={canSeeAmounts}
+            canSeeCost={canSupplierCost}
+          />
+
+          {/*
+            LES DEUX ACTES, CHACUN SOUS SA CAPACITÉ.
+
+            Le bouton « Remplacer le véhicule » DISPARAÎT sans
+            `rental.rentals.swap` ; « Changer le tarif » sans
+            `rental.pricing.override`. Aucun bouton désactivé, aucune promesse
+            qu'un refus démentirait (DEC-017).
+          */}
+          {(canSwap || canOverride) && amendable && activeSegment && (
+            <Card
+              title="Poser un avenant"
+              description="Le contrat ne change pas : un avenant s’y ajoute, daté et motivé. L’ancien véhicule et l’ancien tarif restent dans l’historique."
+            >
+              <AmendmentActions
+                rentalId={id}
+                currentVehicleLabel={activeSegment.vehicleLabel ?? rental.vehicleLabel}
+                candidates={swapCandidates}
+                periodFrom={activeSegment.from}
+                periodTo={activeSegment.to}
+                startedAt={rental.startedAt}
+                running={running}
+                currentAmount={activeSegment.lockedAmount}
+                currentUnit={activeSegment.lockedUnit}
+                canSwap={canSwap}
+                canOverride={canOverride}
+              />
+            </Card>
+          )}
+
+          {/*
+            Le contrat n'est plus modifiable : l'écran le DIT plutôt que de
+            laisser l'exploitant chercher un bouton absent.
+          */}
+          {(canSwap || canOverride) && !amendable && (
+            <Notice tone="info">
+              Ce contrat n’a plus de période en cours : il est rendu, clôturé ou annulé. Un avenant
+              se pose sur un contrat vivant — son historique, lui, reste consultable.
+            </Notice>
+          )}
+        </div>
       ) : tab === 'etats' ? (
         <InspectionsTab rentalId={id} />
       ) : tab === 'controle' ? (
@@ -302,13 +413,37 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
           <Card title="Contrat">
             <dl>
               <InfoRow label="Client">{rental.clientLabel}</InfoRow>
-              <InfoRow label="Véhicule">
+              {/*
+                LE VÉHICULE COURANT — LOT 22.
+
+                Après un remplacement, `rentals.vehicle_id` désigne le véhicule
+                RÉELLEMENT affecté : c'est lui qui est dehors, lui que le retour
+                ramènera, lui que le calendrier engage. Les précédents ne sont pas
+                effacés — ils vivent dans la chronologie, et la ligne y renvoie
+                plutôt que de laisser croire qu'il n'y en a jamais eu d'autre.
+              */}
+              <InfoRow
+                label="Véhicule"
+                hint={
+                  segments.length > 1
+                    ? `${segments.length} véhicules se sont succédé sur ce contrat — voir la chronologie.`
+                    : undefined
+                }
+              >
                 <Link
                   href={`/location/parc/${rental.vehicleId}`}
                   className="text-adikom-500 hover:underline"
                 >
                   {rental.vehicleLabel}
                 </Link>
+                {segments.length > 1 && (
+                  <Link
+                    href={`/location/locations/${id}?onglet=chronologie`}
+                    className="ml-2 text-xs text-adikom-500 hover:underline"
+                  >
+                    Chronologie ({segments.length} périodes)
+                  </Link>
+                )}
               </InfoRow>
               <InfoRow label="Période prévue">
                 {formatPeriod(rental.plannedFrom, rental.plannedTo)}
@@ -578,6 +713,9 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
                */
               description={enumerate([
                 'Contrat',
+                ...(amendments.length > 0
+                  ? [`${amendments.length} avenant${amendments.length > 1 ? 's' : ''}`]
+                  : []),
                 ...(rental.startedAt ? ['bon de départ'] : []),
                 ...(rental.returnedAt ? ['procès-verbal de retour'] : []),
               ])}
@@ -591,6 +729,26 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
                   canDownload={canDownload}
                   canPrint={canPrint}
                 />
+
+                {/*
+                  UN AVENANT PAR PIÈCE — LOT 22.
+
+                  « Imprimer l'avenant n° 2 » doit désigner le n° 2 : chaque
+                  avenant a donc sa propre barre, et son propre identifiant. Les
+                  regrouper sous un seul bouton obligerait à choisir lequel, ou à
+                  produire un document qui les mélangerait.
+                */}
+                {amendments.map((amendment) => (
+                  <RentalDocument
+                    key={amendment.id}
+                    type="avenants"
+                    id={amendment.id}
+                    title={`Avenant n° ${amendment.sequenceNo} — ${AMENDMENT_KIND_LABELS[amendment.kind]}`}
+                    label={`avenant ${amendment.amendmentNo}`}
+                    canDownload={canDownload}
+                    canPrint={canPrint}
+                  />
+                ))}
 
                 {rental.startedAt && (
                   <RentalDocument

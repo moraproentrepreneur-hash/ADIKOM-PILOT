@@ -78,12 +78,12 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-042 | Ajustements fonctionnels et UX du SaaS | Arbitrages ADIKOM, capacités et sécurité | Appliquée — **révise DEC-032 et le retrait de la migration 037** | 2026-09-08 |
 | DEC-043 | Historisation des prix — doctrine D16 — LOT 20 | Renversement du Plan 01, capacités et confidentialité | Appliquée — **ouvre le Module 10** | 2026-09-14 |
 | DEC-044 | Coût d'acquisition des véhicules et confidentialité — LOT 21 | Capacités, table séparée, **P-2 laissée ouverte**, §5.7 écarté | Appliquée — **complète le Module 05** | 2026-09-14 |
-| DEC-045 | *Avenant de location* | *Réservée au Plan 02 §7.3 — LOT 22* | **Non consignée** | — |
+| DEC-045 | Avenants, segments de location et remplacement de véhicule — LOT 22 | Une capacité, trois tables, **coût gelé par période**, A-7 non tranchée | Appliquée — **le contrat ne change plus d'identité** | 2026-09-18 |
 | DEC-046 | Réinitialisation du mot de passe — LOT 19 | Capacité indépendante, garde en base, trois refus | Appliquée — **complète le Module 08** | 2026-09-12 |
 
-> **DEC-045 est réservée, pas oubliée.** Le Plan 02 lui a assigné un objet ; le
-> lot qui la porte n'a pas encore été développé. Son numéro ne doit pas être
-> réemployé.
+> **DEC-045 a été consignée le 18 septembre 2026.** Le Plan 02 lui avait assigné
+> son objet — l'avenant de location — et le LOT 22 l'a livré. La réservation
+> est donc levée, et le numéro conserve l'objet qui lui avait été promis.
 
 ---
 
@@ -4942,6 +4942,204 @@ La date d'effet par défaut des résolveurs s'écrit
 `(now() at time zone 'Indian/Comoro')::date`, jamais `current_date`. Et la date
 d'effet d'une opération est **sa date métier** — le départ d'un contrat, non le
 jour de la consultation (Plan 02 §5.6, DEC-025 §e).
+
+
+---
+
+# DEC-045 — Avenants, segments de location et remplacement de véhicule (LOT 22)
+
+| | |
+| --- | --- |
+| Date | 18 septembre 2026 |
+| Origine | Décisions de la Direction du 11/09/2026 — **A-3**, **A-4**, **A-5**, **A-7**, **A-14** |
+| Nature | Structures nouvelles, **une** capacité nouvelle, une capacité dormante enfin employée |
+| Portée | Module 05 · Gestion de location — Locations → Chronologie |
+| Réemploie | **D13** (copie du prix), **D16** (DEC-043), le résolveur du coût (DEC-044) |
+| Ferme | L'écart nommé par **DEC-044 §i** : le coût d'un contrat engagé est désormais **gelé** |
+
+## a. Ce que la Direction a décidé, et ce que le lot en fait
+
+🟩 **A-4 — « On garde le même contrat et on rajoute des avenants. »**
+
+C'est la règle centrale du lot, et elle est tenue à la lettre : un remplacement
+de véhicule **ne crée aucun contrat**. L'identifiant, le client, la réservation
+d'origine et le tarif initialement verrouillé ne bougent pas. Ce qui change est
+consigné par un **avenant** ; ce qui en résulte vit dans un **segment**.
+
+```
+rental_amendments        L'ACTE   — n°, nature, date d'effet, motif, auteur
+      │
+      └──▶ rental_segments        LA CONSÉQUENCE — véhicule, période, tarif
+                  │
+                  └──▶ rental_segment_costs   LE COÛT GELÉ — confidentiel
+```
+
+🟩 **A-5 — « Généralement le client paie le nouveau tarif, toutefois des
+situations peuvent se présenter autrement et on les gère selon le contexte. »**
+
+Les deux cas existent, et le second n'est jamais silencieux :
+
+| Cas | Ce que le système fait | Ce qu'il exige |
+| --- | --- | --- |
+| **Ordinaire** | Le tarif du nouveau véhicule est **résolu** par `resolve_pricing_rule` | Rien de plus |
+| **Exception** | Le montant est **imposé**, et le segment porte la source `OVERRIDE` | `rental.pricing.override` **+ une raison écrite**, journalisée sous `PRICE_CHANGE` |
+
+« Généralement » n'est donc pas devenu une règle absolue, et une dérogation ne
+peut pas se glisser sans que quelqu'un l'ait décidée et dite.
+
+🟩 **A-3 — « Même modèle de tarification que chez les fournisseurs car on
+considère que ADIKOM est un fournisseur. »**
+
+La décision est appliquée **là où elle porte** : le coût d'un segment se résout
+et se gèle par **un seul mécanisme**, quel que soit le véhicule. Aucun second
+système n'a été créé pour les véhicules ADIKOM, aucune fiche fournisseur
+« ADIKOM » n'existe, et `vehicles_origin_attachment_coherent` est intacte.
+
+Ce que la décision **ne dit toujours pas** — ce qu'EST ce coût interne — reste
+ouvert (**P-2**, voir §h). Tant qu'elle ne l'écrit pas, un véhicule ADIKOM n'a
+aucun coût enregistrable : son segment n'a pas de coût gelé, sa commission n'est
+**pas calculée**, et l'écran dit pourquoi.
+
+🟩 **A-7 — le changement de tarif en cours de contrat.**
+
+Le LOT 22 livre **le moyen**, pas le barème. Un changement de tarif se
+représente — un avenant, une date d'effet, un montant, une raison —, il
+s'historise et il s'audite. **Aucune pénalité n'est calculée** : ni la base du
+pourcentage, ni le taux, ni la nature de la majoration ne sont écrits. Aucun
+champ de pourcentage n'existe, aucune capacité de pénalité n'est créée.
+
+🟩 **A-14 — permissions indépendantes par action.** `rental.rentals.swap`
+n'ouvre pas `rental.pricing.override`, et réciproquement. Un avenant qui change
+de véhicule **et** déroge au barème exige les **deux**.
+
+## b. Trois mots, trois choses, jamais confondues
+
+| Nom | Ce que c'est | Ce que ce n'est pas |
+| --- | --- | --- |
+| **Contrat** | Ce qui lie ADIKOM au client | Il ne se dédouble jamais |
+| **Avenant** | L'**acte** qui consigne un changement | Il ne se réécrit pas |
+| **Segment** | La **conséquence** : un véhicule, une période, un tarif | Ce n'est pas un contrat |
+
+## c. La convention temporelle, arrêtée et écrite
+
+Les périodes sont des `tstzrange` **semi-ouverts** `[début, fin)` — la borne
+basse est incluse, la borne haute exclue. C'est déjà la convention de
+`vehicle_occupations` et de `rentals.planned_period` ; les segments l'adoptent,
+et la bascule cesse d'être ambiguë :
+
+```
+Véhicule A   [ 01/09 00:00 , 05/09 08:00 )     05/09 08:00 n'en fait PAS partie
+Véhicule B   [ 05/09 08:00 , 10/09 00:00 )     05/09 08:00 lui appartient
+```
+
+**L'instant de bascule appartient au nouveau segment, et à lui seul.** Aucune
+journée n'est comptée deux fois, aucune ne manque.
+
+## d. Ce que la base garantit seule
+
+| Garantie | Comment |
+| --- | --- |
+| Deux périodes d'un contrat **ne se recouvrent pas** | Contrainte d'exclusion `gist (rental_id, period)` |
+| Un contrat n'a **qu'une** période ouverte | Index unique partiel sur `status = 'ACTIVE'` |
+| **Aucun trou** : le contrat n'est jamais sans véhicule | Contrôle de contiguïté dans la garde |
+| Un véhicule n'est pas engagé **deux fois** | `vehicle_occupations`, contrainte d'exclusion existante |
+| Un segment **ne réécrit** ni son véhicule, ni son tarif, ni son début | `fn_rental_segment_guard` |
+| Un avenant **ne se modifie pas** | Le droit `UPDATE` lui-même est retiré |
+| Le véhicule d'une location ne se change **que** par avenant | `fn_rental_vehicle_follows_segment` — sur la donnée, sans contexte de session |
+
+## e. Le coût gelé — l'écart de DEC-044 §i, fermé
+
+> « Une version ouverte délibérément à une date d'effet passée modifie la
+> commission affichée des contrats de cette période. Le verrouillage du coût sur
+> le segment fermera ce dernier écart au LOT 22. »
+
+C'est fait. **À l'ouverture d'un segment — donc à l'engagement, et jamais
+avant** — le coût applicable à la **date métier du segment** est résolu une fois
+puis gelé. Une version de tarif fournisseur ouverte plus tard à une date d'effet
+passée ne le déplace plus.
+
+| Ce qui reste corrigible | Ce qui ne l'est plus |
+| --- | --- |
+| Les **versions** de tarif fournisseur : elles se closent, s'ouvrent, se retirent | Le **coût gelé** d'un segment : ni modifié, ni supprimé |
+| Elles gouvernent les segments **à venir** | Elles n'atteignent plus ceux qui sont **engagés** |
+
+**Le gel n'est pas un acte : c'est une conséquence.** L'exploitant qui remplace
+un véhicule n'a pas — et ne doit pas avoir — la capacité de lire le coût
+fournisseur. Si le gel dépendait de ce qu'il peut lire, le coût serait perdu
+chaque fois qu'il agit. Il est donc écrit par la base, et l'auteur du segment
+n'en lit rien.
+
+## f. Pourquoi TROIS tables là où le Plan 02 en annonçait deux
+
+Le plan prévoyait `rental_amendments` et `rental_segments`, le coût vivant en
+colonnes `locked_cost_*` sur le segment. Il y en a trois, pour la raison même qui
+avait commandé la table séparée du LOT 21 :
+
+> **RLS filtre des LIGNES, pas des COLONNES.**
+
+`rental_segments` s'ouvre par `rental.rentals.view` — il **faut** qu'un
+exploitant voie quel véhicule a servi et quand. Un coût rangé sur le segment
+serait rendu par le même `select`, et la confidentialité du coût d'acquisition
+serait contournée **par la porte du contrat**.
+
+## g. Une seule capacité nouvelle
+
+| Code | Action | Sensible | Ce qu'elle ouvre |
+| --- | --- | :-: | --- |
+| `rental.rentals.swap` | UPDATE | ✓ | Remplacer le véhicule d'une location par avenant |
+
+Et **une capacité dormante trouve enfin son emploi** : `rental.pricing.override`
+— « Forcer un tarif manuellement » — était au catalogue depuis le premier jour
+et n'ouvrait rien (Plan 02 §1.4). Elle gouverne désormais la dérogation
+tarifaire. **Aucune capacité nouvelle n'a été créée pour A-5** : le catalogue se
+corrige au lieu de s'allonger.
+
+**Ce qui n'a pas été créé, et pourquoi** : aucune capacité de consultation des
+avenants — ils sont l'histoire du contrat, que `rental.rentals.view` ouvre déjà,
+et une permission qui ne ferme qu'un onglet n'en est pas une (DEC-036 §d) ;
+aucune capacité documentaire propre — l'avenant est le **quatrième** document du
+cycle, sous `rental.rentals.download` et `.print` ; aucune capacité de pénalité —
+la fonctionnalité n'existe pas.
+
+Catalogue : **195 → 196**.
+
+## h. Ce que cette décision NE tranche PAS
+
+🟥 **P-2 — le coût interne d'un véhicule ADIKOM.** A-3 dit « ADIKOM est un
+fournisseur » ; elle ne dit pas si ce coût est un **tarif de référence fixé** ou
+un **coût de revient calculé**. Le second reste impossible — aucune charge n'est
+enregistrée par véhicule. Le point demeure ouvert, et le refus le nomme.
+
+🟥 **Le véhicule de partenariat.** Aucune décision n'existe sur ses conditions
+financières. Son segment n'a pas de coût gelé, sa commission n'est pas calculée,
+et l'écran le dit pour cette raison-là, distincte de P-2.
+
+🟥 **A-7 — les pénalités.** Voir §a. Le modèle est prêt ; le barème n'est pas
+écrit, et il ne s'invente pas.
+
+🟥 **Plan 02 §5.7** reste écarté : `pricing_rules` n'est pas touchée, **DEC-002**
+reste en vigueur, et `supabase/tests/location.sql` se rejoue sans modification.
+
+## i. Ce que la reprise des locations existantes a fait, et n'a pas fait
+
+Chaque location du système a reçu **exactement une** période, dont le tarif
+verrouillé est une **copie** de celui du contrat — aucune valeur n'a été
+recalculée. La période retenue est celle que le calendrier tenait déjà pour
+l'engagement du contrat.
+
+**Un point s'écarte du Plan 02 §19.2, et il est assumé** : le plan écrivait
+`locked_cost_* = NULL`, « aucun coût n'existait alors ». Ce n'est plus vrai — le
+LOT 21 a livré des coûts **datés**. Le gel interroge le résolveur **à la date du
+segment**, non à celle d'aujourd'hui : le coût gelé d'une location d'août est
+celui d'août, c'est-à-dire exactement le montant que sa fiche affichait déjà.
+Rien n'est réinterprété ; ce qui était affiché est désormais **protégé**.
+
+## j. Le jour est comorien, pas UTC
+
+La date métier d'un segment s'écrit `(lower(period) at time zone
+'Indian/Comoro')::date`. Entre 21 h et minuit, `current_date` désignerait la
+veille à Moroni, et un remplacement du soir résoudrait le coût de la veille
+(DEC-025 §e).
 
 ---
 

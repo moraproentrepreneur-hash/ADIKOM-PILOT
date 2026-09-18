@@ -261,18 +261,43 @@ async function main() {
   await purge(admin, 'vehicle_incidents', (q) => q.in('id', safe(incidents)), 'incidents')
 
   /* --- Cycle de location ---------------------------------------------------- */
+  /*
+   * LE COÛT GELÉ D'ABORD — LOT 22.
+   *
+   * Il désigne son segment, son fournisseur et sa version de tarif. Le laisser
+   * ici bloquerait à la fois le retrait des segments et celui des fournisseurs de
+   * démonstration, et le jeu resterait à moitié retiré.
+   */
+  await purge(admin, 'rental_segment_costs',
+    (q) => q.in('rental_id', safe(rentals)), 'coûts gelés des périodes')
+
   //
   // L'OCCUPATION SE RETIRE PAR SON ORIGINE, JAMAIS PAR SON VÉHICULE.
   //
   // Un véhicule de démonstration peut porter l'engagement d'une location
   // RÉELLE : filtrer par véhicule retirerait cet engagement et laisserait la
   // location sans occupation — un véhicule libre pendant qu'il est loué.
+  //
+  // Elle passe AVANT les segments depuis le LOT 22 : elle les désigne.
   const occupationSources = [...reservations, ...rentals, ...maintenances]
   await purge(admin, 'vehicle_occupations',
     (q) => q.in('source_id', safe(occupationSources)), 'occupations')
   await purge(admin, 'rental_inspection_photos',
     (q) => q.in('inspection_id', safe(inspections)), 'photos d’état des lieux')
   await purge(admin, 'rental_inspections', (q) => q.in('id', safe(inspections)), 'états des lieux')
+
+  /*
+   * LES SEGMENTS AVANT LES AVENANTS — LOT 22.
+   *
+   * Un segment nomme l'avenant qui l'a ouvert (`on delete restrict`) : retirer
+   * l'avenant d'abord échouerait. Et les deux passent avant la location, qu'ils
+   * désignent tous les deux.
+   */
+  await purge(admin, 'rental_segments',
+    (q) => q.in('rental_id', safe(rentals)), 'périodes de location')
+  await purge(admin, 'rental_amendments',
+    (q) => q.in('rental_id', safe(rentals)), 'avenants')
+
   await purge(admin, 'rentals', (q) => q.in('id', safe(rentals)), 'locations')
   await purge(admin, 'reservations', (q) => q.in('id', safe(reservations)), 'réservations')
 

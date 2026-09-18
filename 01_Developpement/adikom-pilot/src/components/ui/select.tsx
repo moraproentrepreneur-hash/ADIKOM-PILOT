@@ -441,10 +441,23 @@ export function Select({
         l'ordre de tabulation — mais bien présent : c'est lui que le formulaire
         envoie, lui que `#identifiant` désigne, lui que `onChange` rapporte.
       */}
+      {/*
+        `id` AVANT `{...props}`, comme `Input` et `Textarea` — LOT 22.
+
+        Il valait `name` quoi qu'on demande, et un `id` explicite était ignoré en
+        silence. Deux formulaires portant un champ de même nom sur une même page
+        produisaient alors DEUX contrôles du même identifiant, et le `<label>` du
+        second désignait le premier. Le défaut ne se voyait qu'au clic sur un
+        libellé — ou dans une recette qui cherchait l'identifiant qu'elle avait
+        demandé, et ne le trouvait pas.
+
+        `name` reste le défaut : les formulaires qui n'en passent pas continuent
+        de s'écrire `#monChamp`.
+      */}
       <select
+        id={name}
         {...props}
         ref={selectRef}
-        id={name}
         name={name}
         tabIndex={-1}
         aria-hidden

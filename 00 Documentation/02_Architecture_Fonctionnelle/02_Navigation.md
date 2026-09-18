@@ -1542,3 +1542,59 @@ L’entrée \*\*disparaît entièrement\*\* pour qui ne détient pas la capacit�
 
 
 Le \*\*coût d’acquisition d’un véhicule\*\* se lit également sur sa fiche, onglet \*\*« Coût fournisseur »\*\*, et sur le \*\*contrat de location\*\*, carte \*\*« Commission de location »\*\*. Ces deux surfaces exigent la même capacité, et disparaissent sans elle.
+
+
+
+\## Addendum — 18 septembre 2026 · Chronologie d’un contrat (DEC-045, LOT 22)
+
+
+
+\*\*Aucune entrée n’est ajoutée à la barre latérale.\*\*
+
+
+
+Les avenants et les périodes d’une location ne sont pas un menu : ils sont \*\*l’histoire d’un contrat\*\*. Ils se lisent là où ce contrat se lit — sur sa fiche, dans un onglet \*\*« Chronologie »\*\* placé juste après « Informations ».
+
+
+
+\- \*\*Chronologie\*\* → `/location/locations/{id}?onglet=chronologie` — permission `rental.rentals.view`
+
+
+
+\*\*Pourquoi cet onglet est toujours présent\*\*
+
+
+
+Même un contrat qui n’a jamais changé de véhicule a une période. Montrer l’onglet apprend au lecteur que cette lecture existe ; ne l’afficher qu’à partir du deuxième véhicule en ferait une surprise, le jour où l’on en a le plus besoin.
+
+
+
+\*\*Ce que l’onglet ouvre, et sous quelle capacité\*\*
+
+
+
+| Ce qui s’y lit | Capacité |
+
+| --- | --- |
+
+| Les périodes, leurs véhicules, leurs dates | `rental.rentals.view` |
+
+| Le tarif client de chaque période | `rental.rentals.financial.view` |
+
+| Le coût gelé et la commission de chaque période | `rental.pricing.supplier.view` |
+
+| Le bouton \*\*« Remplacer le véhicule »\*\* | `rental.rentals.swap` |
+
+| Le bouton \*\*« Changer le tarif »\*\* | `rental.pricing.override` |
+
+
+
+Chaque bloc \*\*disparaît entièrement\*\* sans sa capacité : aucun bouton désactivé, aucune carte vide qui se lirait « il n’y a rien ».
+
+
+
+\*\*Un quatrième document du cycle\*\*
+
+
+
+L’\*\*avenant\*\* rejoint le contrat, le bon de départ et le procès-verbal de retour sur la carte « Documents » de la fiche. Chaque avenant a sa propre pièce — « imprimer l’avenant n° 2 » désigne le n° 2 — et tous relèvent des capacités documentaires déjà existantes de la location.

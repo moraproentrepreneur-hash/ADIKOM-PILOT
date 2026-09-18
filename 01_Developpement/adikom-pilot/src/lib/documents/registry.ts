@@ -29,7 +29,15 @@ import {
   RentalContractDocument,
   ReturnReportDocument,
 } from '@/features/rentals/documents/rental-documents'
+import type { ContractPeriod } from '@/features/rentals/documents/rental-blocks'
 import { getRentalDetail, listInspections } from '@/features/rentals/data'
+import { RentalAmendmentDocument } from '@/features/amendments/documents/rental-amendment'
+import { SEGMENT_STATUS_LABELS } from '@/features/amendments/constants'
+import {
+  getAmendmentRentalId,
+  getRentalAmendment,
+  listRentalSegments,
+} from '@/features/amendments/data'
 import { ReservationConfirmationDocument } from '@/features/reservations/documents/reservation-confirmation'
 import { getReservationDetail } from '@/features/reservations/data'
 import { CustomerInvoiceDocument } from '@/features/customer-invoices/documents/customer-invoice'
@@ -127,6 +135,7 @@ function rentalDocument(
     vehicle: Awaited<ReturnType<typeof getVehicleDetail>>
     inspections: Awaited<ReturnType<typeof listInspections>>
     showAmounts: boolean
+    periods?: ContractPeriod[]
     issuedOn: string
   }) => ReactElement<DocumentProps>
 ): DocumentDefinition {
@@ -147,10 +156,13 @@ function rentalDocument(
         can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
       ])
 
-      const [client, vehicle, inspections, identity] = await Promise.all([
+      const [client, vehicle, inspections, segments, identity] = await Promise.all([
         mayReadClient ? getClientDetail(rental.clientId) : Promise.resolve(null),
         mayReadFleet ? getVehicleDetail(rental.vehicleId) : Promise.resolve(null),
         listInspections(id),
+        // LOT 22 : les périodes successives du contrat. Elles se lisent avec
+        // `rental.rentals.view`, comme le reste du contrat.
+        listRentalSegments(id),
         getDocumentIdentity(),
       ])
 
@@ -162,12 +174,33 @@ function rentalDocument(
           vehicle,
           inspections,
           showAmounts,
+          periods: segments.map(toContractPeriod),
           issuedOn: issuedOnLabel(),
         }),
         reference: rental.rentalNo,
         label,
       }
     },
+  }
+}
+
+/**
+ * Un segment de location, réduit à ce qu'un document client peut montrer.
+ *
+ * 🟥 LA CONVERSION EST LA BARRIÈRE. `RentalSegment` porte un coût gelé, qui est
+ * confidentiel (A-2). `ContractPeriod` ne le porte pas : un modèle documentaire
+ * ne peut donc pas le révéler, même par inadvertance, même pour un Super Admin
+ * (Plan 02 §6.3, barrière n° 3).
+ */
+function toContractPeriod(segment: Awaited<ReturnType<typeof listRentalSegments>>[number]): ContractPeriod {
+  return {
+    sequenceNo: segment.sequenceNo,
+    vehicleLabel: segment.vehicleLabel,
+    from: segment.from,
+    to: segment.to,
+    amount: segment.lockedAmount,
+    unit: segment.lockedUnit,
+    statusLabel: SEGMENT_STATUS_LABELS[segment.status],
   }
 }
 
@@ -326,16 +359,81 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
 
   /* ------------------------------------------------------------ Location -- */
   //
-  // TROIS DOCUMENTS, UNE SEULE LOCATION.
+  // QUATRE DOCUMENTS, UNE SEULE LOCATION.
   //
-  // Le registre est indexé par TYPE, pas par entité : trois entrées pointent
-  // le même contrat et produisent trois pièces différentes. Elles partagent
+  // Le registre est indexé par TYPE, pas par entité : quatre entrées pointent
+  // le même contrat et produisent quatre pièces différentes. Elles partagent
   // les mêmes permissions — voir, télécharger, imprimer une location — parce
   // qu'aucune ne constitue une capacité que l'administrateur aurait à
-  // attribuer séparément des deux autres.
+  // attribuer séparément des autres (Plan 02 §10.3).
   contrats: rentalDocument('Contrat-location', RentalContractDocument),
   departs: rentalDocument('Bon-depart', DepartureReportDocument),
   retours: rentalDocument('PV-retour', ReturnReportDocument),
+
+  /*
+   * AVENANT AU CONTRAT — LOT 22 (DEC-045), la quatrième pièce du cycle.
+   *
+   * 🟩 A-4 : « On garde le même contrat et on rajoute des avenants. » Un avenant
+   * est une pièce CONTRACTUELLE : le client doit pouvoir la recevoir, signée, avec
+   * l'avant et l'après du véhicule et du tarif.
+   *
+   * L'IDENTIFIANT EST CELUI DE L'AVENANT, non celui de la location : un contrat
+   * peut en porter plusieurs, et « imprimer l'avenant n° 2 » doit désigner le
+   * n° 2. Le contrat et ses périodes sont chargés à partir de lui.
+   *
+   * AUCUNE CAPACITÉ DOCUMENTAIRE NOUVELLE. `rental.rentals.download` et
+   * `rental.rentals.print` gouvernent déjà les trois autres pièces du même cycle :
+   * une quatrième capacité ne fermerait rien qu'elles n'aient déjà fermé
+   * (CLAUDE.md §19 bis).
+   *
+   * 🟥 AUCUN COÛT, AUCUNE COMMISSION n'entre dans ce modèle — troisième barrière
+   * du Plan 02 §6.3, vérifiée structurellement par `document.test.ts`.
+   */
+  avenants: {
+    entityType: 'rental_amendments',
+    moduleCode: 'rental',
+    viewPermission: PERMISSIONS.RENTALS_VIEW,
+    downloadPermission: PERMISSIONS.RENTALS_DOWNLOAD,
+    printPermission: PERMISSIONS.RENTALS_PRINT,
+
+    async build(id) {
+      const amendment = await getRentalAmendment(id)
+      if (!amendment) return null
+
+      const rentalId = await getAmendmentRentalId(id)
+      if (!rentalId) return null
+
+      const rental = await getRentalDetail(rentalId)
+      if (!rental) return null
+
+      const [mayReadClient, showAmounts] = await Promise.all([
+        can(PERMISSIONS.CLIENTS_VIEW),
+        can(PERMISSIONS.RENTALS_FINANCIAL_VIEW),
+      ])
+
+      const [client, segments, identity] = await Promise.all([
+        mayReadClient ? getClientDetail(rental.clientId) : Promise.resolve(null),
+        listRentalSegments(rentalId),
+        getDocumentIdentity(),
+      ])
+
+      return {
+        element: RentalAmendmentDocument({
+          identity,
+          rental,
+          amendment,
+          periods: segments.map(toContractPeriod),
+          openedSequenceNo:
+            segments.find((segment) => segment.amendmentId === amendment.id)?.sequenceNo ?? null,
+          client,
+          showAmounts,
+          issuedOn: issuedOnLabel(),
+        }),
+        reference: amendment.amendmentNo,
+        label: 'Avenant-location',
+      }
+    },
+  },
 
   /* -------------------------------------------------------- Réservation -- */
   //

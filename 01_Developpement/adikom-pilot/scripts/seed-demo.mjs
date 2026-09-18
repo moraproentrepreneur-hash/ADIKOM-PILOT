@@ -1032,6 +1032,39 @@ const RESERVATIONS = [
     from: -9, to: -3, confirm: true, convert: true, start: -9,
     conditions: 'Location dont le retour est attendu — retard à signaler.',
   },
+  /*
+   * 🟩 LE CAS DE LA DIRECTION — A-4 et A-5, LOT 22.
+   *
+   * « On garde le même contrat et on rajoute des avenants. »
+   *
+   *   VEHICULE DEMO 02   J-40 → J-35   40 000 KMF/jour   coût 30 000 → commission 10 000
+   *   panne au J-35, avenant, remplacement
+   *   VEHICULE DEMO 07   J-35 → J-30   55 000 KMF/jour   véhicule de partenariat
+   *
+   * UN SEUL CONTRAT, DEUX PÉRIODES, UN AVENANT. Le client paie le NOUVEAU tarif
+   * — le cas ordinaire de A-5 — et l'écart 40 000 → 55 000 se lit sur la
+   * chronologie sans qu'on ait à le calculer.
+   *
+   * ET LE SECOND SEGMENT MONTRE L'HONNÊTETÉ DU SYSTÈME : le véhicule de
+   * remplacement relève d'un PARTENARIAT, dont les conditions financières ne sont
+   * arrêtées par aucune décision. Son coût est donc ABSENT, sa commission NON
+   * CALCULÉE, et l'écran dit pourquoi. Un jeu de démonstration ne tranche pas ce
+   * que la Direction n'a pas tranché — il montre la question.
+   *
+   * La fenêtre J-40 → J-30 est antérieure à toutes les autres : aucun des deux
+   * véhicules n'y est engagé, et la contrainte d'exclusion n'a rien à refuser.
+   */
+  {
+    code: 'R7', clientName: 'CLIENT DEMO 05', vehicleModel: 'VEHICULE DEMO 02',
+    from: -40, to: -30, confirm: true, convert: true, start: -40, return: -30,
+    conditions: 'Location avec remplacement de véhicule en cours de contrat.',
+    swap: {
+      offset: -35,
+      vehicleModel: 'VEHICULE DEMO 07',
+      reason: 'Panne immobilisante du véhicule initial — remplacement immédiat.',
+      notes: 'Le client a été livré sur place ; aucune interruption de mise à disposition.',
+    },
+  },
 ]
 
 async function seedRentalCycle(admin, ids) {
@@ -1114,6 +1147,32 @@ async function seedRentalCycle(admin, ids) {
       p_preexisting_damages: 'Rayure légère sur le pare-chocs arrière.',
       p_observations: 'Départ de démonstration.',
     }, `départ ${item.code}`)
+
+    /*
+     * LE REMPLACEMENT DE VÉHICULE — LOT 22, A-4.
+     *
+     * Il passe par la FONCTION, jamais par un `insert` : elle clôt le segment
+     * sortant, ouvre le segment entrant, déplace l'engagement du calendrier et
+     * gèle le coût applicable — six écritures indivisibles. Un `insert` direct
+     * produirait un contrat incohérent, et la base le refuserait.
+     *
+     * AUCUN TARIF N'EST FORCÉ : `p_amount` reste nul, donc le client paie le
+     * tarif du nouveau véhicule, résolu par le barème (A-5, cas ordinaire). La
+     * dérogation est un acte à part, éprouvé par la recette sur son propre décor.
+     */
+    if (item.swap) {
+      await rpc(admin, 'replace_rental_vehicle', {
+        p_rental_id: rentalId,
+        p_new_vehicle_id: ids.vehicles[item.swap.vehicleModel],
+        p_effective_at: `${dayOffset(item.swap.offset)}T09:30:00+03:00`,
+        p_reason: item.swap.reason,
+        p_amount: null,
+        p_unit: null,
+        p_rate_reason: null,
+        p_notes: item.swap.notes ?? null,
+      }, `remplacement de véhicule ${item.code}`)
+      created += 1
+    }
 
     if (item.return === undefined) continue
 

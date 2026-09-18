@@ -2,7 +2,7 @@ import 'server-only'
 
 import { Text, View } from '@react-pdf/renderer'
 
-import { Field, FieldColumns, Note, Section } from '@/lib/documents/blocks'
+import { DataTable, Field, FieldColumns, Note, Section } from '@/lib/documents/blocks'
 import { formatDate, formatDateTime } from '@/lib/dates'
 import { formatPrice } from '@/features/pricing/constants'
 import { SOURCE_LABELS, type PricingSource } from '@/features/pricing/constants'
@@ -107,6 +107,84 @@ export function VehicleSection({ rental, vehicle }: Pick<RentalDocumentParts, 'r
       />
       <Text style={{ fontSize: 7.5, color: '#6b7280', marginTop: 4 }}>
         Rattaché à la location {rental.rentalNo}
+      </Text>
+    </Section>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Les périodes d'un contrat segmenté — LOT 22                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * CE QU'UN DOCUMENT CLIENT PEUT MONTRER D'UNE PÉRIODE — et rien de plus.
+ *
+ * Un segment de location porte AUSSI un coût gelé, et ce coût est confidentiel
+ * (A-2, LOT 21). Plutôt que de passer aux modèles documentaires le segment
+ * entier en comptant sur eux pour ne pas l'imprimer, LE TYPE LUI-MÊME ÉCARTE LA
+ * COLONNE : un modèle ne peut pas révéler ce qu'il ne reçoit pas.
+ *
+ * C'est la troisième barrière du Plan 02 §6.3, portée par le typage plutôt que
+ * par la vigilance — la seule qui tienne quand le demandeur DÉTIENT la capacité
+ * de lire le coût.
+ */
+export type ContractPeriod = {
+  sequenceNo: number
+  /** `null` sans `rental.fleet.view` : « non communiqué », jamais un tiret. */
+  vehicleLabel: string | null
+  from: string
+  to: string
+  amount: number
+  unit: 'DAY' | 'FLAT'
+  statusLabel: string
+}
+
+/**
+ * Les périodes successives d'un contrat, lorsqu'il en a plus d'une.
+ *
+ * 🟩 A-4 : le contrat reste le même ; ce sont ses périodes qui se succèdent. Un
+ * contrat qui n'a jamais changé de véhicule n'a rien à gagner de ce tableau —
+ * son véhicule et sa période figurent déjà plus haut — et la section disparaît.
+ */
+export function PeriodsSection({
+  periods,
+  showAmounts,
+}: {
+  periods: ContractPeriod[]
+  showAmounts: boolean
+}) {
+  if (periods.length <= 1) return null
+
+  return (
+    <Section title="Véhicules et périodes successives">
+      <DataTable
+        columns={[
+          { header: 'N°', width: '8%', cell: (row: ContractPeriod) => String(row.sequenceNo) },
+          {
+            header: 'Véhicule',
+            width: showAmounts ? '37%' : '52%',
+            cell: (row: ContractPeriod) => row.vehicleLabel ?? 'Non communiqué',
+          },
+          { header: 'Du', width: '20%', cell: (row: ContractPeriod) => formatDate(row.from) ?? '—' },
+          { header: 'Au', width: '20%', cell: (row: ContractPeriod) => formatDate(row.to) ?? '—' },
+          ...(showAmounts
+            ? [
+                {
+                  header: 'Tarif',
+                  width: '15%',
+                  align: 'right' as const,
+                  cell: (row: ContractPeriod) => formatPrice(row.amount, row.unit),
+                },
+              ]
+            : []),
+        ]}
+        rows={periods}
+        emptyLabel="Aucune période enregistrée."
+      />
+      <Text style={{ fontSize: 7.5, color: '#6b7280', marginTop: 4 }}>
+        Chaque changement de véhicule ou de tarif a fait l’objet d’un avenant au présent contrat,
+        qui n’a pas été remplacé. La date de fin d’une période est l’instant où la suivante
+        commence : elle n’est pas comptée deux fois.
       </Text>
     </Section>
   )

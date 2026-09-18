@@ -14,9 +14,11 @@ import {
   OmissionNote,
   PartiesSection,
   PeriodSection,
+  PeriodsSection,
   PricingSection,
   SignatureBlock,
   VehicleSection,
+  type ContractPeriod,
 } from './rental-blocks'
 
 /**
@@ -58,6 +60,14 @@ export type RentalDocumentProps = {
   inspections: Inspection[]
   /** Faux sans `rental.rentals.financial.view` : aucun montant n'est imprimé. */
   showAmounts: boolean
+  /**
+   * Les périodes successives du contrat — LOT 22.
+   *
+   * Vide ou absent pour un contrat qui n'a jamais changé de véhicule : le
+   * tableau ne s'affiche qu'à partir de deux périodes. Le type écarte le coût
+   * gelé, qui est confidentiel (voir `ContractPeriod`).
+   */
+  periods?: ContractPeriod[]
   issuedOn: string
 }
 
@@ -87,6 +97,7 @@ export function RentalContractDocument({
   client,
   vehicle,
   showAmounts,
+  periods = [],
   issuedOn,
 }: Omit<RentalDocumentProps, 'inspections'>) {
   return (
@@ -104,6 +115,14 @@ export function RentalContractDocument({
       <VehicleSection rental={rental} vehicle={vehicle} />
       <PeriodSection rental={rental} />
       <PricingSection rental={rental} showAmounts={showAmounts} />
+
+      {/*
+        LES PÉRIODES SUCCESSIVES — LOT 22, A-4.
+        Le bloc véhicule ci-dessus nomme le véhicule COURANT ; ce tableau dit ce
+        qui s'est réellement succédé. Il ne paraît qu'à partir de deux périodes :
+        pour un contrat inchangé, il répéterait ce qui précède.
+      */}
+      <PeriodsSection periods={periods} showAmounts={showAmounts} />
 
       {rental.conditions && (
         <Section title="Conditions particulières">
