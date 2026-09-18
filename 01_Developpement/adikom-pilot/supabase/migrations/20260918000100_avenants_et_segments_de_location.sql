@@ -1646,6 +1646,17 @@ comment on function public.fn_occupation_capability is
 
 -- --- La location et le parc reconnaissent le remplacement ---------------------
 
+/*
+ * ⚠ LA POLICY EST REPRISE DEPUIS SA DERNIÈRE VERSION EN VIGUEUR, NON DEPUIS
+ * CELLE DE LA MIGRATION 031.
+ *
+ * `rentals_update` a été élargie par la migration 051 (factures clients) :
+ * l'émission d'une facture fait passer la location à « Facturée », et son
+ * annulation la ramène à « À facturer ». Les deux capacités de facturation y
+ * figurent donc, et les omettre en réécrivant la policy retirerait
+ * silencieusement l'émission de facture — que la recette SQL, exécutée avec un
+ * rôle qui CONTOURNE RLS, ne verrait pas.
+ */
 drop policy if exists rentals_update on public.rentals;
 
 create policy rentals_update on public.rentals
@@ -1657,6 +1668,8 @@ create policy rentals_update on public.rentals
     or public.has_permission('rental.rentals.return')
     or public.has_permission('rental.rentals.close')
     or public.has_permission('rental.rentals.cancel')
+    or public.has_permission('billing.customer_invoices.issue')
+    or public.has_permission('billing.customer_invoices.cancel')
     or public.has_permission('rental.rentals.swap')
     or public.has_permission('rental.pricing.override')
   )
@@ -1667,6 +1680,8 @@ create policy rentals_update on public.rentals
     or public.has_permission('rental.rentals.return')
     or public.has_permission('rental.rentals.close')
     or public.has_permission('rental.rentals.cancel')
+    or public.has_permission('billing.customer_invoices.issue')
+    or public.has_permission('billing.customer_invoices.cancel')
     or public.has_permission('rental.rentals.swap')
     or public.has_permission('rental.pricing.override')
   );

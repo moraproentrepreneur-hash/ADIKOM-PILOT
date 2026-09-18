@@ -38,6 +38,7 @@ import { createClient } from '@supabase/supabase-js'
 import { dayOffset, loadEnvFile, required } from './lib/env.mjs'
 import { demoFootprint } from './lib/demo.mjs'
 import { checkCatalogue } from './lib/capabilities.mjs'
+import { purgeRentalHistory } from './lib/rentals.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -1232,6 +1233,8 @@ async function main() {
       await admin.from('rental_inspection_photos').delete().eq('inspection_id', id)
       await admin.from('rental_inspections').delete().eq('rental_id', id)
       await admin.from('vehicle_occupations').delete().eq('source_id', id)
+      // LOT 22 : une location porte un avenant, des périodes et leurs coûts gelés.
+      await purgeRentalHistory(admin, [id])
       await admin.from('rentals').delete().eq('id', id)
     }
 

@@ -41,6 +41,7 @@ import { createClient } from '@supabase/supabase-js'
 import { loadEnvFile, required, dayOffset, localInput } from './lib/env.mjs'
 import { checkCatalogue } from './lib/capabilities.mjs'
 import { demoFootprint } from './lib/demo.mjs'
+import { purgeRentalHistory } from './lib/rentals.mjs'
 
 const GREEN = '\x1b[32m'
 const RED = '\x1b[31m'
@@ -1265,12 +1266,12 @@ async function purgeStrays(admin) {
   if (rentalIds.length > 0) {
     // Les enfants d'abord : coût gelé, occupations, états des lieux, périodes,
     // avenants — puis la location.
-    await admin.from('rental_segment_costs').delete().in('rental_id', rentalIds)
-    await admin.from('vehicle_occupations').delete().in('source_id', rentalIds)
-    await admin.from('rental_inspection_photos').delete().in('inspection_id', await idsOf(admin, 'rental_inspections', 'rental_id', rentalIds))
+    await admin
+      .from('rental_inspection_photos')
+      .delete()
+      .in('inspection_id', await idsOf(admin, 'rental_inspections', 'rental_id', rentalIds))
     await admin.from('rental_inspections').delete().in('rental_id', rentalIds)
-    await admin.from('rental_segments').delete().in('rental_id', rentalIds)
-    await admin.from('rental_amendments').delete().in('rental_id', rentalIds)
+    await purgeRentalHistory(admin, rentalIds)
     await admin.from('rentals').delete().in('id', rentalIds)
   }
 

@@ -222,8 +222,25 @@ try {
       admin.from('customer_invoices').select('id').limit(1).maybeSingle(),
       admin.from('supplier_invoices').select('id').limit(1).maybeSingle(),
     ])
+  /*
+   * UN ENCAISSEMENT **VALIDÉ**, et pas seulement un encaissement.
+   *
+   * La phrase éprouvée au §6 — « le compte est crédité du montant reçu » — ne
+   * s'écrit que sur un paiement VALIDÉ : un brouillon dit, à juste titre, qu'aucun
+   * fonds n'est encore au journal. Le sens était choisi, l'état ne l'était pas :
+   * la recette passait tant que le premier encaissement de la base se trouvait
+   * validé, et échouait le jour où un brouillon le précédait — pour une raison
+   * qui n'était pas un défaut du SaaS.
+   *
+   * L'état est donc exigé, et son absence se dit plutôt que de se deviner.
+   */
   const { data: misc } = await admin
-    .from('misc_payments').select('id, direction').eq('direction', 'IN').limit(1).maybeSingle()
+    .from('misc_payments')
+    .select('id, direction, status')
+    .eq('direction', 'IN')
+    .eq('status', 'VALIDATED')
+    .limit(1)
+    .maybeSingle()
 
   /* ================================================================== */
   console.log('──────────────────────────────────────────────────────────────')
@@ -376,11 +393,18 @@ try {
   console.log('\n──────────────────────────────────────────────────────────────')
   console.log('6 — LE SENS D’UN PAIEMENT DIVERS (DEC-042 §b)\n')
 
-  const miscPage = text((await get(`/facturation/paiements-divers/${misc.id}`, sessions.complet)).body)
-  check(/Encaissement/.test(miscPage), 'La fiche d’un encaissement porte son sens')
-  check(/Payeur/.test(miscPage), 'Le tiers y est un « Payeur », non un bénéficiaire')
-  check(/crédité/.test(miscPage), 'Le bandeau parle de compte CRÉDITÉ')
-  check(!/Le compte est débité/.test(miscPage), 'Et jamais de compte débité')
+  if (!misc) {
+    // Une recette qui n'a pas de sujet le DIT : elle ne se félicite pas du vide.
+    check(false, 'Un encaissement divers VALIDÉ existe pour éprouver le sens du bandeau')
+  } else {
+    const miscPage = text(
+      (await get(`/facturation/paiements-divers/${misc.id}`, sessions.complet)).body
+    )
+    check(/Encaissement/.test(miscPage), 'La fiche d’un encaissement porte son sens')
+    check(/Payeur/.test(miscPage), 'Le tiers y est un « Payeur », non un bénéficiaire')
+    check(/crédité/.test(miscPage), 'Le bandeau parle de compte CRÉDITÉ')
+    check(!/Le compte est débité/.test(miscPage), 'Et jamais de compte débité')
+  }
 
   const form = pages.get('/facturation/paiements-divers/nouveau')
   check(/Sens/.test(form), 'Le formulaire de saisie demande le sens')

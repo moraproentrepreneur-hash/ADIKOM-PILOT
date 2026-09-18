@@ -239,6 +239,66 @@ async function signIn(browser, base, account, viewport = null) {
   return { context, page }
 }
 
+/**
+ * Choisit une valeur dans un champ déroulant, et attend que son EFFET paraisse.
+ *
+ * Un `selectOption` exécuté avant l'hydratation pose la valeur sans que
+ * personne l'entende : le gestionnaire React n'existe pas encore, et le premier
+ * rendu remet ensuite le champ piloté à son défaut. Le geste est donc rejoué
+ * jusqu'à ce que la page dise ce que ce choix doit lui faire dire.
+ */
+async function selectionnerJusquA(page, selecteur, valeur, attendu, quoi, essais = 6) {
+  for (let essai = 1; essai <= essais; essai += 1) {
+    await page.selectOption(selecteur, valeur)
+
+    try {
+      await page.waitForFunction(
+        (motif) =>
+          new RegExp(motif, 'i').test(document.querySelector('main')?.innerText ?? ''),
+        attendu.source,
+        { timeout: 5000 }
+      )
+      return
+    } catch {
+      // Pas encore : la page n'a peut-être pas fini de s'hydrater.
+    }
+  }
+
+  throw new Error(
+    `${quoi} n'a pas pris effet après ${essais} tentatives : l'écran ne dit toujours pas ce que ce choix implique.`
+  )
+}
+
+/**
+ * Ouvre la liste d'un champ déroulant, et rejoue le clic tant qu'elle ne s'ouvre
+ * pas.
+ *
+ * MÊME CAUSE QUE `selectionnerJusquA` : la liste est dessinée par
+ * l'application, donc par du JavaScript. Un clic antérieur à l'hydratation
+ * n'ouvre rien, et l'attente expire sur un écran parfaitement sain. La recette
+ * insiste donc, comme le ferait un utilisateur devant une page qui n'a pas
+ * encore fini de charger.
+ */
+async function ouvrirListeJusquA(page, nom, essais = 6) {
+  const trigger = page.locator(`[data-select-for="${nom}"]`)
+  const liste = page.locator(`[data-select-list="${nom}"]`)
+
+  for (let essai = 1; essai <= essais; essai += 1) {
+    await trigger.click()
+
+    try {
+      await liste.waitFor({ state: 'visible', timeout: 4000 })
+      return liste
+    } catch {
+      // Pas encore hydratée : on recommence.
+    }
+  }
+
+  throw new Error(
+    `La liste du champ « ${nom} » ne s'ouvre pas après ${essais} tentatives.`
+  )
+}
+
 async function mainText(page) {
   return (await page.locator('main').innerText()).replace(/\s+/g, ' ')
 }
@@ -611,7 +671,29 @@ async function main() {
       const formText = await mainText(page)
       check(/Sens/.test(formText), 'Le formulaire demande le SENS du paiement')
 
-      await page.selectOption('#direction', 'IN')
+      /*
+       * LE CHOIX EST REJOUÉ JUSQU'À CE QU'IL PRENNE.
+       *
+       * Le sens choisi change les MOTS du formulaire, et ce changement passe par
+       * un gestionnaire React. Or un `selectOption` exécuté AVANT l'hydratation
+       * pose bien la valeur dans le `<select>` — mais l'événement n'atteint
+       * personne, et le premier rendu de React remet ensuite la valeur pilotée à
+       * son défaut. Le champ paraît rempli, l'écran dit le contraire, et la
+       * recette accuse le SaaS.
+       *
+       * Le défaut ne se voyait pas en local, où l'hydratation précède toujours le
+       * premier geste. Il est apparu contre la PRODUCTION, à la latence réelle.
+       * On rejoue donc le choix jusqu'à ce que son EFFET soit visible — c'est
+       * aussi ce qu'un utilisateur ferait.
+       */
+      await selectionnerJusquA(
+        page,
+        '#direction',
+        'IN',
+        /créditera le compte/i,
+        'le sens « Encaissement »'
+      )
+
       await page.selectOption('#accountId', fixtures.accountId)
       await page.selectOption('#category', 'OTHER')
       await page.fill('#amount', '75000')
@@ -764,9 +846,7 @@ async function main() {
       const trigger = page.locator('[data-select-for="category"]')
       check(await trigger.isVisible(), 'Le champ « Catégorie » affiche un déclencheur de liste')
 
-      await trigger.click()
-      const listbox = page.locator('[data-select-list="category"]')
-      await listbox.waitFor({ state: 'visible', timeout: 10000 })
+      const listbox = await ouvrirListeJusquA(page, 'category')
       check(true, 'La liste s’ouvre DANS la page, dessinée par l’application')
 
       /* --- Elle tient dans l'écran, entièrement ------------------------ */
@@ -827,10 +907,7 @@ async function main() {
       await page.goto(`${base}/location/tarification?onglet=preferentiels`, { waitUntil: 'domcontentloaded' })
       await page.goto(`${base}/facturation/paiements-divers`, { waitUntil: 'domcontentloaded' })
 
-      const filterTrigger = page.locator('[data-select-for="compte"]')
-      await filterTrigger.click()
-      const filterList = page.locator('[data-select-list="compte"]')
-      await filterList.waitFor({ state: 'visible', timeout: 10000 })
+      await ouvrirListeJusquA(page, 'compte')
 
       const truncated = await page.evaluate(() =>
         Array.from(document.querySelectorAll('[data-select-option]')).some(
