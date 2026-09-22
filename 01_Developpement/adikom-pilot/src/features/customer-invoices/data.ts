@@ -63,6 +63,14 @@ export type CustomerInvoiceListItem = CustomerInvoiceAmounts & {
   rentalId: string | null
   /** `null` sans `rental.rentals.view`, ou lorsqu'aucune location n'est visée. */
   rentalNo: string | null
+  /**
+   * Période facturable couverte — LOT 23, A-6.
+   *
+   * `null` pour une facture de location à durée fixée ou de services. Les deux
+   * régimes sont ÉTANCHES : une facture porte une période, ou couvre tout le
+   * contrat, jamais les deux (migration 094 §7).
+   */
+  billingPeriodId: string | null
 }
 
 export type CustomerInvoiceDetail = CustomerInvoiceListItem & {
@@ -87,6 +95,7 @@ export type CustomerInvoiceLine = {
 
 const BASE_SELECT = `
   id, invoice_no, status, invoice_date, due_date, client_id, rental_id,
+  billing_period_id,
   clients ( client_no, type, legal_name, trade_name, first_name ),
   rentals ( rental_no )
 `
@@ -107,6 +116,7 @@ type RawRow = {
   due_date: string | null
   client_id: string
   rental_id: string | null
+  billing_period_id: string | null
   clients?: RawClient | null
   rentals?: { rental_no: string } | null
 }
@@ -304,6 +314,7 @@ export async function listCustomerInvoices(
     // Ressource embarquée : RLS s'applique indépendamment. Sans
     // `rental.rentals.view`, la location reste inconnue et l'écran le dit.
     rentalNo: row.rentals?.rental_no ?? null,
+    billingPeriodId: row.billing_period_id,
     ...(amounts.get(row.id) ?? NO_AMOUNTS),
   }))
 
@@ -382,6 +393,7 @@ export async function getCustomerInvoiceDetail(
     clientLabel: clientLabel(row.clients),
     rentalId: row.rental_id,
     rentalNo: row.rentals?.rental_no ?? null,
+    billingPeriodId: row.billing_period_id,
     notes: row.notes,
     statusReason: row.status_reason,
     issuedAt: row.issued_at,
@@ -456,6 +468,27 @@ export async function getInvoiceForRental(
 ): Promise<CustomerInvoiceListItem | null> {
   const invoices = await listCustomerInvoices({ rentalId }, options)
   return invoices.find((invoice) => invoice.status !== 'CANCELLED') ?? null
+}
+
+/**
+ * TOUTES les factures vivantes d'une location — LOT 23.
+ *
+ * Une location de longue durée en porte PLUSIEURS : une par période facturable
+ * (A-6). `getInvoiceForRental` ci-dessus n'en rend qu'une, et c'est suffisant
+ * pour une location à durée fixée, où l'index
+ * `customer_invoices_one_per_fixed_rental_idx` garantit qu'il n'y en a jamais
+ * deux. En longue durée, ce serait une vérité partielle : le solde affiché
+ * serait celui d'un seul mois.
+ *
+ * Les factures ANNULÉES sont écartées : elles ne portent plus de créance, et
+ * leur période est redevenue facturable du seul fait de leur annulation.
+ */
+export async function listInvoicesForRental(
+  rentalId: string,
+  options: AmountOptions = { canSeePayments: false }
+): Promise<CustomerInvoiceListItem[]> {
+  const invoices = await listCustomerInvoices({ rentalId }, options)
+  return invoices.filter((invoice) => invoice.status !== 'CANCELLED')
 }
 
 /** Clients actifs, pour le filtre de la liste et le choix à la création. */

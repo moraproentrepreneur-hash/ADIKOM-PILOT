@@ -2734,3 +2734,84 @@ Le principe fondamental est :
 
 La facturation doit ainsi constituer le lien fiable entre l'activité opérationnelle d'ADIKOM et sa gestion financière.
 
+
+
+\---
+
+
+
+\# Addendum — 22 septembre 2026 · Facturation périodique d’une longue durée (DEC-047, LOT 23)
+
+
+
+\## Ce que la Direction a décidé
+
+
+
+« Chaque fin du mois, on établit une facture, toutefois le client peut exiger une facture globale de toute la période de location avec les détails et les historiques de payement. » \*\*Deux cadences validées : mensuelle, et par période définie au contrat.\*\*
+
+
+
+\## Une location peut désormais porter plusieurs factures
+
+
+
+Jusqu’au LOT 22, une location ne pouvait recevoir \*\*qu’une seule\*\* facture — §5 : la facturation suppose le retour et le contrôle. Cette règle demeure, \*\*pour les locations à durée fixée\*\*.
+
+
+
+Une location de \*\*longue durée\*\* se facture \*\*par période\*\*, en cours de contrat :
+
+
+
+\- chaque période reçoit \*\*une\*\* facture, et une seule ;
+
+\- deux factures ne peuvent jamais couvrir le même intervalle ;
+
+\- une période \*\*non échue\*\* ne se facture pas ;
+
+\- une facture de période \*\*ne fait pas passer la location « Facturée »\*\* : elle ne le devient que lorsque plus aucune période ne reste découverte.
+
+
+
+\## Ce qu’une facture de période reprend, et ce qu’elle ne calcule pas
+
+
+
+Conformément au §18 — « le système doit reprendre automatiquement les informations disponibles » — la facture reprend le client, la location, \*\*la période couverte\*\* et le \*\*prix unitaire verrouillé\*\* de chaque portion tarifaire.
+
+
+
+Conformément aux §9 et §12 — « les règles de calcul ne doivent pas être inventées par le système » —, \*\*la quantité facturée reste saisie\*\*. La règle d’arrondi de durée n’est pas arrêtée, et l’écran le dit.
+
+
+
+\## Une période peut traverser plusieurs tarifs
+
+
+
+Si un véhicule a été remplacé, ou si un tarif a changé en cours de mois, la facture de la période porte \*\*une ligne par portion\*\*, au tarif de la période qu’elle couvre. §22 est respecté sans ligne d’une nature nouvelle : ce sont les \*\*lignes de location\*\* existantes.
+
+
+
+\*\*Les tarifs ne se moyennent pas\*\*, et aucune période historique n’est réécrite pour simplifier une facture.
+
+
+
+\## La « facture globale » est un relevé
+
+
+
+Si elle était une facture, elle créerait une \*\*seconde créance\*\* sur des périodes déjà facturées : le client devrait deux fois la même chose, et le solde serait faux.
+
+
+
+Le texte le dit lui-même — « avec les détails et \*\*les historiques de payement\*\* » : une facture ne porte jamais l’historique de ses propres règlements. \*\*Ce document est un relevé récapitulatif\*\*, sans créance nouvelle. Les données sont réunies ; le document relève du lot suivant.
+
+
+
+\## La prolongation, et le calcul final
+
+
+
+§13 — « lorsqu’une prolongation a été validée, elle doit être intégrée au calcul final » — est tenu : la prolongation \*\*ouvre les périodes facturables correspondantes\*\*, sans toucher à celles qui existent déjà. Aucun intervalle du contrat ne reste hors facturation, et aucun n’est facturé deux fois.

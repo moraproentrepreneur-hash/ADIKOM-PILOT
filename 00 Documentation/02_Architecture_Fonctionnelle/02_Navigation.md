@@ -1598,3 +1598,48 @@ Chaque bloc \*\*disparaît entièrement\*\* sans sa capacité : aucun bouton dé
 
 
 L’\*\*avenant\*\* rejoint le contrat, le bon de départ et le procès-verbal de retour sur la carte « Documents » de la fiche. Chaque avenant a sa propre pièce — « imprimer l’avenant n° 2 » désigne le n° 2 — et tous relèvent des capacités documentaires déjà existantes de la location.
+
+
+\## Addendum — 22 septembre 2026 · L’onglet « Facturation » d’un contrat (DEC-047, LOT 23)
+
+
+
+\*\*Aucune entrée de menu n’est ajoutée.\*\* La facturation périodique d’un contrat n’est pas un module : c’est une lecture du contrat, et elle vit sur sa fiche.
+
+
+
+La fiche d’une location porte désormais \*\*cinq onglets\*\* : Informations, Chronologie, \*\*Facturation\*\*, États des lieux, Contrôle — et Historique pour qui peut lire le journal.
+
+
+
+\*\*L’onglet est toujours présent\*\*, comme la chronologie. Un contrat à durée fixée y lit qu’il se facture en une fois, et apprend au passage que l’autre régime existe. Ne l’afficher qu’en longue durée ferait du régime une surprise le jour où quelqu’un en a besoin.
+
+
+
+| Ce qui s’y lit | Capacité |
+
+| --- | --- |
+
+| Le régime et la cadence du contrat | `rental.rentals.view` |
+
+| Les périodes facturables, leurs dates, leur état | `rental.rentals.view` |
+
+| Le tarif de chaque portion tarifaire | `rental.rentals.financial.view` |
+
+| La facture qui couvre une période, et le lien vers elle | `billing.customer_invoices.view` |
+
+| Le formulaire \*\*« Régime de facturation »\*\* | `rental.rentals.billing.plan` |
+
+| Le bouton \*\*« Préparer la facture »\*\* d’une période échue | `billing.customer_invoices.create` |
+
+
+
+Chaque bloc \*\*disparaît entièrement\*\* sans sa capacité, et l’écran \*\*dit\*\* ce qu’il ne montre pas : sans la lecture des factures, il annonce qu’il ne peut pas les consulter plutôt que d’écrire « aucune facture ».
+
+
+
+\*\*Aucun coût fournisseur n’apparaît sur cet onglet\*\*, en aucune circonstance : une période facturable ne porte ni coût, ni commission.
+
+
+
+\*\*Aucun document nouveau.\*\* La facture d’une période est une facture client : elle se télécharge et s’imprime sous les capacités documentaires existantes de la facturation, et elle \*\*nomme la période qu’elle couvre\*\*.

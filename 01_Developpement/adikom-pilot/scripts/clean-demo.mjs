@@ -295,6 +295,18 @@ async function main() {
    */
   await purge(admin, 'rental_segments',
     (q) => q.in('rental_id', safe(rentals)), 'périodes de location')
+
+  /*
+   * LES PÉRIODES FACTURABLES AVANT LES AVENANTS — LOT 23.
+   *
+   * Une période nomme l'avenant qui l'a ouverte (`on delete restrict`) : retirer
+   * l'avenant d'abord échouerait. Et elles passent APRÈS les factures clients,
+   * qui les désignent — celles-ci sont retirées plus haut, dans le bloc
+   * Facturation.
+   */
+  await purge(admin, 'rental_billing_periods',
+    (q) => q.in('rental_id', safe(rentals)), 'périodes facturables')
+
   await purge(admin, 'rental_amendments',
     (q) => q.in('rental_id', safe(rentals)), 'avenants')
 

@@ -55,6 +55,15 @@ export type RentalListItem = {
 export type RentalDetail = RentalListItem & {
   reservationId: string | null
   reservationNo: string | null
+  /**
+   * Régime de facturation du contrat — LOT 23 (A-6).
+   *
+   * `FIXED_TERM` : une facture, à la fin. `LONG_TERM` : une facture par période
+   * facturable. La cadence n'existe QUE dans le second régime — la contrainte
+   * `rentals_billing_cadence_coherent` l'impose en base.
+   */
+  rentalType: 'FIXED_TERM' | 'LONG_TERM'
+  billingCadence: 'MONTHLY' | 'CONTRACT_TERM' | null
   lockedRuleId: string | null
   lockedSource: string | null
   lockedAt: string
@@ -233,6 +242,7 @@ export async function getRentalDetail(id: string): Promise<RentalDetail | null> 
     .select(
       `${BASE_SELECT}, reservation_id, locked_rule_id, locked_source, locked_at,
        conditions, notes, status_reason, status_changed_at, created_at, updated_at,
+       rental_type, billing_cadence,
        reservations ( reservation_no )`
     )
     .eq('id', id)
@@ -254,6 +264,8 @@ export async function getRentalDetail(id: string): Promise<RentalDetail | null> 
     status_changed_at: string | null
     created_at: string
     updated_at: string
+    rental_type: 'FIXED_TERM' | 'LONG_TERM'
+    billing_cadence: 'MONTHLY' | 'CONTRACT_TERM' | null
     reservations?: { reservation_no: string } | null
   }
 
@@ -261,6 +273,8 @@ export async function getRentalDetail(id: string): Promise<RentalDetail | null> 
     ...toListItem(row),
     reservationId: row.reservation_id,
     reservationNo: row.reservations?.reservation_no ?? null,
+    rentalType: row.rental_type,
+    billingCadence: row.billing_cadence,
     lockedRuleId: row.locked_rule_id,
     lockedSource: row.locked_source,
     lockedAt: row.locked_at,

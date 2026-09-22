@@ -80,6 +80,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-044 | Coût d'acquisition des véhicules et confidentialité — LOT 21 | Capacités, table séparée, **P-2 laissée ouverte**, §5.7 écarté | Appliquée — **complète le Module 05** | 2026-09-14 |
 | DEC-045 | Avenants, segments de location et remplacement de véhicule — LOT 22 | Une capacité, trois tables, **coût gelé par période**, A-7 non tranchée | Appliquée — **le contrat ne change plus d'identité** | 2026-09-18 |
 | DEC-046 | Réinitialisation du mot de passe — LOT 19 | Capacité indépendante, garde en base, trois refus | Appliquée — **complète le Module 08** | 2026-09-12 |
+| DEC-047 | Longue durée, prolongations et facturation périodique — LOT 23 | Une capacité, une table, **deux index disjoints**, A-7 et DEC-008 non tranchées | Appliquée — **plusieurs factures par contrat, jamais deux par période** | 2026-09-22 |
 
 > **DEC-045 a été consignée le 18 septembre 2026.** Le Plan 02 lui avait assigné
 > son objet — l'avenant de location — et le LOT 22 l'a livré. La réservation
@@ -5140,6 +5141,257 @@ La date métier d'un segment s'écrit `(lower(period) at time zone
 'Indian/Comoro')::date`. Entre 21 h et minuit, `current_date` désignerait la
 veille à Moroni, et un remplacement du soir résoudrait le coût de la veille
 (DEC-025 §e).
+
+# DEC-047 — Longue durée, prolongations et facturation périodique (LOT 23)
+
+| | |
+| --- | --- |
+| Date | 22 septembre 2026 |
+| Origine | Décisions de la Direction du 11/09/2026 — **A-4**, **A-5**, **A-6**, **A-7**, **A-14** |
+| Nature | Une structure nouvelle, **une** capacité nouvelle, un invariant d'unicité remplacé |
+| Portée | Module 05 · Gestion de location — Locations → Facturation · Module 07 · Facturation client |
+| Réemploie | **D13** (copie du prix), l'avenant (DEC-045), **toute** la chaîne de facturation du LOT 7 |
+| Laisse ouvert | 🟥 **A-7** (barème de pénalité) · 🟥 **P-2** · 🟥 **DEC-008** (durée facturable) |
+
+## a. Ce que la Direction a décidé, et ce que le lot en fait
+
+🟩 **A-6 — « Chaque fin du mois, on établit une facture, toutefois le client
+peut exiger une facture globale de toute la période de location avec les détails
+et les historiques de payement. »** Deux cases cochées : **mensuelle** et **par
+période définie au contrat**.
+
+Le lot livre **les deux cadences, et rien de plus**. Ni hebdomadaire, ni
+trimestrielle, ni « à la demande » : une valeur d'énumération qu'aucun métier ne
+réclame finirait par être employée faute de mieux.
+
+🟩 **A-4 — « On garde le même contrat et on rajoute des avenants. »** La règle
+vaut aussi pour la prolongation. Le LOT 22 l'avait explicitement refusée en
+nommant le LOT 23 ; le refus est levé ici, et remplacé par l'exigence qui lui
+correspond — `rental.rentals.extend`.
+
+🟩 **A-5 — « Généralement le client paie le nouveau tarif. »** À la prolongation,
+deux cas, et rien entre eux : le tarif est **conservé** par défaut, ou un
+**nouveau tarif** s'applique au seul temps ajouté, sous `rental.pricing.override`
+et avec sa raison écrite.
+
+🟥 **A-7 — les pénalités de 20 à 100 %.** Toujours pas tranchée. Aucun barème,
+aucun champ de pourcentage, aucune capacité de pénalité.
+
+🟩 **A-14 — permissions indépendantes par action.** `extend` n'ouvre pas
+`override`, et ni l'un ni l'autre n'ouvre le régime de facturation.
+
+## b. Deux découpages qui se croisent sans coïncider
+
+C'est le point de conception du lot.
+
+```
+SEGMENT              un véhicule, une période, UN TARIF VERROUILLÉ.
+(rental_segments)    Il se coupe quand le véhicule change ou que le tarif
+                     change. C'est L'HISTOIRE DE L'EXPLOITATION.
+
+PÉRIODE FACTURABLE   un intervalle qu'UNE facture couvre, et une seule.
+(rental_billing_…)   Elle se coupe à la FIN DU MOIS, ou aux bornes du contrat.
+                     C'est LE DÉCOUPAGE DE LA CRÉANCE.
+```
+
+Une période facturable d'octobre peut traverser deux segments — véhicule A
+jusqu'au 12, véhicule B ensuite — et sa facture porte alors **deux lignes**, une
+par portion tarifaire, au tarif verrouillé de **son** segment. Les segments
+restent la **source historique** ; la période ne les réécrit jamais, et les
+tarifs ne se moyennent pas.
+
+## c. La « facture globale » n'est pas une facture
+
+**Si elle en était une, le client devrait deux fois la même période** : une fois
+par ses factures mensuelles, une fois par la globale. `customer_invoice_total`
+compterait les deux, le solde client serait faux, et le tableau de bord aussi.
+
+Le texte de la Direction le dit lui-même : « avec les détails et **les
+historiques de payement** ». Une facture ne porte jamais l'historique de ses
+propres règlements — un **relevé**, si.
+
+🟩 **Décision appliquée** : la demande d'A-6 est un **relevé récapitulatif**, et
+il relève du **LOT 24** (Plan 02 §3.3, §15.1). Le LOT 23 **prépare la donnée** —
+périodes, factures rattachées, règlements déjà atteignables — et **ne produit
+aucun document de synthèse**. L'écran de facturation d'un contrat **le dit**,
+plutôt que de laisser chercher un bouton qui doublerait la créance.
+
+## d. Aucune règle de durée n'a été inventée — DEC-008
+
+La recherche a été faite : `Règles location` §35, `Workflow 07` §9 et §12
+(« les règles de calcul ne doivent pas être inventées par le système »),
+DEC-008, DEC-025 §i. **La règle d'arrondi de durée n'est toujours pas arrêtée.**
+
+Le lot n'en a pas besoin, et c'est pourquoi il n'est pas bloqué :
+
+- une **borne de période** est un **fait de calendrier**. Le 1ᵉʳ novembre à
+  Moroni est le 1ᵉʳ novembre. Découper « chaque fin du mois » ne suppose aucun
+  arrondi : c'est la transcription littérale de A-6 ;
+- une **quantité facturée**, elle, supposerait cette règle. Elle reste donc
+  **saisie**, exactement comme depuis le LOT 7 : l'écran pré-remplit le **prix
+  unitaire** verrouillé de chaque portion et laisse la **quantité vide**, en
+  disant pourquoi.
+
+**Aucun montant n'est calculé par ce lot.** `rental_billing_periods` ne porte
+aucune colonne de montant : un total y serait une seconde vérité que les lignes
+de facture démentiraient (doctrine D1).
+
+## e. L'état d'une période se déduit, il ne se stocke pas
+
+La base ne stocke que deux états : `PLANNED` et `CANCELLED`.
+
+« À venir », « Facturable », « Facture en brouillon » et « Facturée » sont des
+**lectures**, déduites de la période et de la facture qui la couvre. Les stocker
+créerait une seconde vérité qu'une annulation de facture ou le simple passage du
+temps ferait diverger — exactement ce que `customer_invoices_overdue_is_derived`
+interdit depuis le LOT 5 (DEC-025 §a).
+
+Ce qui ne se déduit de rien, en revanche, c'est **l'annulation** : une période
+ouverte puis abandonnée — retour anticipé, contrat annulé, régime corrigé —
+n'est pas « à venir », et aucune date ne le dirait.
+
+## f. Le lien facture ↔ période vit sur la facture, et là seulement
+
+`customer_invoices.billing_period_id` (Plan 02 §9.2). **Pas de colonne inverse.**
+
+Parce que c'est la facture qui s'annule. Une colonne `invoice_id` sur la période
+devrait être remise à `null` à chaque annulation, et un oubli laisserait une
+période réputée facturée par une facture annulée — **sans qu'aucune erreur ne
+soit levée**. Le sens unique rend l'oubli impossible : l'index partiel ignore
+les factures annulées, et la période redevient facturable du seul fait de
+l'annulation.
+
+## g. L'invariant qui interdit la double facturation
+
+L'obstacle identifié par le Plan 02 §1.3 est levé **dans l'ordre exact du
+§19.3** — créer les deux remplaçants, **puis seulement** supprimer l'ancien :
+
+```
+customer_invoices_one_per_fixed_rental_idx
+    unique (rental_id) where rental_id is not null
+                         and billing_period_id is null      ← régime « durée fixée »
+                         and status <> 'CANCELLED'
+
+customer_invoices_one_per_period_idx
+    unique (billing_period_id) where billing_period_id is not null   ← régime « longue durée »
+                                 and status <> 'CANCELLED'
+```
+
+**Les deux index sont DISJOINTS** : une facture tombe dans l'un ou dans l'autre,
+jamais dans les deux, jamais dans aucun. Les factures existantes portent toutes
+`billing_period_id = NULL` : le premier les couvre exactement comme l'ancien.
+**Aucune location existante n'est devenue facturable deux fois.**
+
+Et l'étanchéité est tenue **en plus** par le déclencheur de cohérence :
+
+- une **longue durée** refuse une facture **sans** période — elle s'ajouterait
+  aux factures de période ;
+- une **durée fixée** refuse une facture **avec** période — les deux index
+  étant disjoints, la même prestation serait facturée deux fois.
+
+Trois autres refus complètent la garantie : une période **annulée** ne se
+facture pas, une période d'un **autre contrat** non plus, et une période **non
+échue** non plus — 🟩 « chaque **fin** du mois ».
+
+## h. Une facture de période ne clôt pas la location
+
+Plan 02 §18.2. Le contrat ne devient « Facturée » que lorsque **deux** conditions
+sont réunies : il est « À facturer » — donc rendu et contrôlé — **et** il ne
+reste **aucune période découverte**. C'est la seule lecture vraie de
+« Facturée » : tout ce qui devait être facturé l'a été.
+
+Sans cela, une longue durée resterait « À facturer » pour toujours et ne
+pourrait **jamais** être clôturée — `close_rental` exige « Facturée ». Une
+impasse n'est pas une garantie (DEC-027 §e).
+
+L'écran le **dit avant le geste** : la carte « Émettre » d'une facture de période
+annonce que la location reste en cours, au lieu de promettre le contraire.
+
+## i. La prolongation, et ce qu'elle ne touche pas
+
+Une prolongation **conserve le contrat**, crée son avenant, et **n'étend que ce
+qui doit l'être** :
+
+| Ce qui s'étend | Ce qui ne bouge pas |
+| --- | --- |
+| Le segment **ouvert**, et son occupation | Les segments **clos** — véhicule, période, tarif |
+| Le temps **facturable** ajouté | Les périodes facturables **déjà ouvertes** |
+| La date de retour attendue | Les coûts **gelés**, les factures **émises** |
+
+**Le découpage reprend là où il s'arrêtait**, et ne remanie rien : la première
+période ajoutée part de la fin de la dernière, fût-elle au milieu d'un mois.
+Remanier un découpage déjà posé — et a fortiori déjà facturé — serait réécrire
+l'histoire.
+
+**L'ouverture des périodes est une CONSÉQUENCE, jamais un acte** — même doctrine
+que le gel du coût (DEC-045 §e). Celui qui prolonge n'a pas à la demander ; ne
+pas l'ouvrir laisserait un intervalle du contrat que personne ne pourrait
+facturer.
+
+## j. Le mois est comorien, pas UTC
+
+Une période mensuelle s'achève au **premier instant du mois suivant, à Moroni**.
+`date_trunc('month', …)` sur un `timestamptz` travaille en UTC : un contrat
+commencé le 30 septembre à 22 h UTC est du 1ᵉʳ octobre à Moroni, et sa facture de
+septembre porterait un jour d'octobre (DEC-025 §e). La conversion est explicite,
+dans les deux sens, en base **et** dans la garde qui la vérifie.
+
+## k. Une capacité, et la justification de chacune des absences
+
+| Code | Action | Sensible | Ce qu'elle ouvre |
+| --- | --- | :-: | --- |
+| `rental.rentals.billing.plan` | ADMIN | ✓ | Définir le régime de facturation d'une location, et ouvrir ses périodes |
+
+La question de `CLAUDE.md` §19 bis, posée : **oui**, cet acte doit pouvoir
+s'attribuer séparément. Décider qu'un contrat se facture chaque fin de mois
+plutôt qu'en une fois engage la reconnaissance du chiffre d'affaires d'ADIKOM et
+la trésorerie qu'elle en attend. Aucune capacité existante ne le couvre : ni
+`rental.rentals.update`, ni `checkout`, ni `billing.customer_invoices.create` —
+préparer une facture n'est pas décider du découpage des créances d'un contrat.
+
+**Ce qui n'est PAS créé :**
+
+| Non créé | Raison |
+| --- | --- |
+| `rental.rentals.billing.periods.view` | Une période ne porte **ni montant, ni coût, ni tarif**. C'est l'organisation du contrat, que `rental.rentals.view` ouvre déjà. Une capacité de plus ne fermerait qu'un onglet (DEC-036 §d, DEC-042 §d) |
+| Toute capacité de prolongation | `rental.rentals.extend` **existe** depuis la migration 007. La prolongation devient un avenant ; elle ne devient pas un second acte |
+| Toute capacité de changement de tarif | `rental.pricing.override` **existe** et gouverne la dérogation depuis le LOT 22 |
+| Toute capacité de facture de période | `billing.customer_invoices.*` **existent**. Une facture de période **est** une facture client : aucun second système, aucune seconde capacité |
+| `rental.rentals.penalty.*` | 🟥 **A-7 n'est pas tranchée.** La fonctionnalité n'existe pas |
+| `rental.rentals.statement.*` | Le relevé global relève du **LOT 24**. Rien n'est livré, rien n'est gouverné |
+
+**Catalogue : 196 → 197.**
+
+## l. Aucun second système de facturation
+
+`CLAUDE.md` §57 et la consigne du lot l'interdisent, et rien n'a été doublé :
+
+| Ce qui reste unique | Où |
+| --- | --- |
+| La numérotation | `next_number('customer_invoice')` |
+| Les lignes, et donc le total | `customer_invoice_lines` |
+| Le règlement | `record_customer_payment` |
+| La trésorerie | `fn_treasury_entry_source` |
+| L'émission et l'annulation | `issue_…` / `cancel_customer_invoice` |
+
+`create_customer_invoice` reçoit simplement **un paramètre de plus** : la période
+qu'elle couvre. Aucune fonction de facturation n'a été réécrite depuis zéro —
+seulement reprise **à sa dernière version**, et augmentée.
+
+## m. Ce que le lot ne tranche pas
+
+🟥 **A-7 — les pénalités.** Ni la base du pourcentage, ni le taux, ni sa nature
+comptable — majoration du tarif ou ligne de facture distincte. Le lot livre le
+**moyen** : un changement de tarif à la prolongation se représente, se motive,
+s'historise, s'audite. Il ne livre **aucun barème**.
+
+🟥 **DEC-008 — la durée facturable.** La quantité reste saisie (§d).
+
+🟥 **P-2 — le coût interne d'un véhicule ADIKOM** et le **véhicule de
+partenariat** : inchangés depuis DEC-045. `pricing_rules` n'a été ni touchée ni
+contrainte, et le Plan 02 §5.7 reste écarté.
+
+🟥 **Le relevé global** : préparé, non produit. LOT 24.
 
 ---
 

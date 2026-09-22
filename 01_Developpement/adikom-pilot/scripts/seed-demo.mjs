@@ -1065,6 +1065,41 @@ const RESERVATIONS = [
       notes: 'Le client a été livré sur place ; aucune interruption de mise à disposition.',
     },
   },
+  /*
+   * 🟩 LA LONGUE DURÉE — A-6, LOT 23.
+   *
+   * « Chaque fin du mois, on établit une facture. »
+   *
+   *   VEHICULE DEMO 06   J-100 → J-30   32 000 KMF/jour, régime MENSUEL
+   *
+   * UN SEUL CONTRAT, PLUSIEURS PÉRIODES FACTURABLES, et une facture émise sur
+   * la première. La démonstration montre donc ce que ce lot apporte :
+   *
+   *   · le découpage à la FIN DU MOIS COMORIEN, aux dates réelles du contrat ;
+   *   · une facture par période, et une seule — les autres restent
+   *     « Facturables » ;
+   *   · la location qui RESTE EN COURS malgré une facture émise (Plan 02 §18.2).
+   *
+   * ⚠ AUCUNE QUANTITÉ N'EST INVENTÉE. La ligne de facture porte une quantité
+   * SAISIE, comme à l'écran : la règle d'arrondi de durée n'est pas arrêtée
+   * (DEC-008), et un jeu de démonstration ne tranche pas ce que la Direction
+   * n'a pas tranché.
+   *
+   * La fenêtre J-100 → J-30 n'est occupée par aucun autre contrat de
+   * démonstration, et `VEHICULE DEMO 06` n'est engagé nulle part ailleurs.
+   */
+  {
+    code: 'R8', clientName: 'CLIENT DEMO 03', vehicleModel: 'VEHICULE DEMO 06',
+    from: -100, to: -30, confirm: true, convert: true, start: -100,
+    conditions: 'Location de longue durée — facturation mensuelle.',
+    longTerm: {
+      cadence: 'MONTHLY',
+      invoice: {
+        quantity: 17,
+        label: 'Location VEHICULE DEMO 06 — première période mensuelle',
+      },
+    },
+  },
 ]
 
 async function seedRentalCycle(admin, ids) {
@@ -1172,6 +1207,86 @@ async function seedRentalCycle(admin, ids) {
         p_notes: item.swap.notes ?? null,
       }, `remplacement de véhicule ${item.code}`)
       created += 1
+    }
+
+    /*
+     * LE RÉGIME DE FACTURATION, ET SES PÉRIODES — LOT 23, A-6.
+     *
+     * Il passe par la FONCTION, jamais par un `update` : elle pose le régime ET
+     * ouvre le découpage contigu que la garde exige. Un `update` direct
+     * laisserait un contrat annoncé « mensuel » sans aucune période — et
+     * l'écran ne proposerait jamais rien.
+     *
+     * IDEMPOTENT : la fonction refuse un régime déjà posé (« un acte consigne un
+     * changement, pas une confirmation »), et la présence de périodes suffit à
+     * savoir que le travail est fait.
+     */
+    if (item.longTerm) {
+      const { count: dejaDecoupe } = await admin
+        .from('rental_billing_periods')
+        .select('id', { count: 'exact', head: true })
+        .eq('rental_id', rentalId)
+
+      if (!dejaDecoupe) {
+        await rpc(admin, 'set_rental_billing_plan', {
+          p_rental_id: rentalId,
+          p_type: 'LONG_TERM',
+          p_cadence: item.longTerm.cadence,
+        }, `régime de facturation ${item.code}`)
+        created += 1
+      }
+
+      if (item.longTerm.invoice) {
+        const note = tag(`${item.code}-FAC1`)
+
+        const { data: dejaFacturee } = await admin
+          .from('customer_invoices')
+          .select('id')
+          .eq('notes', note)
+          .maybeSingle()
+
+        if (!dejaFacturee) {
+          /*
+           * LA PREMIÈRE PÉRIODE ÉCHUE, et elle seule : on ne facture pas un
+           * temps qui n'a pas couru (A-6, « chaque FIN du mois »).
+           */
+          const { data: periodes } = await admin
+            .from('rental_billing_periods')
+            .select('id, period')
+            .eq('rental_id', rentalId)
+            .eq('status', 'PLANNED')
+            .order('sequence_no')
+
+          const premiere = (periodes ?? [])[0]
+
+          if (premiere) {
+            const invoiceId = await rpc(admin, 'create_customer_invoice', {
+              p_client_id: ids.clients[item.clientName],
+              p_invoice_date: dayOffset(-64),
+              p_due_date: dayOffset(-34),
+              p_rental_id: rentalId,
+              p_notes: note,
+              p_billing_period_id: premiere.id,
+            }, `facture de période ${item.code}`)
+
+            await rpc(admin, 'add_customer_invoice_line', {
+              p_invoice_id: invoiceId,
+              p_kind: 'RENTAL',
+              p_label: item.longTerm.invoice.label,
+              p_quantity: item.longTerm.invoice.quantity,
+              p_unit_price: 32000,
+              p_justification: null,
+            }, `ligne de la facture de période ${item.code}`)
+
+            await rpc(admin, 'issue_customer_invoice', {
+              p_invoice_id: invoiceId,
+              p_reason: 'Facture mensuelle de démonstration.',
+            }, `émission de la facture de période ${item.code}`)
+
+            created += 1
+          }
+        }
+      }
     }
 
     if (item.return === undefined) continue

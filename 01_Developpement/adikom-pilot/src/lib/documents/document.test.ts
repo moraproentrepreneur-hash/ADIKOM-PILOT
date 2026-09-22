@@ -14,6 +14,11 @@ import {
 } from '@/features/rentals/documents/rental-documents'
 import type { ContractPeriod } from '@/features/rentals/documents/rental-blocks'
 import { RentalAmendmentDocument } from '@/features/amendments/documents/rental-amendment'
+import { CustomerInvoiceDocument } from '@/features/customer-invoices/documents/customer-invoice'
+import type {
+  CustomerInvoiceDetail,
+  CustomerInvoiceLine,
+} from '@/features/customer-invoices/data'
 import type { RentalAmendment } from '@/features/amendments/data'
 import type { Inspection, RentalDetail } from '@/features/rentals/data'
 import { documentFileName, issuedOnLabel, renderDocument } from './render'
@@ -623,6 +628,10 @@ const RENTAL: RentalDetail = {
   expectedReturnAt: '2026-09-04T05:00:00.000Z',
   returnedAt: '2026-09-04T04:00:00.000Z',
   status: 'TO_CONTROL',
+  // LOT 23 : le régime par défaut d'une location, et celui de toutes les
+  // locations existantes (Plan 02 §19.4).
+  rentalType: 'FIXED_TERM',
+  billingCadence: null,
   lockedAmount: 120000,
   lockedUnit: 'DAY',
   // LOT 21 : l'origine accompagne désormais le véhicule d'une location. Le
@@ -912,6 +921,124 @@ describe('contrat de location segmenté', () => {
     expectPdf(
       await renderDocument(
         RentalContractDocument({ ...FULL_PARTS, periods: PERIODS, showAmounts: false })
+      )
+    )
+  })
+})
+
+/* -------------------------------------------------------------------------- */
+/*  Facture client — et la PÉRIODE qu'elle couvre (LOT 23, A-6)                */
+/* -------------------------------------------------------------------------- */
+
+const INVOICE: CustomerInvoiceDetail = {
+  id: '00000000-0000-0000-0000-0000000000f1',
+  invoiceNo: 'FAC-2026-000012',
+  status: 'ISSUED',
+  invoiceDate: '2026-11-01',
+  dueDate: '2026-11-30',
+  clientId: CLIENT.id,
+  clientLabel: 'CLIENT DEMO 01',
+  rentalId: '00000000-0000-0000-0000-000000000080',
+  rentalNo: 'LOC-2026-000001',
+  billingPeriodId: '00000000-0000-0000-0000-0000000000b1',
+  notes: null,
+  statusReason: null,
+  issuedAt: '2026-11-01T07:00:00.000Z',
+  cancelledAt: null,
+  createdAt: '2026-11-01T06:00:00.000Z',
+  updatedAt: '2026-11-01T07:00:00.000Z',
+  subtotal: 1_500_000,
+  discount: 0,
+  total: 1_500_000,
+  paidAmount: 0,
+  remainingDue: 1_500_000,
+}
+
+const INVOICE_LINES: CustomerInvoiceLine[] = [
+  {
+    id: '00000000-0000-0000-0000-0000000000c1',
+    kind: 'RENTAL',
+    label: 'Location Toyota T5 — 01/10/2026 au 12/10/2026',
+    quantity: 11,
+    unitPrice: 50_000,
+    lineTotal: 550_000,
+    justification: null,
+  },
+  {
+    id: '00000000-0000-0000-0000-0000000000c2',
+    kind: 'RENTAL',
+    label: 'Location Nissan Patrol — 12/10/2026 au 01/11/2026',
+    quantity: 20,
+    unitPrice: 47_500,
+    lineTotal: 950_000,
+    justification: null,
+  },
+]
+
+describe('facture client de période', () => {
+  /**
+   * 🟩 A-6 — LA PIÈCE REMISE AU CLIENT DIT CE QU'ELLE COUVRE.
+   *
+   * Une facture mensuelle d'un contrat de longue durée ne couvre pas tout le
+   * contrat. Le taire la ferait lire comme une facture globale — et le client
+   * la contesterait, ou pire, ne la contesterait pas.
+   */
+  it('produit un PDF portant la période facturée', async () => {
+    expectPdf(
+      await renderDocument(
+        CustomerInvoiceDocument({
+          identity: IDENTITY,
+          invoice: INVOICE,
+          lines: INVOICE_LINES,
+          clientLabel: 'CLIENT DEMO 01',
+          clientAddress: ['Moroni Oasis'],
+          showPayments: true,
+          billingPeriod: {
+            sequenceNo: 2,
+            from: '2026-10-01T00:00:00.000Z',
+            to: '2026-11-01T00:00:00.000Z',
+          },
+          issuedOn: issuedOnLabel(),
+        })
+      )
+    )
+  })
+
+  /** Le régime « durée fixée » : aucune période, et la ligne disparaît. */
+  it('produit un PDF sans période pour une facture de location à durée fixée', async () => {
+    expectPdf(
+      await renderDocument(
+        CustomerInvoiceDocument({
+          identity: IDENTITY,
+          invoice: { ...INVOICE, billingPeriodId: null },
+          lines: [INVOICE_LINES[0]],
+          clientLabel: 'CLIENT DEMO 01',
+          clientAddress: null,
+          showPayments: false,
+          billingPeriod: null,
+          issuedOn: issuedOnLabel(),
+        })
+      )
+    )
+  })
+
+  /**
+   * La période existe, mais le lecteur n'a pas `rental.rentals.view` : elle
+   * DISPARAÎT du document plutôt que d'y figurer vide (DEC-017, DEC-024).
+   */
+  it('produit un PDF lorsque la période n’est pas lisible', async () => {
+    expectPdf(
+      await renderDocument(
+        CustomerInvoiceDocument({
+          identity: IDENTITY,
+          invoice: { ...INVOICE, rentalNo: null },
+          lines: INVOICE_LINES,
+          clientLabel: null,
+          clientAddress: null,
+          showPayments: false,
+          billingPeriod: null,
+          issuedOn: issuedOnLabel(),
+        })
       )
     )
   })

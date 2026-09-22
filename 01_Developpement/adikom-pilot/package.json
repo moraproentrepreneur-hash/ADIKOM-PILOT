@@ -32,6 +32,7 @@
     "demo:clean": "node scripts/clean-demo.mjs",
     "db:verify:backup": "node scripts/run-sql.mjs supabase/tests/backup.sql",
     "verify:backup": "node scripts/verify-backup.mjs",
+    "backup:snapshot": "node scripts/backup-snapshot.mjs",
     "verify:responsive": "node scripts/verify-responsive.mjs",
     "verify:documents": "node scripts/verify-documents.mjs",
     "verify:partners": "node scripts/verify-partners.mjs",
@@ -84,7 +85,9 @@
     "db:verify:supplier-rates": "node scripts/run-sql.mjs supabase/tests/supplier_rates.sql",
     "verify:supplier-rates": "node scripts/verify-supplier-rates.mjs",
     "db:verify:amendments": "node scripts/run-sql.mjs supabase/tests/rental_amendments.sql",
+    "db:verify:billing": "node scripts/run-sql.mjs supabase/tests/rental_billing.sql",
     "verify:amendments": "node scripts/verify-amendments.mjs",
+    "verify:billing": "node scripts/verify-billing-periods.mjs",
     "verify:password-reset": "node scripts/verify-password-reset.mjs",
     "verify:ajustements": "node scripts/verify-ajustements.mjs",
     "verify:production": "node scripts/verify-production.mjs"

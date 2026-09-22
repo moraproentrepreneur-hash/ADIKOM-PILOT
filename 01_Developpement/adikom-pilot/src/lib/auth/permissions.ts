@@ -160,6 +160,33 @@ export const PERMISSIONS = {
    * cycle, sous `rental.rentals.download` / `.print` (Plan 02 §10.3).
    */
   RENTALS_SWAP: 'rental.rentals.swap',
+  /*
+   * Régime de facturation d'une location — LOT 23 (DEC-047, migration 094).
+   *
+   * 🟩 A-6 : « Chaque fin du mois, on établit une facture », et « par période
+   * définie au contrat ». Les deux cadences sont validées ; c'est donc un CHOIX,
+   * et quelqu'un doit avoir le droit de le faire.
+   *
+   * L'ACTE : décider qu'un contrat se facture par période plutôt qu'une fois à
+   * la fin — et ouvrir les périodes correspondantes, qui en sont la conséquence
+   * immédiate.
+   *
+   * ELLE N'EST INCLUSE DANS AUCUNE AUTRE (DEC-024, A-14). Corriger une note de
+   * contrat (`update`), enregistrer un départ (`checkout`) ou préparer une
+   * facture (`billing.customer_invoices.create`) ne supposent pas de décider
+   * comment ADIKOM réclame son argent sur ce contrat. C'est un acte à part, et
+   * il est sensible.
+   *
+   * AUCUNE CAPACITÉ DE LECTURE n'est créée : une période facturable ne porte ni
+   * montant, ni coût, ni tarif. C'est l'organisation du contrat, que
+   * `rental.rentals.view` ouvre déjà — et une permission qui ne ferme qu'un
+   * onglet n'en est pas une (DEC-036 §d, DEC-042 §d).
+   *
+   * ET AUCUNE CAPACITÉ DE PROLONGATION NOUVELLE : `rental.rentals.extend`
+   * existe depuis le premier jour. La prolongation devient un avenant (A-4) ;
+   * elle ne devient pas un second acte.
+   */
+  RENTALS_BILLING_PLAN: 'rental.rentals.billing.plan',
   RENTALS_FINANCIAL_VIEW: 'rental.rentals.financial.view',
   RENTALS_EXPORT: 'rental.rentals.export',
   RENTALS_DOWNLOAD: 'rental.rentals.download',

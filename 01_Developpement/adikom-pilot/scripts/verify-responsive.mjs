@@ -350,6 +350,32 @@ async function main() {
       )
     }
 
+    /*
+     * L'ONGLET FACTURATION D'UN CONTRAT — LOT 23.
+     *
+     * Mesuré sur une location qui porte RÉELLEMENT des périodes facturables :
+     * un contrat à durée fixée n'y montre qu'un état vide, et ne dirait rien du
+     * tableau des périodes, de leurs portions tarifaires ni du formulaire de
+     * facture. À défaut, on mesure quand même l'onglet — son état « durée
+     * fixée » est un écran comme un autre —, et la recette DIT ce qu'elle a
+     * mesuré.
+     */
+    const { data: longue } = await admin
+      .from('rental_billing_periods')
+      .select('rental_id')
+      .limit(1)
+
+    const contratFacture = longue?.[0]?.rental_id ?? contrat
+
+    if (contratFacture) {
+      routes.push([
+        `/location/locations/${contratFacture}?onglet=facturation`,
+        longue?.[0]
+          ? 'Location · Facturation (contrat de longue durée)'
+          : 'Location · Facturation (durée fixée)',
+      ])
+    }
+
     for (const [route, libelle] of routes) {
       for (const [width, , format] of FORMATS) {
         mesures += await audit(pages, base, route, libelle, width, format)

@@ -51,6 +51,35 @@ const ERROR_PATTERNS: readonly [RegExp, string][] = [
     /postérieure à la date attendue/i,
     'La nouvelle date de retour doit être postérieure à celle actuellement attendue.',
   ],
+  /* --- Prolongation par avenant — LOT 23 ---------------------------------- */
+  [
+    /une prolongation est un avenant au contrat/i,
+    'Une prolongation est un avenant au contrat : indiquez pourquoi la location est prolongée.',
+  ],
+  [
+    /un nouveau tarif porte toujours sa raison/i,
+    'Un tarif différent de celui du contrat exige sa raison écrite.',
+  ],
+  [
+    /une raison de changement de tarif suppose un montant/i,
+    'Vous avez motivé un changement de tarif sans saisir de montant. Laissez la raison vide pour conserver le tarif du contrat.',
+  ],
+  [
+    /ce tarif est déjà celui du contrat/i,
+    'Ce tarif est déjà celui du contrat : prolongez sans le changer, il est conservé de lui-même.',
+  ],
+  [
+    /l'engagement en cours court jusqu'au/i,
+    'La nouvelle date doit être postérieure à la fin de l’engagement en cours.',
+  ],
+  [
+    /n'est pas disponible|vehicle_occupations_no_overlap|exclusion/i,
+    'Le véhicule est déjà engagé sur tout ou partie de la période demandée : la prolongation est refusée, et rien n’a été modifié.',
+  ],
+  [
+    /rental_billing_periods_no_overlap/i,
+    'Le découpage facturable de ce contrat recouvrirait une période existante. Rien n’a été modifié.',
+  ],
   [
     /seule une location en cours peut être retournée/i,
     'Seule une location en cours peut être retournée.',
@@ -390,22 +419,36 @@ async function attachPhotos(
 /* -------------------------------------------------------------------------- */
 
 /**
- * Prolonge une location en cours.
+ * Prolonge une location en cours — PAR AVENANT (LOT 23, A-4).
  *
- * TOUT SE JOUE DANS `extend_rental` (migration 031).
+ * 🟩 A-4 : « On garde le même contrat et on rajoute des avenants. » La
+ * prolongation ne crée AUCUN contrat : elle consigne un avenant `AVN-…`,
+ * numéroté, motivé, daté, attribué — et allonge la chronologie existante sans
+ * réécrire une seule période passée.
+ *
+ * TOUT SE JOUE DANS `extend_rental` (migration 095, reprise de la 089).
  *
  * La fonction étend la période de l'occupation AVANT de déplacer la date
  * attendue : si un autre engagement occupe le créneau, la contrainte
- * d'exclusion refuse, et rien n'est modifié — ni le calendrier, ni la
- * location. Une prolongation refusée ne laisse aucune trace partielle.
+ * d'exclusion refuse, et rien n'est modifié — ni l'avenant, ni le calendrier,
+ * ni la location. Une prolongation refusée ne laisse aucune trace partielle.
  *
- * LE TARIF N'EST PAS TOUCHÉ.
+ * LE MOTIF EST OBLIGATOIRE, et il ne l'était pas avant ce lot : un avenant
+ * porte toujours son motif (LOT 22). Ce n'est pas un durcissement gratuit,
+ * c'est la conséquence de A-4.
  *
- * `locked_amount` et `locked_unit` restent ceux du contrat. Module 05 §34
- * évoque un « nouveau montant » sans en définir le calcul, et DEC-008 laisse
- * ouvertes la règle d'arrondi de durée et le traitement du retard. Aucun
- * montant n'est donc recalculé : le système ne valorise pas ce qu'aucune règle
- * validée ne permet de valoriser.
+ * 🟩 A-5 / A-7 — LE TARIF : DEUX CAS, ET RIEN ENTRE EUX.
+ *
+ *   · sans montant saisi → LE TARIF DU CONTRAT EST CONSERVÉ. C'est le défaut,
+ *     et c'est le comportement d'avant ce lot : `Règles location` §24 —
+ *     « Le système ne doit pas inventer automatiquement une tarification » ;
+ *   · avec un montant → un NOUVEAU TARIF s'applique à la prolongation, et à
+ *     elle seule. L'ancien reste attaché à la période qu'il a couverte. Ce cas
+ *     exige `rental.pricing.override` ET une raison écrite.
+ *
+ * 🟥 AUCUN BARÈME DE PÉNALITÉ. A-7 n'est pas tranchée : ni la base du
+ * pourcentage, ni le taux, ni sa nature comptable. Le montant est SAISI, jamais
+ * calculé (CLAUDE.md §55).
  */
 export async function extendRentalAction(
   prevState: RentalFormState,
@@ -418,12 +461,78 @@ export async function extendRentalAction(
 
       const rentalId = readText(formData, 'rentalId')
       const newEnd = readText(formData, 'newEnd')
-      const reason = orNull(readText(formData, 'reason'))
+      const reason = readText(formData, 'reason').trim()
+      const rawAmount = readText(formData, 'amount').trim()
+      const rateReason = orNull(readText(formData, 'rateReason'))
 
       if (!rentalId) return { error: 'Location introuvable.' }
       if (!newEnd) {
         return { fieldErrors: { newEnd: 'La nouvelle date de retour est obligatoire.' } }
       }
+      if (reason.length < 3) {
+        return {
+          fieldErrors: {
+            reason:
+              'Une prolongation est un avenant au contrat : indiquez pourquoi la location est prolongée.',
+          },
+        }
+      }
+
+      /*
+       * LE MONTANT EST FACULTATIF, et c'est toute la décision A-5 : vide, le
+       * tarif du contrat est conservé ; renseigné, c'est une dérogation.
+       *
+       * DEC-010 : un entier, en francs comoriens. « 60 000,75 » n'existe pas, et
+       * arrondir en silence produirait un écart que personne ne remarquerait
+       * avant la facture.
+       */
+      let amount: number | null = null
+      if (rawAmount !== '') {
+        const cleaned = rawAmount.replace(/\s/g, '')
+        if (!/^\d+$/.test(cleaned)) {
+          return {
+            fieldErrors: {
+              amount: 'Saisissez un montant en francs comoriens, sans décimale.',
+            },
+          }
+        }
+        amount = Number(cleaned)
+        if (!Number.isSafeInteger(amount)) {
+          return { fieldErrors: { amount: 'Ce montant n’est pas un entier valide.' } }
+        }
+      }
+
+      if (amount !== null && !rateReason) {
+        return {
+          fieldErrors: {
+            rateReason:
+              'Un tarif différent de celui du contrat exige sa raison : pourquoi le client ne paie-t-il plus le tarif en vigueur ?',
+          },
+        }
+      }
+
+      if (amount === null && rateReason) {
+        return {
+          fieldErrors: {
+            amount:
+              'Vous avez motivé un changement de tarif sans saisir de montant. Laissez la raison vide pour conserver le tarif du contrat.',
+          },
+        }
+      }
+
+      /*
+       * LA DÉROGATION EXIGE SA PROPRE CAPACITÉ, ET ELLE EST VÉRIFIÉE ICI AUSSI.
+       *
+       * La base la redemande — `fn_rental_amendment_guard` et `extend_rental`
+       * elle-même —, mais un refus levé au premier geste vaut mieux qu'un refus
+       * levé au dernier : l'utilisateur sait ce qui lui manque avant d'avoir
+       * rempli le formulaire (A-14).
+       */
+      if (amount !== null) {
+        await requirePermission(PERMISSIONS.PRICING_OVERRIDE)
+      }
+
+      const unit = readText(formData, 'unit')
 
       // L'heure saisie est une heure DES COMORES (DEC-025 §e).
       const endsAt = fromLocalInput(newEnd)
@@ -437,6 +546,10 @@ export async function extendRentalAction(
         p_rental_id: rentalId,
         p_new_end: endsAt,
         p_reason: reason,
+        p_amount: amount,
+        p_unit: amount !== null && (unit === 'DAY' || unit === 'FLAT') ? unit : null,
+        p_rate_reason: rateReason,
+        p_notes: orNull(readText(formData, 'notes')),
       })
 
       if (error) throw new Error(error.message)
@@ -445,7 +558,9 @@ export async function extendRentalAction(
       revalidatePath(`/location/locations/${rentalId}`)
       return {
         success:
-          'La location est prolongée. Le tarif verrouillé du contrat reste inchangé : la valorisation de la période supplémentaire relèvera de la facturation.',
+          amount !== null
+            ? 'Prolongation enregistrée par avenant. Le nouveau tarif s’applique à la période ajoutée ; l’ancien reste attaché à celle qu’il a couverte, et le contrat garde son numéro.'
+            : 'Prolongation enregistrée par avenant. Le contrat garde son numéro et son tarif ; seule la période en cours est allongée.',
       }
     },
     ERROR_PATTERNS

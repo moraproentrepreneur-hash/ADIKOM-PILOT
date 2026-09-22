@@ -28,7 +28,7 @@ import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { DocumentToolbar } from '@/components/ui/document-toolbar'
 import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
-import { formatDate, formatDateTime, formatPeriod } from '@/lib/dates'
+import { formatDate, formatDateTime, formatPeriod, todayISO } from '@/lib/dates'
 import { formatPrice, SOURCE_LABELS, type PricingSource } from '@/features/pricing/constants'
 import {
   calendarDaysUntil,
@@ -47,8 +47,12 @@ import {
 import { ExtendPanel } from '@/features/rentals/extend-panel'
 import { ControlPanel } from '@/features/rentals/control-panel'
 import { CloseRentalPanel } from '@/features/rentals/close-panel'
-import { getInvoiceForRental } from '@/features/customer-invoices/data'
+import { getInvoiceForRental, listInvoicesForRental } from '@/features/customer-invoices/data'
+import { listBillingPeriods, rentalHasInvoice } from '@/features/billing-periods/data'
+import { RentalBillingTab } from '@/features/billing-periods/billing-tab'
+import { CADENCE_LABELS } from '@/features/billing-periods/constants'
 import { resolveSupplierRate } from '@/features/supplier-rates/data'
+import { resolvePrice } from '@/features/pricing/data'
 import { businessDate } from '@/features/supplier-rates/constants'
 import { CommissionBlock } from '@/features/supplier-rates/commission'
 import {
@@ -191,6 +195,68 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
   const activeSegment = segments.find((segment) => segment.status === 'ACTIVE') ?? null
 
   /*
+   * FACTURATION PÉRIODIQUE — LOT 23 (DEC-047).
+   *
+   * 🟩 A-6 : « Chaque fin du mois, on établit une facture », et « par période
+   * définie au contrat ». Le découpage de la créance se lit avec le contrat : il
+   * ne porte NI montant, NI coût, NI tarif — c'est l'organisation du contrat, au
+   * même titre que ses dates. Ce qui EST confidentiel vit dans les factures,
+   * gardées par `billing.customer_invoices.view`.
+   *
+   * `rentalHasInvoice` est posée À LA BASE et non déduite de la liste : un
+   * lecteur dépourvu de la capacité de facturation ne verrait aucune facture, et
+   * l'écran lui proposerait un changement de régime que la base refuserait.
+   */
+  const [canPlanBilling, billingPeriods, planLocked] = await Promise.all([
+    can(PERMISSIONS.RENTALS_BILLING_PLAN),
+    listBillingPeriods(id, { canSeeInvoices: canSeeInvoices }),
+    rentalHasInvoice(id),
+  ])
+
+  /*
+   * TOUTES les factures du contrat — une longue durée en porte plusieurs (A-6).
+   * La carte « Facturation » de l'onglet Informations les liste alors toutes :
+   * n'en montrer qu'une donnerait le solde d'un seul mois pour celui du contrat.
+   */
+  const invoices =
+    canSeeInvoices && rental.rentalType === 'LONG_TERM'
+      ? await listInvoicesForRental(id, { canSeePayments: canSeeCustomerPayments })
+      : []
+
+  /*
+   * L'INSTANT DE RÉFÉRENCE, DÉCIDÉ UNE FOIS.
+   *
+   * Deux appels à `new Date()` dans un même rendu peuvent tomber de part et
+   * d'autre d'une borne de période : une ligne se lirait « Facturable » et le
+   * bouton correspondant serait absent.
+   */
+  const now = new Date()
+
+  /*
+   * LE BARÈME À LA DATE DE PROLONGATION — information, jamais valeur imposée.
+   *
+   * `Règles location` §24 : « Le tarif appliqué à une prolongation doit
+   * respecter les règles tarifaires d'ADIKOM. Le système ne doit pas inventer
+   * automatiquement une tarification. » L'écran MONTRE donc ce que le barème
+   * donnerait, et laisse saisir : rien n'est appliqué sans décision.
+   *
+   * 🟥 IL N'EST RÉSOLU QUE SOUS `rental.pricing.view` (DEC-024). Consulter la
+   * grille tarifaire est une capacité distincte de celle de prolonger : sans
+   * elle, aucune résolution n'a lieu, et l'information n'atteint pas le
+   * navigateur.
+   */
+  const canSeePricing = await can(PERMISSIONS.PRICING_VIEW)
+
+  const extensionRate =
+    canSeePricing && (rental.status === 'IN_PROGRESS' || rental.status === 'EXTENDED')
+      ? await resolvePrice(
+          rental.clientId,
+          rental.vehicleId,
+          businessDate(rental.expectedReturnAt)
+        )
+      : null
+
+  /*
    * LES DEUX ACTES DU LOT, ET LEURS DEUX CAPACITÉS DISTINCTES (A-14, DEC-024).
    *
    *   · remplacer le véhicule → `rental.rentals.swap`
@@ -233,6 +299,17 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
       key: 'chronologie',
       label: 'Chronologie',
       href: `/location/locations/${id}?onglet=chronologie`,
+    },
+    /*
+     * FACTURATION — LOT 23. L'onglet est TOUJOURS présent, comme la chronologie :
+     * un contrat à durée fixée y lit qu'il se facture en une fois, et apprend au
+     * passage que l'autre régime existe. Ne l'afficher qu'en longue durée ferait
+     * du régime une surprise le jour où quelqu'un en a besoin.
+     */
+    {
+      key: 'facturation',
+      label: 'Facturation',
+      href: `/location/locations/${id}?onglet=facturation`,
     },
     { key: 'etats', label: 'États des lieux', href: `/location/locations/${id}?onglet=etats` },
     { key: 'controle', label: 'Contrôle', href: `/location/locations/${id}?onglet=controle` },
@@ -396,6 +473,22 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
             </Notice>
           )}
         </div>
+      ) : tab === 'facturation' ? (
+        <RentalBillingTab
+          rentalId={id}
+          rentalStatus={rental.status}
+          rentalType={rental.rentalType}
+          cadence={rental.billingCadence}
+          periods={billingPeriods}
+          segments={segments}
+          hasInvoice={planLocked}
+          canPlan={canPlanBilling}
+          canSeeInvoices={canSeeInvoices}
+          canCreateInvoice={canCreateInvoice}
+          canSeeAmounts={canSeeAmounts}
+          today={todayISO()}
+          now={now}
+        />
       ) : tab === 'etats' ? (
         <InspectionsTab rentalId={id} />
       ) : tab === 'controle' ? (
@@ -543,7 +636,78 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
             « L'utilisateur doit pouvoir accéder à la location depuis la
             facture » — et réciproquement : le dossier dit où en est sa créance.
           */}
-          {canSeeInvoices && rental.status !== 'CANCELLED' && (
+          {canSeeInvoices && rental.status !== 'CANCELLED' && rental.rentalType === 'LONG_TERM' ? (
+            /*
+              🟩 A-6 — UNE LONGUE DURÉE PORTE PLUSIEURS FACTURES.
+
+              La carte les liste TOUTES : n'en montrer qu'une donnerait le solde
+              d'un seul mois pour celui du contrat. Le détail période par période
+              vit dans l'onglet « Facturation », et la carte y renvoie plutôt que
+              de le répéter.
+            */
+            <Card
+              title="Facturation"
+              description={`Ce contrat se facture par période — ${CADENCE_LABELS[rental.billingCadence ?? 'MONTHLY']}.`}
+            >
+              {invoices.length === 0 ? (
+                <EmptyState
+                  icon={Receipt}
+                  title="Aucune facture émise"
+                  description="Les périodes facturables de ce contrat n’ont pas encore reçu de facture. Chaque période se facture une fois échue."
+                  action={
+                    <ButtonLink
+                      href={`/location/locations/${id}?onglet=facturation`}
+                      icon={Receipt}
+                    >
+                      Voir les périodes
+                    </ButtonLink>
+                  }
+                />
+              ) : (
+                <>
+                  <ul className="space-y-2">
+                    {invoices.map((item) => {
+                      const itemStatus = displayInvoiceStatus(
+                        item.status,
+                        item.dueDate,
+                        item.total,
+                        item.paidAmount
+                      )
+                      return (
+                        <li
+                          key={item.id}
+                          className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2 last:border-0"
+                        >
+                          <Link
+                            href={`/facturation/clients/${item.id}`}
+                            className="text-adikom-500 hover:underline tabular"
+                          >
+                            {item.invoiceNo}
+                          </Link>
+                          <span className="tabular text-sm">{formatAmount(item.total)}</span>
+                          <Badge tone={CUSTOMER_INVOICE_STATUS_TONES[itemStatus]}>
+                            {CUSTOMER_INVOICE_STATUS_LABELS[itemStatus]}
+                          </Badge>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  <p className="mt-3 text-xs text-muted">
+                    Aucun total n’est fait ici : le cumul d’un contrat, avec le détail des périodes
+                    et l’historique des règlements, est un <strong>relevé</strong>, non une facture.
+                  </p>
+                  <p className="mt-2 text-sm">
+                    <Link
+                      href={`/location/locations/${id}?onglet=facturation`}
+                      className="text-adikom-500 hover:underline"
+                    >
+                      Périodes facturables ({billingPeriods.length})
+                    </Link>
+                  </p>
+                </>
+              )}
+            </Card>
+          ) : canSeeInvoices && rental.status !== 'CANCELLED' ? (
             <Card
               title="Facturation"
               description="La créance issue de ce contrat."
@@ -614,7 +778,7 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
                 />
               )}
             </Card>
-          )}
+          ) : null}
 
           {(rental.conditions || rental.notes) && (
             <Card title="Conditions et observations">
@@ -665,9 +829,25 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
           {canExtend && running && (
             <Card
               title="Prolonger"
-              description="Le véhicule reste engagé sans interruption ; le tarif du contrat ne change pas."
+              description="Le contrat garde son numéro : un avenant y est ajouté, daté et motivé (A-4)."
             >
-              <ExtendPanel rentalId={id} expectedReturnAt={rental.expectedReturnAt} />
+              <ExtendPanel
+                rentalId={id}
+                expectedReturnAt={rental.expectedReturnAt}
+                currentAmount={activeSegment?.lockedAmount ?? rental.lockedAmount}
+                currentUnit={activeSegment?.lockedUnit ?? rental.lockedUnit}
+                canOverride={canOverride}
+                canSeeAmounts={canSeeAmounts}
+                suggestedRate={
+                  extensionRate
+                    ? {
+                        amount: extensionRate.amount,
+                        unit: extensionRate.unit,
+                        source: SOURCE_LABELS[extensionRate.source] ?? null,
+                      }
+                    : null
+                }
+              />
             </Card>
           )}
 

@@ -20,6 +20,9 @@ import { can, requirePermissionOrRedirect } from '@/lib/auth/dal'
 import { PERMISSIONS } from '@/lib/auth/permissions'
 import { formatDate, formatDateTime, todayISO } from '@/lib/dates'
 import { getRentalDetail } from '@/features/rentals/data'
+import { listRentalSegments } from '@/features/amendments/data'
+import { listBillingPeriods, ratePortions } from '@/features/billing-periods/data'
+import type { LineSuggestion } from '@/features/customer-invoices/panels'
 import {
   getCustomerInvoiceDetail,
   listCustomerInvoiceLines,
@@ -134,6 +137,61 @@ export default async function CustomerInvoiceDetailPage(
   ])
 
   const hasRentalLine = lines.some((line) => line.kind === 'RENTAL')
+
+  /*
+   * LES PORTIONS TARIFAIRES DE LA PÉRIODE FACTURÉE — LOT 23, consigne §11.
+   *
+   * Une période facturable peut traverser PLUSIEURS segments : véhicule A
+   * jusqu'au 12 octobre au tarif A, véhicule B ensuite au tarif B. La facture
+   * porte alors UNE LIGNE PAR PORTION, au tarif verrouillé de SON segment.
+   *
+   * LES SEGMENTS RESTENT LA SOURCE HISTORIQUE (consigne §12) : rien n'est
+   * recalculé, rien n'est moyenné, et aucun coût fournisseur n'entre ici —
+   * `listRentalSegments` ne rend le coût gelé qu'à qui détient
+   * `rental.pricing.supplier.view`, et cet écran ne le lit pas.
+   *
+   * AUCUNE DURÉE N'EST PROPOSÉE (DEC-008) : la portion porte ses bornes et son
+   * prix unitaire ; la quantité reste saisie.
+   */
+  const portions: LineSuggestion[] = await (async () => {
+    if (!invoice.rentalId || !editable || !canSeeRentals || !canSeeRentalAmounts) return []
+
+    if (invoice.billingPeriodId === null) {
+      // Régime « durée fixée » : le tarif verrouillé du contrat, comme au LOT 5.
+      if (!rental || hasRentalLine) return []
+      return [
+        {
+          key: rental.id,
+          label: `Location ${rental.vehicleLabel} — ${rental.rentalNo}`,
+          unitPrice: rental.lockedAmount,
+          unit: rental.lockedUnit,
+        },
+      ]
+    }
+
+    const [periods, segments] = await Promise.all([
+      listBillingPeriods(invoice.rentalId),
+      listRentalSegments(invoice.rentalId),
+    ])
+
+    const period = periods.find((item) => item.id === invoice.billingPeriodId)
+    if (!period) return []
+
+    return ratePortions(period, segments).map((portion) => ({
+      key: portion.segmentId,
+      label: portion.label,
+      unitPrice: portion.unitPrice,
+      unit: portion.unit,
+    }))
+  })()
+
+  /* La période couverte, pour l'en-tête — sans montant, sans coût. */
+  const coveredPeriod =
+    invoice.billingPeriodId && invoice.rentalId && canSeeRentals
+      ? (await listBillingPeriods(invoice.rentalId)).find(
+          (item) => item.id === invoice.billingPeriodId
+        ) ?? null
+      : null
 
   return (
     <>
@@ -418,6 +476,30 @@ export default async function CustomerInvoiceDetailPage(
                   </span>
                 )}
               </InfoRow>
+              {/*
+                🟩 A-6 — CE QUE CETTE FACTURE COUVRE, ÉCRIT SUR ELLE.
+
+                Une facture de période ne couvre PAS tout le contrat. Le taire
+                laisserait croire à une facture globale — et à une créance
+                doublée le jour où une seconde période serait facturée.
+              */}
+              {invoice.billingPeriodId !== null && (
+                <InfoRow
+                  label="Période facturée"
+                  hint="Une facture par période, et une seule. Les autres périodes de ce contrat ont ou auront la leur."
+                >
+                  {coveredPeriod ? (
+                    <>
+                      Période n° {coveredPeriod.sequenceNo} ·{' '}
+                      {formatDateTime(coveredPeriod.from)} → {formatDateTime(coveredPeriod.to)}
+                    </>
+                  ) : (
+                    <span className="text-muted">
+                      Votre compte ne peut pas consulter les périodes de cette location.
+                    </span>
+                  )}
+                </InfoRow>
+              )}
               <InfoRow label="Date">{formatDate(invoice.invoiceDate)}</InfoRow>
               <InfoRow label="Échéance">{formatDate(invoice.dueDate) ?? <Empty />}</InfoRow>
               <InfoRow label="Observations">{invoice.notes ?? <Empty />}</InfoRow>
@@ -448,16 +530,7 @@ export default async function CustomerInvoiceDetailPage(
               title="Ajouter une ligne"
               description="La somme des lignes fait le total."
             >
-              <AddCustomerInvoiceLinePanel
-                invoiceId={id}
-                suggestedLabel={
-                  rental && !hasRentalLine
-                    ? `Location ${rental.vehicleLabel} — ${rental.rentalNo}`
-                    : null
-                }
-                suggestedUnitPrice={rental && !hasRentalLine ? rental.lockedAmount : null}
-                suggestedUnit={rental && !hasRentalLine ? rental.lockedUnit : null}
-              />
+              <AddCustomerInvoiceLinePanel invoiceId={id} suggestions={portions} />
             </Card>
           )}
 
@@ -487,6 +560,7 @@ export default async function CustomerInvoiceDetailPage(
               <IssueCustomerInvoicePanel
                 invoiceId={id}
                 hasRental={invoice.rentalId !== null}
+                coversPeriod={invoice.billingPeriodId !== null}
                 total={invoice.total}
               />
             </Card>

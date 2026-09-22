@@ -249,18 +249,29 @@ export function EditCustomerInvoicePanel({
 /*  Lignes — la seule source des montants                                      */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Une portion tarifaire proposée pour une ligne de location.
+ *
+ * UNE SEULE en régime « durée fixée » : le tarif verrouillé du contrat.
+ * PLUSIEURS en longue durée, lorsqu'une période facturable traverse plusieurs
+ * segments — véhicule A jusqu'au 12 octobre, véhicule B ensuite (LOT 23,
+ * consigne §11). Chacune donne UNE ligne, au tarif de SON segment : les tarifs
+ * historiques ne se moyennent pas.
+ */
+export type LineSuggestion = {
+  key: string
+  label: string
+  unitPrice: number
+  unit: string
+}
+
 export function AddCustomerInvoiceLinePanel({
   invoiceId,
-  suggestedLabel,
-  suggestedUnitPrice,
-  suggestedUnit,
+  suggestions,
 }: {
   invoiceId: string
-  /** Désignation proposée pour la ligne de location, quand la facture en porte une. */
-  suggestedLabel: string | null
-  /** Tarif verrouillé du contrat (§7, §8). Jamais recalculé. */
-  suggestedUnitPrice: number | null
-  suggestedUnit: string | null
+  /** Vide lorsqu'aucun tarif n'est proposable : la ligne se saisit entièrement. */
+  suggestions: LineSuggestion[]
 }) {
   const [state, formAction] = useActionState<CustomerInvoiceFormState, FormData>(
     addCustomerInvoiceLineAction,
@@ -268,12 +279,50 @@ export function AddCustomerInvoiceLinePanel({
   )
 
   const [kind, setKind] = useState<CustomerInvoiceLineKind>(
-    suggestedUnitPrice !== null ? 'RENTAL' : 'SERVICE'
+    suggestions.length > 0 ? 'RENTAL' : 'SERVICE'
   )
+
+  /*
+   * LA PORTION CHOISIE PILOTE LA DÉSIGNATION ET LE PRIX, jamais la quantité.
+   *
+   * La quantité reste vide et saisie : la durée facturable dépend d'une règle
+   * d'arrondi qui n'est pas arrêtée (DEC-008, Workflow 07 §9).
+   */
+  const [chosen, setChosen] = useState(0)
+  const suggestion = suggestions[chosen] ?? null
+
+  const [label, setLabel] = useState(suggestion?.label ?? '')
+  const [unitPrice, setUnitPrice] = useState(
+    suggestion ? String(suggestion.unitPrice) : ''
+  )
+  const [quantity, setQuantity] = useState(suggestion?.unit === 'FLAT' ? '1' : '')
+  const [justification, setJustification] = useState('')
 
   const errors = state.fieldErrors ?? {}
   const isRental = kind === 'RENTAL'
-  const flatRate = suggestedUnit === 'FLAT'
+
+  /* Changer de nature de ligne remet la saisie dans un état cohérent. */
+  function chooseKind(next: CustomerInvoiceLineKind) {
+    setKind(next)
+    if (next === 'RENTAL' && suggestion) {
+      setLabel(suggestion.label)
+      setUnitPrice(String(suggestion.unitPrice))
+      setQuantity(suggestion.unit === 'FLAT' ? '1' : '')
+    } else {
+      setLabel('')
+      setUnitPrice('')
+      setQuantity('1')
+    }
+  }
+
+  function choosePortion(index: number) {
+    setChosen(index)
+    const picked = suggestions[index]
+    if (!picked) return
+    setLabel(picked.label)
+    setUnitPrice(String(picked.unitPrice))
+    setQuantity(picked.unit === 'FLAT' ? '1' : '')
+  }
 
   return (
     <form action={formAction} className="space-y-4">
@@ -286,7 +335,7 @@ export function AddCustomerInvoiceLinePanel({
           name="kind"
           value={kind}
           error={errors.kind}
-          onChange={(event) => setKind(event.target.value as CustomerInvoiceLineKind)}
+          onChange={(event) => chooseKind(event.target.value as CustomerInvoiceLineKind)}
         >
           {LINE_KIND_ORDER.map((value) => (
             <option key={value} value={value}>
@@ -296,11 +345,38 @@ export function AddCustomerInvoiceLinePanel({
         </Select>
       </Field>
 
+      {/*
+        🟩 PLUSIEURS PORTIONS TARIFAIRES — LOT 23, consigne §11.
+
+        Le champ ne paraît QUE s'il y a un choix à faire : une seule portion se
+        reprend d'elle-même, et un déroulant à une entrée ne demanderait rien
+        tout en ayant l'air d'une décision.
+      */}
+      {isRental && suggestions.length > 1 && (
+        <Field
+          label="Portion tarifaire"
+          name="portion"
+          hint="Cette période traverse plusieurs tarifs. Chaque portion donne sa propre ligne, au tarif de sa période — les tarifs historiques ne se moyennent pas."
+        >
+          <Select
+            name="portion"
+            value={String(chosen)}
+            onChange={(event) => choosePortion(Number(event.target.value))}
+          >
+            {suggestions.map((item, index) => (
+              <option key={item.key} value={String(index)}>
+                {item.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+
       <Field label="Désignation" name="label" required error={errors.label}>
         <Input
           name="label"
-          key={`${kind}-${suggestedLabel ?? ''}`}
-          defaultValue={isRental && suggestedLabel ? suggestedLabel : ''}
+          value={label}
+          onChange={(event) => setLabel(event.target.value)}
           placeholder="Location Toyota T5, siège enfant, carburant manquant…"
           error={errors.label}
         />
@@ -313,16 +389,16 @@ export function AddCustomerInvoiceLinePanel({
           required
           error={errors.quantity}
           hint={
-            isRental && !flatRate
+            isRental && suggestion && suggestion.unit !== 'FLAT'
               ? 'Nombre d’unités facturées. Aucune durée n’est proposée : la règle d’arrondi n’est pas définie.'
               : 'Nombre d’unités facturées.'
           }
         >
           <Input
             name="quantity"
-            key={`${kind}-qty`}
             inputMode="numeric"
-            defaultValue={isRental && !flatRate ? '' : '1'}
+            value={quantity}
+            onChange={(event) => setQuantity(event.target.value)}
             error={errors.quantity}
             className="tabular"
           />
@@ -334,18 +410,16 @@ export function AddCustomerInvoiceLinePanel({
           required
           error={errors.unitPrice}
           hint={
-            isRental && suggestedUnitPrice !== null
-              ? 'Tarif verrouillé du contrat, repris tel quel.'
+            isRental && suggestion
+              ? 'Tarif verrouillé de cette période, repris tel quel.'
               : 'En KMF, sans décimale.'
           }
         >
           <Input
             name="unitPrice"
-            key={`${kind}-price`}
             inputMode="numeric"
-            defaultValue={
-              isRental && suggestedUnitPrice !== null ? String(suggestedUnitPrice) : ''
-            }
+            value={unitPrice}
+            onChange={(event) => setUnitPrice(event.target.value)}
             error={errors.unitPrice}
             className="tabular"
           />
@@ -357,7 +431,12 @@ export function AddCustomerInvoiceLinePanel({
         name="justification"
         hint="Recommandée pour un frais : elle explique ce que le client paie."
       >
-        <Textarea name="justification" rows={2} />
+        <Textarea
+          name="justification"
+          rows={2}
+          value={justification}
+          onChange={(event) => setJustification(event.target.value)}
+        />
       </Field>
 
       {kind === 'DISCOUNT' && (
@@ -401,13 +480,30 @@ export function ArchiveCustomerLineButton({
 /*  Émettre et annuler                                                         */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Émettre une facture — et dire ce que l'émission va faire, AVANT de la faire.
+ *
+ * ⚠ LA PHRASE N'EST PAS LA MÊME DANS LES DEUX RÉGIMES — LOT 23, A-6.
+ *
+ * « La location passera Facturée » est vrai d'une facture de location à durée
+ * fixée : c'est sa seule facture. C'est FAUX d'une facture de période, qui n'en
+ * couvre qu'une (Plan 02 §18.2) — et l'exploitant chercherait ensuite pourquoi
+ * son contrat est resté « En cours ».
+ *
+ * La promesse se lit ICI, avant le geste, et non dans un message qui
+ * disparaîtrait avec le formulaire : la carte « Émettre » n'existe que tant que
+ * la facture est en brouillon.
+ */
 export function IssueCustomerInvoicePanel({
   invoiceId,
   hasRental,
+  coversPeriod,
   total,
 }: {
   invoiceId: string
   hasRental: boolean
+  /** La facture couvre UNE période facturable d'une longue durée (A-6). */
+  coversPeriod: boolean
   total: number
 }) {
   const [state, formAction] = useActionState<CustomerInvoiceFormState, FormData>(
@@ -427,8 +523,12 @@ export function IssueCustomerInvoicePanel({
 
       <p className="text-xs text-muted">
         Émettre <strong>reconnaît une créance de {formatAmount(total)}</strong> et fige les lignes.
-        {hasRental && ' La location passera « Facturée ».'} Aucun encaissement n’est enregistré :
-        les règlements clients relèvent d’une étape ultérieure.
+        {hasRental &&
+          (coversPeriod
+            ? ' Cette facture couvre UNE période : la location reste en cours, et ses autres périodes garderont chacune la leur. Elle ne passera « Facturée » qu’une fois toutes ses périodes couvertes.'
+            : ' La location passera « Facturée ».')}{' '}
+        Aucun encaissement n’est enregistré : les règlements clients relèvent d’une étape
+        ultérieure.
       </p>
 
       <SubmitButton label="Émettre la facture" icon={Check} pendingLabel="Émission…" />

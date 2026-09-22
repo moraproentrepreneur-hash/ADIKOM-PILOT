@@ -26,7 +26,8 @@
 --     consultable ;
 --   · rien ne se SUPPRIME, un avenant ne se RÉÉCRIT pas ;
 --   · 🟥 LA PROLONGATION n'allonge QUE le segment ouvert — l'obstacle du
---     Plan 02 §1.3, celui qui aurait bloqué un véhicule rendu ;
+--     Plan 02 §1.3, celui qui aurait bloqué un véhicule rendu — et elle
+--     consigne désormais SON AVENANT (A-4, LOT 23) ;
 --   · `pricing_rules` INTACTE : DEC-002 départage toujours, aucune contrainte
 --     d'exclusion n'y a été posée ;
 --   · CHAQUE LOCATION du système porte au moins un segment.
@@ -1144,6 +1145,7 @@ declare
   v_fin_b   timestamptz;
   v_seg_a   timestamptz;
   v_nouveau timestamptz;
+  v_avenants int;
 begin
   select upper(period) into v_fin_a
   from public.vehicle_occupations
@@ -1155,9 +1157,36 @@ begin
   v_nouveau := (select expected_return_at from public.rentals where id = v_loc)
                + interval '3 days';
 
+  select count(*) into v_avenants from public.rental_amendments where rental_id = v_loc;
+
   perform pg_temp.agir_comme('exploitation');
   perform public.extend_rental(v_loc, v_nouveau, 'Prolongation de recette');
   perform pg_temp.redevenir_service();
+
+  /*
+   * CE CONTROLE A EVOLUE AU LOT 23, ET VOICI POURQUOI.
+   *
+   * Au LOT 22, `extend_rental` deplacait une date sans rien consigner. Le
+   * LOT 23 applique A-4 jusqu'au bout -- « on garde le meme contrat et on
+   * rajoute des avenants » -- et la prolongation devient un ACTE CONTRACTUEL :
+   * un `AVN-...` numerote, motive, date, attribue.
+   *
+   * Ce que le controle eprouvait reste eprouve A L'IDENTIQUE ci-dessous : seul
+   * le segment OUVERT s'allonge, et le vehicule rendu garde sa date. Ce qui
+   * s'ajoute est la consequence de A-4, et non un assouplissement.
+   */
+  if (select count(*) from public.rental_amendments where rental_id = v_loc)
+     <> v_avenants + 1 then
+    raise exception
+      'A-4 : la prolongation n''a consigne aucun avenant. Le contrat aurait change sans trace.';
+  end if;
+
+  if not exists (
+    select 1 from public.rental_amendments
+    where rental_id = v_loc and kind = 'EXTENSION' and reason = 'Prolongation de recette'
+  ) then
+    raise exception 'L''avenant de prolongation n''est pas de nature EXTENSION, ou a perdu son motif.';
+  end if;
 
   -- a. L'OCCUPATION DU VÉHICULE RENDU N'A PAS BOUGÉ.
   select upper(period) into v_apres_a
@@ -1197,7 +1226,7 @@ begin
   end if;
 
   raise notice
-    '[OK] 15. 🟥 La prolongation n''allonge QUE le segment ouvert ; le véhicule rendu reste libéré à sa date.';
+    '[OK] 15. 🟥 La prolongation n''allonge QUE le segment ouvert, et consigne son avenant (A-4, LOT 23).';
 end $$;
 
 
@@ -1250,9 +1279,14 @@ declare
   v_amend uuid;
   v_seg   uuid;
   v_ok    int := 0;
+  v_segments int;
+  v_avenants int;
 begin
   select id into v_amend from public.rental_amendments where rental_id = v_loc limit 1;
   select id into v_seg   from public.rental_segments  where rental_id = v_loc limit 1;
+
+  select count(*) into v_segments from public.rental_segments  where rental_id = v_loc;
+  select count(*) into v_avenants from public.rental_amendments where rental_id = v_loc;
 
   perform pg_temp.agir_comme('exploitation');
 
@@ -1304,9 +1338,17 @@ begin
     raise exception 'Seuls % refus sur 6 ont été obtenus.', v_ok;
   end if;
 
-  -- L'HISTOIRE EST INTACTE APRÈS TOUS CES REFUS.
-  if (select count(*) from public.rental_segments where rental_id = v_loc) <> 2
-  or (select count(*) from public.rental_amendments where rental_id = v_loc) <> 1 then
+  /*
+   * L'HISTOIRE EST INTACTE APRÈS TOUS CES REFUS.
+   *
+   * DEUX AVENANTS DEPUIS LE LOT 23, ET NON PLUS UN : le remplacement de
+   * véhicule (contrôle 8) et la PROLONGATION (contrôle 15), qui consigne
+   * désormais le sien (A-4). Le nombre n'est pas la règle -- la règle est que
+   * RIEN N'A BOUGÉ --, et il est donc relevé AVANT les tentatives plutôt
+   * qu'écrit en dur.
+   */
+  if (select count(*) from public.rental_segments where rental_id = v_loc) <> v_segments
+  or (select count(*) from public.rental_amendments where rental_id = v_loc) <> v_avenants then
     raise exception 'L''historique du contrat a été altéré par une tentative refusée.';
   end if;
 
@@ -1457,28 +1499,56 @@ begin
 end $$;
 
 
--- --- 21. L'AVENANT DE PROLONGATION N'EST PAS OUVERT — A-7 NON TRANCHÉE -------
+-- --- 21. L'AVENANT DE PROLONGATION EXIGE SA CAPACITE -- A-7 TOUJOURS OUVERTE -
+--
+-- CE CONTROLE A EVOLUE AU LOT 23, ET VOICI POURQUOI.
+--
+-- Au LOT 22, l'avenant de prolongation etait REFUSE, et le refus nommait le
+-- LOT 23 : le vocabulaire existait, l'acte non. Le LOT 23 le livre (A-4), et le
+-- refus est donc leve -- remplace par l'exigence qui lui correspond,
+-- `rental.rentals.extend`, comme `swap` pour le vehicule et `override` pour le
+-- tarif (A-14).
+--
+-- CE QUI N'A PAS BOUGE, ET QUI EST REVERIFIE ICI : A-7 n'est toujours pas
+-- tranchee. Aucune capacite de penalite n'existe, et aucun bareme n'est applique.
+
 do $$
 declare
   v_loc uuid := (select id from recette_avn_loc where cle = 'exception');
 begin
-  perform pg_temp.agir_comme('avenant');
+  /*
+   * SANS `rental.rentals.extend`, L'AVENANT DE PROLONGATION EST REFUSE.
+   *
+   * Le profil `lecture` consulte les locations et ne peut rien y changer : ni
+   * la policy d'insertion, ni la garde ne lui ouvrent l'acte.
+   */
+  perform pg_temp.agir_comme('lecture');
   begin
     insert into public.rental_amendments
       (amendment_no, rental_id, sequence_no, kind, effective_at, reason)
     values (public.next_number('rental_amendment'), v_loc, 2, 'EXTENSION', now(), 'Tentative');
-    raise exception 'Un avenant de prolongation a été accepté : A-7 n''est pas tranchée.';
-  exception when feature_not_supported then null;
+    raise exception
+      'Un avenant de prolongation a ete accepte sans `rental.rentals.extend` : A-14 est violee.';
+  exception
+    when insufficient_privilege then null;
+    when check_violation        then null;
   end;
   perform pg_temp.redevenir_service();
 
-  -- ET AUCUNE CAPACITÉ DE PÉNALITÉ N'A ÉTÉ CRÉÉE : la fonctionnalité n'existe pas.
+  -- ET AUCUNE CAPACITE DE PENALITE N'EXISTE : A-7 n'est pas tranchee.
   if exists (select 1 from public.permissions where code like '%penalt%') then
-    raise exception 'Une capacité de pénalité a été créée alors qu''A-7 n''est pas tranchée.';
+    raise exception 'Une capacite de penalite a ete creee alors qu''A-7 n''est pas tranchee.';
+  end if;
+
+  -- Ni aucun bareme dans l'acte de prolongation.
+  if pg_get_functiondef(
+       'public.extend_rental(uuid, timestamptz, text, bigint, public.pricing_unit, text, text)'::regprocedure
+     ) ~* '(penalt|pourcent|percent)' then
+    raise exception 'Un bareme de penalite s''est glisse dans la prolongation.';
   end if;
 
   raise notice
-    '[OK] 21. 🟥 L''avenant de prolongation est refusé et nomme le LOT 23 ; aucune capacité de pénalité n''existe.';
+    '[OK] 21. L''avenant de prolongation exige `rental.rentals.extend` (LOT 23) ; A-7 reste non tranchee.';
 end $$;
 
 

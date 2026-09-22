@@ -3436,3 +3436,180 @@ La \*\*commission\*\* se lit donc \*\*par période\*\* : 50 000 − 40 000 = 10 
 
 
 \*\*🟥 Le véhicule de partenariat.\*\* Aucune décision n’existe. Même traitement, pour sa propre raison.
+
+
+\## Addendum — 22 septembre 2026 · Longue durée et facturation périodique (DEC-047, LOT 23)
+
+
+
+\### Deux régimes de facturation, et un seul choix à faire
+
+
+
+\*\*Décision A-6 de la Direction : « Chaque fin du mois, on établit une facture », et « par période définie au contrat ».\*\*
+
+
+
+Un contrat de location relève désormais de l’un des deux régimes, et l’écran le dit :
+
+
+
+| Régime | Ce qu’il signifie |
+
+| --- | --- |
+
+| \*\*Durée fixée\*\* | \*\*Une seule facture\*\*, établie à la fin, après le retour et le contrôle. C’est le régime de toutes les locations par défaut |
+
+| \*\*Longue durée\*\* | Le contrat se facture \*\*par périodes successives\*\*, en cours de location. Chaque période reçoit \*\*sa\*\* facture, et une seule |
+
+
+
+Une longue durée porte sa \*\*cadence\*\* : « chaque fin de mois », ou « la période définie au contrat ». Aucune autre cadence n’existe — la Direction n’en a coché aucune autre.
+
+
+
+\*\*Le régime ne se change plus dès qu’une facture existe sur le contrat.\*\* Le modifier après coup permettrait de facturer une seconde fois un temps déjà facturé.
+
+
+
+\### Période facturable et période de véhicule : deux choses différentes
+
+
+
+| Nom | Ce que c’est | Ce qui la coupe |
+
+| --- | --- | --- |
+
+| \*\*Période\*\* (chronologie) | Un véhicule, des dates, un tarif verrouillé | Un remplacement de véhicule, un changement de tarif |
+
+| \*\*Période facturable\*\* | Ce qu’\*\*une\*\* facture couvre | La fin du mois, ou les bornes du contrat |
+
+
+
+Les deux se croisent sans coïncider. Une période facturable d’octobre peut traverser \*\*deux véhicules\*\* — le premier jusqu’au 12, le second ensuite — et sa facture porte alors \*\*une ligne par portion\*\*, au tarif de la période qu’elle couvre. \*\*Les tarifs ne se moyennent pas\*\*, et l’histoire n’est jamais réécrite pour simplifier une facture.
+
+
+
+\### Ce que la base garantit seule
+
+
+
+\- deux périodes facturables d’un même contrat \*\*ne se chevauchent jamais\*\* : le même temps ne peut pas être facturé deux fois ;
+
+\- elles \*\*ne laissent aucun trou\*\* : aucun intervalle du contrat ne reste hors facturation ;
+
+\- \*\*une facture par période\*\*, annulées exclues ;
+
+\- une longue durée \*\*refuse\*\* une facture couvrant tout le contrat ; une durée fixée \*\*refuse\*\* une facture de période ;
+
+\- une période \*\*non échue\*\* ne se facture pas — on ne facture pas un temps qui n’a pas couru ;
+
+\- une période \*\*déjà facturée\*\* ne se raccourcit ni ne s’annule ;
+
+\- rien ne se supprime.
+
+
+
+\### Une facture de période ne clôt pas la location
+
+
+
+Le contrat ne devient « Facturée » que lorsqu’il est « À facturer » \*\*et\*\* qu’aucune période ne reste découverte. C’est la seule lecture vraie de ce mot : tout ce qui devait être facturé l’a été.
+
+
+
+L’écran l’annonce \*\*avant\*\* l’émission, plutôt que de promettre le contraire.
+
+
+
+\### La prolongation est un avenant
+
+
+
+\*\*Décision A-4 : « On garde le même contrat et on rajoute des avenants. »\*\* La règle vaut aussi pour la prolongation.
+
+
+
+Prolonger une location ne crée \*\*aucun contrat\*\* : un avenant « Prolongation » est consigné, numéroté, daté et \*\*motivé\*\* — le motif est obligatoire, comme pour tout avenant.
+
+
+
+Ce qui s’étend, et ce qui ne bouge pas :
+
+
+
+| S’étend | Ne bouge pas |
+
+| --- | --- |
+
+| La période \*\*en cours\*\*, et l’engagement du véhicule au calendrier | Les périodes \*\*déjà closes\*\* — véhicule, dates, tarif |
+
+| Le temps \*\*facturable\*\* ajouté | Les périodes facturables \*\*déjà ouvertes\*\* |
+
+| La date de retour attendue | Les coûts \*\*gelés\*\*, les factures \*\*émises\*\* |
+
+
+
+Le découpage facturable \*\*reprend là où il s’arrêtait\*\* : la première période ajoutée part de la fin de la dernière, fût-elle au milieu d’un mois. Remanier un découpage déjà posé — et a fortiori déjà facturé — serait réécrire l’histoire.
+
+
+
+\### Le tarif à la prolongation — deux cas, et rien entre eux
+
+
+
+| Cas | Ce qui s’applique | Ce qu’il exige |
+
+| --- | --- | --- |
+
+| \*\*Ordinaire\*\* | Le tarif du contrat est \*\*conservé\*\* | Rien de plus que le droit de prolonger |
+
+| \*\*Nouveau tarif\*\* | Il ne vaut que pour le \*\*temps ajouté\*\* ; l’ancien reste attaché à la période qu’il a couverte | La capacité « Forcer un tarif manuellement » \*\*et\*\* une raison écrite |
+
+
+
+\*\*Le droit de prolonger n’ouvre pas celui de changer le tarif\*\*, et réciproquement. Un exploitant sans la seconde capacité ne se voit même pas proposer le choix, et l’écran dit pourquoi.
+
+
+
+\*\*Aucune pénalité n’est calculée\*\*, ici comme ailleurs : le montant est saisi, et aucun pourcentage n’est proposé.
+
+
+
+\### La « facture globale » demandée par le client
+
+
+
+La Direction a écrit : « le client peut exiger une facture globale de toute la période de location \*\*avec les détails et les historiques de payement\*\* ».
+
+
+
+\*\*Ce document est un relevé, non une facture.\*\* Une facture ne porte jamais l’historique de ses propres règlements ; et émettre une seconde facture couvrant des périodes déjà facturées \*\*doublerait la créance\*\* — le client devrait deux fois la même chose.
+
+
+
+Les données nécessaires — périodes, factures émises, règlements, solde — sont réunies et consultables. \*\*Le document lui-même relève du lot suivant\*\*, et l’écran le dit plutôt que de laisser chercher un bouton qui produirait une double facturation.
+
+
+
+\### Aucune durée n’est proposée
+
+
+
+Le découpage pose des \*\*bornes de calendrier\*\* — la fin du mois à Moroni est un fait, non un arrondi. Mais \*\*la quantité facturée reste saisie\*\* : la règle d’arrondi de durée — jour entamé, heure de retour, franchise — n’est toujours pas arrêtée.
+
+
+
+L’écran de facture pré-remplit le \*\*prix unitaire\*\* de chaque portion, repris du contrat, et laisse la \*\*quantité vide\*\* en disant pourquoi.
+
+
+
+\### Le retour et l’annulation ramènent le temps facturable à la réalité
+
+
+
+Un véhicule rendu avant la fin prévue : les périodes facturables postérieures au retour sont \*\*annulées\*\*, et celle qui contient le retour est \*\*ramenée à lui\*\*. Un contrat annulé voit ses périodes annulées.
+
+
+
+\*\*Une période déjà facturée n’est jamais touchée\*\* : une facture reconnaît une créance, et le retour du véhicule ne la réécrit pas.

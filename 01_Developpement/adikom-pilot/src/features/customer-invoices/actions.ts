@@ -331,9 +331,22 @@ export async function archiveCustomerInvoiceLineAction(
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Émettre — la créance est reconnue, la location devient « Facturée »        */
+/*  Émettre — la créance est reconnue                                          */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Émet une facture client.
+ *
+ * ⚠ LE MESSAGE NE DIT PAS LA MÊME CHOSE DANS LES DEUX RÉGIMES — LOT 23, A-6.
+ *
+ * Une facture de LOCATION À DURÉE FIXÉE rend le contrat « Facturée » : c'est
+ * sa seule facture, et tout est facturé.
+ *
+ * Une facture de PÉRIODE ne le fait pas (Plan 02 §18.2) : d'autres périodes
+ * restent à facturer. Annoncer « la location est désormais Facturée » serait
+ * FAUX — et l'exploitant chercherait ensuite pourquoi le contrat est toujours
+ * « En cours ». Le message est donc lu sur la facture, non supposé.
+ */
 export async function issueCustomerInvoiceAction(
   prevState: CustomerInvoiceFormState,
   formData: FormData
@@ -355,13 +368,35 @@ export async function issueCustomerInvoiceAction(
 
       if (error) throw new Error(error.message)
 
+      /*
+       * L'ÉTAT EST RELU APRÈS L'ACTE, et non déduit avant : c'est la base qui
+       * décide si le contrat bascule — lorsqu'il est « À facturer » ET qu'aucune
+       * période ne reste découverte.
+       */
+      const { data: after } = await supabase
+        .from('customer_invoices')
+        .select('rental_id, billing_period_id, rentals ( status )')
+        .eq('id', invoiceId)
+        .maybeSingle()
+
+      const rentalStatus =
+        (after?.rentals as { status?: string } | { status?: string }[] | null | undefined) ?? null
+      const status = Array.isArray(rentalStatus) ? rentalStatus[0]?.status : rentalStatus?.status
+
       revalidatePath(`/facturation/clients/${invoiceId}`)
       revalidatePath('/facturation/clients')
       revalidatePath('/location/locations')
+      if (after?.rental_id) revalidatePath(`/location/locations/${after.rental_id}`)
+
+      const suite =
+        after?.rental_id == null
+          ? ''
+          : after.billing_period_id == null || status === 'INVOICED'
+            ? ' La location qu’elle facture est désormais « Facturée ».'
+            : ' Cette facture couvre UNE période : la location reste en cours, et ses autres périodes garderont chacune la leur.'
 
       return {
-        success:
-          'La facture est émise : la créance est reconnue et ses lignes sont figées. La location qu’elle facture est désormais « Facturée ». Aucun encaissement n’a été enregistré.',
+        success: `La facture est émise : la créance est reconnue et ses lignes sont figées.${suite} Aucun encaissement n’a été enregistré.`,
       }
     },
     ERROR_PATTERNS

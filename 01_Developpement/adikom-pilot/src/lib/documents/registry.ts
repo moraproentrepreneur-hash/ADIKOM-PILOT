@@ -41,6 +41,7 @@ import {
 import { ReservationConfirmationDocument } from '@/features/reservations/documents/reservation-confirmation'
 import { getReservationDetail } from '@/features/reservations/data'
 import { CustomerInvoiceDocument } from '@/features/customer-invoices/documents/customer-invoice'
+import { listBillingPeriods } from '@/features/billing-periods/data'
 import {
   getCustomerInvoiceDetail,
   listCustomerInvoiceLines,
@@ -502,6 +503,21 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
         getDocumentIdentity(),
       ])
 
+      /*
+       * LA PÉRIODE FACTURÉE — LOT 23, A-6.
+       *
+       * Elle relève de `rental.rentals.view`, comme le reste de l'organisation
+       * du contrat. Sans cette capacité, la ligne disparaît du document plutôt
+       * que d'y figurer vide : une période absente se lirait « facture globale »
+       * (DEC-017, DEC-024).
+       */
+      const billingPeriod =
+        invoice.billingPeriodId && invoice.rentalId && (await can(PERMISSIONS.RENTALS_VIEW))
+          ? ((await listBillingPeriods(invoice.rentalId)).find(
+              (item) => item.id === invoice.billingPeriodId
+            ) ?? null)
+          : null
+
       return {
         element: CustomerInvoiceDocument({
           identity,
@@ -514,6 +530,13 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
               )
             : null,
           showPayments: canSeePayments,
+          billingPeriod: billingPeriod
+            ? {
+                sequenceNo: billingPeriod.sequenceNo,
+                from: billingPeriod.from,
+                to: billingPeriod.to,
+              }
+            : null,
           issuedOn: issuedOnLabel(),
         }),
         reference: invoice.invoiceNo,

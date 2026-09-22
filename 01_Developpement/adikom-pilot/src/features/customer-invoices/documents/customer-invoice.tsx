@@ -64,6 +64,19 @@ export type CustomerInvoiceDocumentProps = {
   clientAddress: string[] | null
   /** `false` sans `billing.customer_payments.view` : la section se tait. */
   showPayments: boolean
+  /**
+   * Période facturée — LOT 23, 🟩 A-6.
+   *
+   * `null` pour une facture de location à durée fixée ou de services. Lorsqu'elle
+   * existe, ELLE DOIT FIGURER : une facture de période ne couvre pas tout le
+   * contrat, et une pièce remise au client qui le tairait se lirait comme une
+   * facture globale.
+   *
+   * ⚠ LE TYPE NE PORTE NI MONTANT, NI COÛT, NI TARIF FOURNISSEUR. Un modèle ne
+   * peut pas révéler ce qu'il ne reçoit pas : c'est la troisième barrière du
+   * Plan 02 §6.3, portée par le typage plutôt que par la vigilance (LOT 22 §10.8).
+   */
+  billingPeriod: { sequenceNo: number; from: string; to: string } | null
   issuedOn: string
 }
 
@@ -74,6 +87,7 @@ export function CustomerInvoiceDocument({
   clientLabel,
   clientAddress,
   showPayments,
+  billingPeriod,
   issuedOn,
 }: CustomerInvoiceDocumentProps) {
   const kmf = (value: number) => formatAmount(value, { withCurrency: true })
@@ -108,6 +122,19 @@ export function CustomerInvoiceDocument({
                 <Field key={line} label={index === 0 ? 'Adresse' : ' '} value={line} />
               ))}
               <Field label="Location facturée" value={invoice.rentalNo} />
+              {/*
+                🟩 A-6 — CE QUE CETTE FACTURE COUVRE, SUR LA PIÈCE ELLE-MÊME.
+
+                Une facture mensuelle d'un contrat de longue durée ne couvre pas
+                le contrat entier. Le taire ferait passer une facture de période
+                pour une facture globale — et le client la lirait comme telle.
+              */}
+              {billingPeriod && (
+                <Field
+                  label="Période facturée"
+                  value={`n° ${billingPeriod.sequenceNo} · ${formatDate(billingPeriod.from)} au ${formatDate(billingPeriod.to)}`}
+                />
+              )}
             </>
           }
         />
