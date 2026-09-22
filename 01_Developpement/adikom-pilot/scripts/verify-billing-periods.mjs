@@ -258,6 +258,46 @@ async function selectionnerJusquA(page, selecteur, valeur, attendu, quoi, essais
   )
 }
 
+/**
+ * Coche un bouton radio, et attend que son EFFET paraisse.
+ *
+ * 🟥 POURQUOI UN `.check()` NE SUFFIT PAS.
+ *
+ * Le panneau de prolongation est un composant piloté : le second cas —
+ * « Appliquer un nouveau tarif » — n'ouvre ses champs que lorsque l'état React
+ * a changé. Un `.check()` exécuté avant l'hydratation coche la case dans le DOM
+ * sans que personne l'entende, et le premier rendu la remet ensuite à son
+ * défaut.
+ *
+ * Le geste est alors PERDU : le formulaire part sans dérogation, la
+ * prolongation est ACCEPTÉE au tarif standard — et le contrôle qui l'attendait
+ * refusée passe, pendant que le suivant échoue en accusant la date.
+ *
+ * C'est ce qui s'est produit le 22/09/2026. Le geste est donc rejoué jusqu'à ce
+ * que le champ qui n'existe QUE dans ce mode paraisse — même principe que
+ * `selectionnerJusquA` et `remplirJusquA`.
+ */
+async function cocherJusquA(page, index, selecteurAttendu, quoi, essais = 8) {
+  for (let essai = 1; essai <= essais; essai += 1) {
+    await page.getByRole('radio').nth(index).check()
+
+    try {
+      await page.waitForFunction(
+        (selecteur) => document.querySelector(selecteur) !== null,
+        selecteurAttendu,
+        { timeout: 4000 }
+      )
+      return
+    } catch {
+      // Pas encore : la page n'a peut-être pas fini de s'hydrater.
+    }
+  }
+
+  throw new Error(
+    `${quoi} n'a pas pris effet après ${essais} tentatives : « ${selecteurAttendu} » n'est jamais apparu.`
+  )
+}
+
 /** Un champ piloté rempli, et rejoué jusqu'à ce que la valeur tienne. */
 async function remplirJusquA(page, selecteur, valeur, essais = 8) {
   for (let essai = 1; essai <= essais; essai += 1) {
@@ -1000,8 +1040,9 @@ async function main() {
       await remplirJusquA(page, '#newEnd', localInput(70 * 24))
       await remplirJusquA(page, '#reason', 'Seconde prolongation')
 
-      await page.getByRole('radio').nth(1).check()
-      await page.waitForFunction(() => document.querySelector('#amount') !== null)
+      // Le champ « Raison du changement de tarif » n'existe QUE sous le second
+      // cas : c'est l'effet qui prouve que le geste a été entendu.
+      await cocherJusquA(page, 1, '#rateReason', 'Le choix « Appliquer un nouveau tarif »')
       await remplirJusquA(page, '#amount', '70000')
 
       // Sans raison de dérogation : refusé au niveau du champ.
@@ -1015,7 +1056,7 @@ async function main() {
 
       await remplirJusquA(page, '#newEnd', localInput(70 * 24))
       await remplirJusquA(page, '#reason', 'Seconde prolongation')
-      await page.getByRole('radio').nth(1).check()
+      await cocherJusquA(page, 1, '#rateReason', 'Le choix « Appliquer un nouveau tarif »')
       await remplirJusquA(page, '#amount', '70000')
       await remplirJusquA(page, '#rateReason', 'Passage du mode court au mode long')
       await page.getByRole('button', { name: /Prolonger la location/i }).first().click()

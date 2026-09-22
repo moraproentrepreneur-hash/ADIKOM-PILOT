@@ -199,7 +199,7 @@ export function RentalStatementDocument({
       <PaymentsSection payments={payments} kmf={kmf} />
 
       {/* ------------------------------------- 7. Synthèse financière ---- */}
-      <TotalsSection totals={totals} readableInvoices={invoices !== null} kmf={kmf} />
+      <TotalsSection totals={totals} kmf={kmf} />
 
       {/* La clôture redit la nature du document, pour qui n'a lu que la fin. */}
       <Section title="Portée de ce document">
@@ -597,19 +597,17 @@ function PaymentsSection({
  */
 function TotalsSection({
   totals,
-  readableInvoices,
   kmf,
 }: {
   totals: RentalStatement['totals']
-  readableInvoices: boolean
   kmf: (value: number) => string
 }) {
-  if (totals === null) {
-    // Sans les factures, il n'y a rien à synthétiser. Le chapitre « Factures »
-    // a déjà nommé le motif ; le redire ici encombrerait sans rien ajouter.
-    if (!readableInvoices) return null
-    return null
-  }
+  /*
+   * Sans les factures, il n'y a rien à synthétiser — et le chapitre
+   * « Factures » a DÉJÀ nommé le motif. Le redire ici encombrerait le document
+   * d'une seconde explication du même refus.
+   */
+  if (totals === null) return null
 
   return (
     <Section title="Synthèse financière">

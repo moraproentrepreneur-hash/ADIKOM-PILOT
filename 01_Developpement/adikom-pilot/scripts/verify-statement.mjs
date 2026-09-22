@@ -147,6 +147,31 @@ const PROFILES = {
   ],
 
   /*
+   * 🟥 CELLE QUI A LE DROIT DE LIRE LE COÛT — et qui ne le verra pas non plus.
+   *
+   * Elle détient `rental.pricing.supplier.view` EN PLUS de tout ce que porte le
+   * profil `releve`. C'est le seul profil capable de prouver la barrière du
+   * Plan 02 §6.4 : le relevé ne compose pas le coût, MÊME pour un demandeur
+   * qui a le droit de le lire.
+   *
+   * Sans elle, la confidentialité n'aurait été éprouvée que sur des profils
+   * incapables de lire le coût de toute façon — ce qui ne prouve rien du
+   * document, seulement de RLS.
+   */
+  avecCout: [
+    ...BASE,
+    'rental.fleet.view',
+    'rental.rentals.view',
+    'rental.rentals.financial.view',
+    'rental.rentals.download',
+    'rental.rentals.print',
+    'parties.clients.view',
+    'billing.customer_invoices.view',
+    'billing.customer_payments.view',
+    'rental.pricing.supplier.view',
+  ],
+
+  /*
    * Elle CONSULTE la location, et rien de plus — DEC-024.
    *
    * Ni `download`, ni `print` : « voir » n'a jamais inclus « produire un
@@ -408,7 +433,7 @@ async function main() {
     for (const [key, codes] of Object.entries(PROFILES)) {
       await createProfile(admin, accounts, key, codes)
     }
-    check(Object.keys(accounts).length === 4, 'Quatre comptes de recette créés')
+    check(Object.keys(accounts).length === 5, 'Cinq comptes de recette créés')
 
     /* ================================================================== */
     console.log('\n──────────────────────────────────────────────────────────────')
@@ -1176,16 +1201,7 @@ async function main() {
 
       await context.close()
 
-      /*
-       * LE DOCUMENT LUI-MÊME.
-       *
-       * ⚠ CE CONTRÔLE N'EST PAS LA GARANTIE, C'EN EST LE DERNIER FILET. Un grep
-       * d'octets dans un PDF ne prouve pas une absence : les flux peuvent être
-       * comprimés. LA GARANTIE EST STRUCTURELLE ET TYPÉE — le modèle ne REÇOIT
-       * pas le coût (`StatementTimelineEntry` n'a pas la colonne), et
-       * `document.test.ts` refuse jusqu'au NOM de la table dans le fichier. Ce
-       * balayage-ci attrape seulement la faute la plus grossière.
-       */
+      /* LE DOCUMENT LUI-MÊME. */
       const pdf = await fetchAs(
         base,
         accounts.releve,
@@ -1206,11 +1222,77 @@ async function main() {
         'Il est servi comme un PDF',
         pdf.type ?? '(sans type)'
       )
+
+      /*
+       * ═══════════════════════════════════════════════════════════════════
+       * 🟥 LA CONFIDENTIALITÉ DU DOCUMENT, ÉPROUVÉE PAR DIFFÉRENCE
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * ⚠ POURQUOI PAS UN BALAYAGE D'OCTETS DANS LE PDF.
+       *
+       * Les recettes des lots précédents cherchent le montant du coût dans les
+       * octets du fichier. Mesure faite : `@react-pdf` COMPRIME ses flux
+       * (`FlateDecode`) et SOUS-ENSEMBLE ses polices — le texte est encodé par
+       * index de glyphe. Ni « 41000 », ni « Relevé », ni le numéro du contrat
+       * n'y sont retrouvables, même après décompression. Un tel balayage NE
+       * PEUT PAS ÉCHOUER : il passe sur un document qui porterait le coût en
+       * gros titre. Ce n'est pas un contrôle, c'est un décor.
+       *
+       * 🟩 CE QUI SE PROUVE VRAIMENT : LA DIFFÉRENCE.
+       *
+       * Deux profils demandent LE MÊME relevé, du MÊME contrat. L'un peut lire
+       * le coût fournisseur, l'autre non. Si le document composait le coût pour
+       * qui a le droit de le lire — la « seconde composition » que le Plan 02
+       * §6.4 envisageait et que DEC-048 §k écarte —, le fichier du premier
+       * serait plus lourd : une colonne de plus au tableau de chronologie, trois
+       * montants de plus.
+       *
+       * Ils doivent donc peser PAREIL. Et pour que cette égalité prouve quelque
+       * chose, on vérifie D'ABORD que le profil privilégié lit RÉELLEMENT le
+       * coût — sans quoi on comparerait deux aveugles.
+       */
+      const sessionCout = createClient(url, anonKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      })
+      await sessionCout.auth.signInWithPassword({
+        email: accounts.avecCout.email,
+        password: accounts.avecCout.password,
+      })
+
+      const { data: coutsLus } = await sessionCout
+        .from('rental_segment_costs')
+        .select('locked_cost_amount')
+        .eq('rental_id', decor.longue.id)
+
+      await sessionCout.auth.signOut()
+
       check(
-        !(pdf.body ?? '').includes(String(COUT_A)) &&
-          !(pdf.body ?? '').includes(String(COUT_B)) &&
-          !/[Cc]oût d.acquisition/.test(pdf.body ?? ''),
-        '🟥 Le relevé ne porte AUCUN coût fournisseur'
+        (coutsLus ?? []).length > 0,
+        'Le profil privilégié lit RÉELLEMENT le coût gelé — sans quoi la comparaison ne prouverait rien',
+        `${(coutsLus ?? []).length} coût(s) lisible(s)`
+      )
+
+      const pdfAvecCout = await fetchAs(
+        base,
+        accounts.avecCout,
+        url,
+        anonKey,
+        `${releve(decor.longue.id)}?mode=download`
+      )
+
+      check(pdfAvecCout.status === 200, 'Son relevé se produit', `HTTP ${pdfAvecCout.status}`)
+
+      /*
+       * Tolérance de 64 octets : les métadonnées du PDF portent un horodatage,
+       * et deux éditions à quelques secondes d'intervalle peuvent différer de
+       * quelques octets. Une colonne de tableau en pèse des centaines.
+       */
+      const ecart = Math.abs((pdfAvecCout.body?.length ?? 0) - (pdf.body?.length ?? 0))
+
+      check(
+        ecart <= 64,
+        '🟥 LE RELEVÉ EST IDENTIQUE POUR QUI PEUT LIRE LE COÛT : il ne le compose JAMAIS',
+        `écart de ${ecart} octet(s) sur ${Math.round((pdf.body?.length ?? 0) / 1024)} Ko`
       )
     }
 
