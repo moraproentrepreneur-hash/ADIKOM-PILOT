@@ -1097,6 +1097,13 @@ const RESERVATIONS = [
       invoice: {
         quantity: 17,
         label: 'Location VEHICULE DEMO 06 — première période mensuelle',
+        /*
+         * 17 × 32 000 = 544 000 facturés, dont 200 000 réglés : le relevé du
+         * LOT 24 montre alors trois montants distincts — facturé, réglé, solde
+         * de 344 000 — plutôt qu'un solde égal au facturé, qui ne démontre pas
+         * la soustraction.
+         */
+        paid: 200_000,
       },
     },
   },
@@ -1121,6 +1128,16 @@ async function seedRentalCycle(admin, ids) {
       const { data: rental } = await admin
         .from('rentals').select('id').eq('reservation_id', existing.id).maybeSingle()
       if (rental) ids.rentals[item.code] = rental.id
+
+      /*
+       * 🟥 LA MISE EN PLACE DE LA FACTURATION SE REJOUE SUR L'EXISTANT.
+       *
+       * Sans cet appel, tout ce qu'un lot ajoute après la création initiale du
+       * jeu de démonstration reste hors de sa portée : la réservation existe,
+       * la boucle passe, et l'ajout n'atteint jamais la base. C'est ainsi que
+       * le règlement du LOT 24 manquait au contrat de longue durée.
+       */
+      created += await seedLongTermBilling(admin, ids, item, rental?.id ?? null)
       continue
     }
 
@@ -1209,85 +1226,7 @@ async function seedRentalCycle(admin, ids) {
       created += 1
     }
 
-    /*
-     * LE RÉGIME DE FACTURATION, ET SES PÉRIODES — LOT 23, A-6.
-     *
-     * Il passe par la FONCTION, jamais par un `update` : elle pose le régime ET
-     * ouvre le découpage contigu que la garde exige. Un `update` direct
-     * laisserait un contrat annoncé « mensuel » sans aucune période — et
-     * l'écran ne proposerait jamais rien.
-     *
-     * IDEMPOTENT : la fonction refuse un régime déjà posé (« un acte consigne un
-     * changement, pas une confirmation »), et la présence de périodes suffit à
-     * savoir que le travail est fait.
-     */
-    if (item.longTerm) {
-      const { count: dejaDecoupe } = await admin
-        .from('rental_billing_periods')
-        .select('id', { count: 'exact', head: true })
-        .eq('rental_id', rentalId)
-
-      if (!dejaDecoupe) {
-        await rpc(admin, 'set_rental_billing_plan', {
-          p_rental_id: rentalId,
-          p_type: 'LONG_TERM',
-          p_cadence: item.longTerm.cadence,
-        }, `régime de facturation ${item.code}`)
-        created += 1
-      }
-
-      if (item.longTerm.invoice) {
-        const note = tag(`${item.code}-FAC1`)
-
-        const { data: dejaFacturee } = await admin
-          .from('customer_invoices')
-          .select('id')
-          .eq('notes', note)
-          .maybeSingle()
-
-        if (!dejaFacturee) {
-          /*
-           * LA PREMIÈRE PÉRIODE ÉCHUE, et elle seule : on ne facture pas un
-           * temps qui n'a pas couru (A-6, « chaque FIN du mois »).
-           */
-          const { data: periodes } = await admin
-            .from('rental_billing_periods')
-            .select('id, period')
-            .eq('rental_id', rentalId)
-            .eq('status', 'PLANNED')
-            .order('sequence_no')
-
-          const premiere = (periodes ?? [])[0]
-
-          if (premiere) {
-            const invoiceId = await rpc(admin, 'create_customer_invoice', {
-              p_client_id: ids.clients[item.clientName],
-              p_invoice_date: dayOffset(-64),
-              p_due_date: dayOffset(-34),
-              p_rental_id: rentalId,
-              p_notes: note,
-              p_billing_period_id: premiere.id,
-            }, `facture de période ${item.code}`)
-
-            await rpc(admin, 'add_customer_invoice_line', {
-              p_invoice_id: invoiceId,
-              p_kind: 'RENTAL',
-              p_label: item.longTerm.invoice.label,
-              p_quantity: item.longTerm.invoice.quantity,
-              p_unit_price: 32000,
-              p_justification: null,
-            }, `ligne de la facture de période ${item.code}`)
-
-            await rpc(admin, 'issue_customer_invoice', {
-              p_invoice_id: invoiceId,
-              p_reason: 'Facture mensuelle de démonstration.',
-            }, `émission de la facture de période ${item.code}`)
-
-            created += 1
-          }
-        }
-      }
-    }
+    created += await seedLongTermBilling(admin, ids, item, rentalId)
 
     if (item.return === undefined) continue
 
@@ -1302,6 +1241,154 @@ async function seedRentalCycle(admin, ids) {
       p_observations: 'Retour de démonstration — contrôle effectué.',
     }, `retour ${item.code}`)
   }
+}
+
+/**
+ * LE RÉGIME DE FACTURATION D'UN CONTRAT DE DÉMONSTRATION, ET SA PREMIÈRE
+ * FACTURE — LOT 23, étendue au règlement du LOT 24.
+ *
+ * 🟥 POURQUOI CE BLOC EST UNE FONCTION, ET NON UN PASSAGE DE LA BOUCLE.
+ *
+ * La boucle des réservations `continue` dès que la réservation existe déjà :
+ * tout ce qui la suivait ne s'exécutait donc QU'AU PREMIER PASSAGE, sur une
+ * base vierge. Le découpage et la facture du LOT 23 ont été posés ce jour-là ;
+ * le règlement que le LOT 24 ajoute ne les aurait JAMAIS rejoints, et le relevé
+ * de démonstration serait resté sans historique de paiement — sans qu'aucune
+ * erreur ne soit signalée.
+ *
+ * Extraite, la mise en place se rejoue à chaque passage sur les contrats
+ * existants comme sur les nouveaux. Chaque geste porte sa propre garde
+ * d'idempotence : le découpage à la présence de périodes, la facture et le
+ * règlement à leur marqueur. Rien n'est dupliqué, et ce qui manque est ajouté.
+ */
+async function seedLongTermBilling(admin, ids, item, rentalId) {
+  if (!item.longTerm || !rentalId) return 0
+
+  let created = 0
+
+  /*
+   * LE RÉGIME DE FACTURATION, ET SES PÉRIODES — LOT 23, A-6.
+   *
+   * Il passe par la FONCTION, jamais par un `update` : elle pose le régime ET
+   * ouvre le découpage contigu que la garde exige. Un `update` direct
+   * laisserait un contrat annoncé « mensuel » sans aucune période — et
+   * l'écran ne proposerait jamais rien.
+   *
+   * IDEMPOTENT : la fonction refuse un régime déjà posé (« un acte consigne un
+   * changement, pas une confirmation »), et la présence de périodes suffit à
+   * savoir que le travail est fait.
+   */
+  {
+    const { count: dejaDecoupe } = await admin
+      .from('rental_billing_periods')
+      .select('id', { count: 'exact', head: true })
+      .eq('rental_id', rentalId)
+
+    if (!dejaDecoupe) {
+      await rpc(admin, 'set_rental_billing_plan', {
+        p_rental_id: rentalId,
+        p_type: 'LONG_TERM',
+        p_cadence: item.longTerm.cadence,
+      }, `régime de facturation ${item.code}`)
+      created += 1
+    }
+
+    if (item.longTerm.invoice) {
+      const note = tag(`${item.code}-FAC1`)
+
+      const { data: dejaFacturee } = await admin
+        .from('customer_invoices')
+        .select('id')
+        .eq('notes', note)
+        .maybeSingle()
+
+      if (!dejaFacturee) {
+        /*
+         * LA PREMIÈRE PÉRIODE ÉCHUE, et elle seule : on ne facture pas un
+         * temps qui n'a pas couru (A-6, « chaque FIN du mois »).
+         */
+        const { data: periodes } = await admin
+          .from('rental_billing_periods')
+          .select('id, period')
+          .eq('rental_id', rentalId)
+          .eq('status', 'PLANNED')
+          .order('sequence_no')
+
+        const premiere = (periodes ?? [])[0]
+
+        if (premiere) {
+          const invoiceId = await rpc(admin, 'create_customer_invoice', {
+            p_client_id: ids.clients[item.clientName],
+            p_invoice_date: dayOffset(-64),
+            p_due_date: dayOffset(-34),
+            p_rental_id: rentalId,
+            p_notes: note,
+            p_billing_period_id: premiere.id,
+          }, `facture de période ${item.code}`)
+
+          await rpc(admin, 'add_customer_invoice_line', {
+            p_invoice_id: invoiceId,
+            p_kind: 'RENTAL',
+            p_label: item.longTerm.invoice.label,
+            p_quantity: item.longTerm.invoice.quantity,
+            p_unit_price: 32000,
+            p_justification: null,
+          }, `ligne de la facture de période ${item.code}`)
+
+          await rpc(admin, 'issue_customer_invoice', {
+            p_invoice_id: invoiceId,
+            p_reason: 'Facture mensuelle de démonstration.',
+          }, `émission de la facture de période ${item.code}`)
+
+          created += 1
+        }
+      }
+
+      /*
+       * UN RÈGLEMENT PARTIEL — LOT 24, ce que le relevé sert à montrer.
+       *
+       * 🟩 A-6 : « avec les détails et les historiques de payement ». Sans un
+       * seul règlement, le relevé de démonstration affichait un historique
+       * VIDE — et c'est précisément le chapitre pour lequel la Direction a
+       * demandé ce document. Le solde y valait le facturé, ce qui ne
+       * démontrait rien de la soustraction.
+       *
+       * PARTIEL à dessein : facturé ≠ réglé ≠ solde, les trois montants de la
+       * synthèse se lisent alors distinctement. Une facture soldée les aurait
+       * ramenés à deux.
+       *
+       * 🟥 SON IDEMPOTENCE EST LA SIENNE, et non celle de la facture.
+       *
+       * Placé dans la branche « la facture vient d'être créée », ce règlement
+       * n'aurait jamais atteint le jeu de démonstration DÉJÀ EN PLACE : la
+       * facture existe depuis le LOT 23, et cette branche ne s'exécute plus.
+       * Il se garde donc à son propre marqueur, et s'ajoute au passage suivant
+       * sans rien dupliquer.
+       */
+      const noteReglement = tag(`${item.code}-REG1`)
+
+      const { data: facture } = await admin
+        .from('customer_invoices')
+        .select('id, status')
+        .eq('notes', note)
+        .maybeSingle()
+
+      if (facture?.status === 'ISSUED' && !(await findByNotes(admin, 'customer_payments', noteReglement))) {
+        await rpc(admin, 'record_customer_payment', {
+          p_invoice_id: facture.id,
+          p_account_id: ids.accounts.C1,
+          p_amount: item.longTerm.invoice.paid,
+          p_received_on: dayOffset(-40),
+          p_method: 'BANK_TRANSFER',
+          p_external_ref: 'DEMO-ENC-LT01',
+          p_notes: noteReglement,
+        }, `règlement partiel de la facture de période ${item.code}`)
+        created += 1
+      }
+    }
+  }
+
+  return created
 }
 
 /* ========================================================================== */

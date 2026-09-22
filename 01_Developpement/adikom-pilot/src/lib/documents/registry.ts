@@ -30,6 +30,8 @@ import {
   ReturnReportDocument,
 } from '@/features/rentals/documents/rental-documents'
 import type { ContractPeriod } from '@/features/rentals/documents/rental-blocks'
+import { RentalStatementDocument } from '@/features/rentals/documents/rental-statement'
+import { buildRentalStatement } from '@/features/rentals/documents/statement-data'
 import { getRentalDetail, listInspections } from '@/features/rentals/data'
 import { RentalAmendmentDocument } from '@/features/amendments/documents/rental-amendment'
 import { SEGMENT_STATUS_LABELS } from '@/features/amendments/constants'
@@ -360,10 +362,10 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
 
   /* ------------------------------------------------------------ Location -- */
   //
-  // QUATRE DOCUMENTS, UNE SEULE LOCATION.
+  // CINQ DOCUMENTS, UNE SEULE LOCATION.
   //
-  // Le registre est indexé par TYPE, pas par entité : quatre entrées pointent
-  // le même contrat et produisent quatre pièces différentes. Elles partagent
+  // Le registre est indexé par TYPE, pas par entité : cinq entrées pointent
+  // le même contrat et produisent cinq pièces différentes. Elles partagent
   // les mêmes permissions — voir, télécharger, imprimer une location — parce
   // qu'aucune ne constitue une capacité que l'administrateur aurait à
   // attribuer séparément des autres (Plan 02 §10.3).
@@ -432,6 +434,63 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
         }),
         reference: amendment.amendmentNo,
         label: 'Avenant-location',
+      }
+    },
+  },
+
+  /*
+   * RELEVÉ DE LOCATION — LOT 24 (DEC-048), la cinquième pièce du cycle.
+   *
+   * 🟩 A-6 : « le client peut exiger une facture globale de toute la période de
+   * location avec les détails et les historiques de payement. »
+   *
+   * 🟥 CE N'EST PAS UNE FACTURE, et cette entrée ne fait qu'ASSEMBLER : aucune
+   * écriture, aucune action, aucune transaction. Émettre une seconde facture
+   * couvrant des périodes déjà facturées doublerait la créance (Plan 02 §3.3).
+   * Générer, télécharger ou imprimer ce document est sans effet financier.
+   *
+   * AUCUNE PERSISTANCE. Le relevé se reconstruit fidèlement de données
+   * historiques immuables — segments, avenants, périodes, factures, règlements.
+   * Une table de relevés n'aurait figé que ce que ces tables savent déjà, et
+   * aurait créé une seconde vérité qu'une annulation de facture ferait diverger
+   * (§17 de la consigne, Plan 02 §16.6).
+   *
+   * AUCUN NUMÉRO PROPRE. La référence portée en en-tête est celle du CONTRAT :
+   * le relevé n'est pas un acte, c'est une représentation à la demande de l'état
+   * d'un contrat à sa date d'édition. Une séquence aurait laissé croire à une
+   * pièce comptable de plus.
+   *
+   * AUCUNE CAPACITÉ DOCUMENTAIRE NOUVELLE — Plan 02 §10.3 : « La synthèse est le
+   * 4ᵉ document du cycle, sous `rental.rentals.download` / `.print` ». Une
+   * capacité de plus ne fermerait rien que celles-ci n'aient déjà fermé
+   * (CLAUDE.md §19 bis).
+   *
+   * 🟥 MAIS ELLE N'OUVRE RIEN NON PLUS. Le relevé AGRÈGE des domaines gouvernés
+   * par d'autres capacités ; `buildRentalStatement` éprouve chacune séparément,
+   * de sorte qu'il ne soit jamais la porte dérobée par laquelle un exploitant
+   * obtiendrait les factures et les règlements que son profil lui refuse.
+   */
+  releves: {
+    entityType: 'rentals',
+    moduleCode: 'rental',
+    viewPermission: PERMISSIONS.RENTALS_VIEW,
+    downloadPermission: PERMISSIONS.RENTALS_DOWNLOAD,
+    printPermission: PERMISSIONS.RENTALS_PRINT,
+
+    async build(id) {
+      const statement = await buildRentalStatement(id)
+      if (!statement) return null
+
+      const identity = await getDocumentIdentity()
+
+      return {
+        element: RentalStatementDocument({
+          identity,
+          statement,
+          issuedOn: issuedOnLabel(),
+        }),
+        reference: statement.rental.rentalNo,
+        label: 'Releve-location',
       }
     },
   },

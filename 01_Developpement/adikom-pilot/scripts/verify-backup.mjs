@@ -525,7 +525,31 @@ async function main() {
 
     await resetForm.locator('input[name="confirmation"]').fill('efface tout')
     await resetForm.locator('button[type="submit"]').click()
-    await superAdmin.page.waitForTimeout(2000)
+
+    /*
+     * ⚠ ON ATTEND LE REFUS, ON NE LE CHRONOMÈTRE PAS.
+     *
+     * Un `waitForTimeout(2000)` supposait que l'action serveur réponde en deux
+     * secondes. Sur une fonction froide, elle prend davantage : le contrôle
+     * échouait alors en annonçant qu'une confirmation approximative
+     * réinitialise — l'exact contraire de ce qui se passait. Le contrôle
+     * SUIVANT, lui, constatait qu'aucune donnée n'avait été supprimée : les
+     * deux se contredisaient, et c'est la recette qui avait tort.
+     *
+     * L'acte voisin — la réinitialisation réelle — attend déjà son effet sur
+     * 90 secondes. Le refus mérite la même patience.
+     */
+    try {
+      await superAdmin.page.waitForFunction(
+        () => /Saisissez exactement/.test(document.body.innerText),
+        undefined,
+        { timeout: 45000 }
+      )
+    } catch {
+      // L'absence du message n'est pas une panne de recette : c'est un
+      // résultat, que le `check` ci-dessous nomme.
+    }
+
     check(
       /Saisissez exactement/.test(await mainText(superAdmin.page)),
       'Une confirmation approximative ne réinitialise rien'

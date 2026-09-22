@@ -3588,7 +3588,19 @@ La Direction a écrit : « le client peut exiger une facture globale de toute la
 
 
 
-Les données nécessaires — périodes, factures émises, règlements, solde — sont réunies et consultables. \*\*Le document lui-même relève du lot suivant\*\*, et l’écran le dit plutôt que de laisser chercher un bouton qui produirait une double facturation.
+Le document existe : c’est le \*\*relevé de location\*\*, cinquième pièce de la carte « Documents » de la fiche de location, après le contrat, les avenants, le bon de départ et le procès-verbal de retour.
+
+Il s’aperçoit, se télécharge et s’imprime sous les mêmes capacités que les quatre autres — \*\*aucune capacité nouvelle n’a été créée\*\*.
+
+\*\*Ce qu’il porte\*\* : l’identité du contrat et du client ; la période globale et le régime de facturation ; la chronologie des véhicules, des périodes et des tarifs successifs ; les avenants et leurs motifs ; les périodes facturables ; \*\*chaque facture avec le détail de ses lignes\*\* ; \*\*l’historique des règlements\*\* ; et une synthèse — total facturé, total réglé, solde restant.
+
+\*\*Ce qu’il ne fait pas\*\* : il ne crée aucune facture, aucune ligne, aucun règlement, aucun mouvement de trésorerie. Il ne modifie aucun solde ni aucun statut. \*\*Le produire est sans effet financier\*\*, et l’écran le dit avant qu’on le produise.
+
+\*\*Ce qu’il ne compte pas\*\* : une facture \*\*annulée\*\* ne porte plus de créance ; un \*\*brouillon\*\* n’en reconnaît aucune tant qu’il n’est pas émis — il est montré, son montant est annoncé, et il reste hors du total. Un \*\*règlement annulé\*\* figure au relevé pour mémoire et n’entre pas dans le total réglé.
+
+\*\*Il n’attend pas la clôture.\*\* Un relevé intermédiaire se produit en cours de location — c’est même le seul moment où un client de longue durée le réclame. Le document reflète alors l’état du contrat à sa \*\*date d’édition\*\*, qui figure en en-tête, et il annonce que la location n’est pas terminée.
+
+\*\*Aucun coût fournisseur, aucune commission, aucune marge\*\* n’y figure — le modèle documentaire ne les reçoit pas.
 
 
 

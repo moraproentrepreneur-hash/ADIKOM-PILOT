@@ -134,9 +134,13 @@ export const LONG_TERM_NOTE =
  * facture ne porte jamais l'historique de ses propres règlements : ce document
  * est un RELEVÉ. L'écran le dit plutôt que de laisser croire qu'une seconde
  * facture est possible — elle doublerait la créance.
+ *
+ * LOT 24 (DEC-048) : le document existe désormais. La note cesse d'annoncer un
+ * lot à venir et INDIQUE OÙ LE PRODUIRE — une mention qui renverrait encore au
+ * « lot suivant » enverrait chercher ailleurs ce qui est à deux onglets de là.
  */
 export const GLOBAL_STATEMENT_NOTE =
-  'Un client peut demander un récapitulatif de toute la location, avec le détail des factures et l’historique des règlements. Ce document est un RELEVÉ, non une facture : émettre une seconde facture couvrant des périodes déjà facturées doublerait la créance. Les données nécessaires sont réunies ici ; le document lui-même relève du lot suivant.'
+  'Un client peut demander un récapitulatif de toute la location, avec le détail des factures et l’historique des règlements. Ce document est un RELEVÉ, non une facture : émettre une seconde facture couvrant des périodes déjà facturées doublerait la créance. Le relevé de location se produit depuis l’onglet « Informations », carte « Documents ».'
 
 /**
  * Pourquoi aucune quantité n'est proposée — DEC-008.

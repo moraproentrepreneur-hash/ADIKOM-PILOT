@@ -2806,7 +2806,15 @@ Si elle était une facture, elle créerait une \*\*seconde créance\*\* sur des 
 
 
 
-Le texte le dit lui-même — « avec les détails et \*\*les historiques de payement\*\* » : une facture ne porte jamais l’historique de ses propres règlements. \*\*Ce document est un relevé récapitulatif\*\*, sans créance nouvelle. Les données sont réunies ; le document relève du lot suivant.
+Le texte le dit lui-même — « avec les détails et \*\*les historiques de payement\*\* » : une facture ne porte jamais l’historique de ses propres règlements. \*\*Ce document est un relevé récapitulatif\*\*, sans créance nouvelle.
+
+Il se produit depuis la fiche de location, carte « Documents ». Il énumère \*\*chaque facture du contrat avec le détail de ses lignes\*\*, \*\*l’historique des règlements\*\*, puis une synthèse : total facturé, total réglé, solde restant.
+
+\*\*Les factures ne sont jamais fusionnées.\*\* Chacune garde son numéro, son échéance et son solde propres : elles restent les seuls titres de créance. Leur somme n’apparaît qu’au chapitre de synthèse, \*\*comme un total, jamais comme une pièce\*\*.
+
+\*\*Le total facturé\*\* est celui des factures \*\*émises\*\* : ni les brouillons — qui ne reconnaissent aucune créance — ni les annulées. \*\*Le total réglé\*\* est celui des règlements \*\*validés\*\* : un règlement annulé est montré au relevé et n’y est pas compté. \*\*Le solde\*\* est leur différence.
+
+\*\*Aucun montant n’est recalculé\*\* : la facture émise reste la vérité financière, et le relevé n’en reconstitue aucune en multipliant une durée par un tarif.
 
 
 

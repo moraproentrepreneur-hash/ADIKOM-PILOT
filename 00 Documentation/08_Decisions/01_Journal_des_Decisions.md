@@ -5395,6 +5395,273 @@ contrainte, et le Plan 02 §5.7 reste écarté.
 
 ---
 
+# DEC-048 — Relevé global de location (LOT 24)
+
+| | |
+| --- | --- |
+| Date | 22 septembre 2026 |
+| Origine | Décisions de la Direction du 11/09/2026 — **A-6** · Plan 02 §3.3, §6.4, §10.3, §16.6 |
+| Nature | **Aucune table, aucune migration, aucune capacité.** Un cinquième document du cycle |
+| Portée | Module 05 · Gestion de location — Locations → Documents |
+| Réemploie | Le registre documentaire (DEC-024), `ContractPeriod` (DEC-045), les périodes (DEC-047), la chaîne de facturation du LOT 7, les règlements du LOT 8 |
+| Laisse ouvert | 🟥 **A-7** (barème de pénalité) · 🟥 **DEC-008** (durée facturable) · 🟥 **P-2** · 🟥 **P-5** |
+
+## a. Ce que la Direction a demandé, et ce que le lot en fait
+
+🟩 **A-6 — « Chaque fin du mois, on établit une facture, toutefois le client
+peut exiger une facture globale de toute la période de location avec les détails
+et les historiques de payement. »**
+
+Le LOT 23 a livré la facturation périodique et **laissé le document en
+attente**. Le LOT 24 le produit.
+
+**Ce document est un RELEVÉ, non une facture.** La lecture était déjà arrêtée
+par le Plan 02 §3.3 et consignée par DEC-047 §c ; ce lot l'implémente sans la
+rediscuter.
+
+## b. Pourquoi ce n'est pas une facture — la raison, écrite une fois de plus
+
+Si le relevé était une facture, il créerait une **seconde créance** sur des
+périodes déjà facturées. Un contrat de douze mensualités de 100 000 KMF ferait
+devoir au client 1 200 000 KMF en douze factures **et** 1 200 000 KMF en facture
+globale. `customer_invoice_total()` compterait les deux ; le solde du compte
+client serait faux ; le tableau de bord aussi ; et l'erreur se découvrirait au
+relevé bancaire, des semaines plus tard.
+
+Le texte de la Direction porte d'ailleurs sa propre réponse : **« avec les
+détails et les historiques de payement »**. Une facture ne porte **jamais**
+l'historique de ses propres règlements. Ce qui est décrit est un récapitulatif.
+
+## c. Le relevé ne crée aucune créance — et c'est éprouvé, pas affirmé
+
+Générer, télécharger ou imprimer un relevé est une opération **sans effet
+financier**. La recette du lot ne se contente pas de le dire : elle **photographie**
+l'état financier complet du contrat avant, produit le document par les trois
+modes — aperçu depuis l'écran, téléchargement, impression —, reprend la
+photographie après, et compare terme à terme.
+
+Sont comparés les **décomptes** (factures, lignes, règlements, écritures de
+trésorerie, périodes, segments, avenants), les **sommes** (facturé, réglé,
+trésorerie) et l'**état exact** de chaque objet. Un décompte seul aurait laissé
+passer une écriture qui en remplace une autre ; la somme le voit.
+
+La recette vérifie en outre qu'**aucune facture sans période** n'apparaît sur le
+contrat : si le relevé en avait fabriqué une, elle porterait le total du contrat
+et se trouverait là.
+
+## d. Aucune persistance, et pourquoi
+
+**Aucune table de relevés. Aucune séquence. Aucun statut. Aucun workflow.**
+
+Le relevé est une **projection calculée**, reconstruite à la demande à partir de
+données historiques déjà immuables et déjà auditées : segments, avenants,
+périodes facturables, factures, lignes, règlements.
+
+Une table n'aurait figé que ce que ces tables savent déjà — et aurait créé une
+**seconde vérité** qu'une annulation de facture ferait diverger, exactement ce
+que `customer_invoices_overdue_is_derived` interdit depuis le LOT 5.
+
+**Le périmètre de sauvegarde reste donc à 54 tables.** Il n'est pas gonflé d'une
+table qui n'existe pas.
+
+## e. Aucun numéro propre : la référence est celle du contrat
+
+Le relevé ne porte **pas** de numéro à lui. Sa référence, en en-tête, est celle
+du **contrat** — `LOC-2026-000444`.
+
+Ce n'est pas une économie : c'est la conséquence de §d. Un numéro de séquence
+aurait fait croire à une pièce comptable de plus, et deux relevés du même
+contrat édités à deux jours d'intervalle auraient porté deux numéros pour un
+seul et même récapitulatif. Ce qui distingue deux éditions est leur **date
+d'édition**, qui figure en en-tête de chaque page.
+
+## f. Un relevé intermédiaire est légitime
+
+Le document **n'attend pas la clôture du contrat**. Aucune règle du Plan 02 ne
+l'exige, et le besoin exprimé — « le client peut exiger » — ne l'attend pas : un
+client de longue durée réclame son récapitulatif **en cours** de location, c'est
+même le seul moment où il en a besoin.
+
+**Un seul document sert les deux cas.** Il reflète l'état du contrat à sa date
+d'édition, et lorsque la location n'est pas rendue, **il le dit** : « Cette
+location n'est pas terminée : le présent relevé décrit sa situation à la date
+d'édition figurant en en-tête. » Deux documents distincts auraient divergé.
+
+## g. Ce que le relevé compte, et ce qu'il ne compte pas
+
+Les règles financières ne sont **pas réinventées** : ce sont celles du pilotage
+(migration 052), appliquées au périmètre d'un contrat plutôt qu'à une fenêtre de
+dates.
+
+| Grandeur | Définition | Ce qui en est exclu |
+| --- | --- | --- |
+| **Total facturé** | Σ des totaux des factures dont l'état **stocké** est `ISSUED` | **Brouillons** — aucune créance reconnue tant qu'ils ne sont pas émis · **Annulées** — écartées dès la source par `listInvoicesForRental` |
+| **Total réglé** | Σ des règlements **validés** portant sur ces mêmes factures | **Règlements annulés** — leur écriture de trésorerie a été retirée (migration 054) |
+| **Solde restant** | Facturé − Réglé | Jamais une colonne : une troisième valeur stockée finirait par contredire les deux premières |
+
+L'état **affiché** d'une facture — « Payée », « Partiellement payée », « En
+retard » — est calculé comme partout ailleurs (DEC-025 §a). L'état **stocké**,
+lui, est ce qui décide seul de la créance : une facture encaissée reste
+`ISSUED` en base.
+
+**Un brouillon est montré et non compté**, et le document **annonce** son
+existence et son montant. Un total silencieusement amputé se lirait comme une
+erreur de calcul par qui a vu la facture à l'écran.
+
+**Un règlement annulé est montré et non compté**, marqué comme tel. Le taire
+ferait disparaître du récapitulatif un mouvement que le client a pu voir passer
+sur son propre relevé bancaire.
+
+## h. Chaque facture garde son individualité
+
+Les factures ne sont **jamais fusionnées**. Le relevé les énumère une à une —
+numéro, période couverte, date, échéance, état, montant — puis **détaille les
+lignes de chacune**, ce qui est le « avec les détails » d'A-6. Un relevé qui
+n'aurait porté que des totaux aurait obligé le client à réclamer, en plus,
+chacune de ses factures.
+
+Leur somme n'apparaît qu'au chapitre « Synthèse financière », **comme un total,
+jamais comme une pièce**. C'est toute la différence que le Plan 02 §3.3 sépare,
+et le document la redit en clôture : « Les factures énumérées ci-dessus
+conservent chacune leur numéro, leur échéance et leur solde propres : elles
+restent les seuls titres de créance. »
+
+## i. Aucun montant n'est recalculé — DEC-008
+
+**Les factures émises restent la vérité financière.** Le relevé additionne leurs
+totaux ; il ne reconstitue aucun montant en multipliant une durée par un tarif.
+
+La règle d'arrondi — jour entamé, heure de retour, franchise — **n'est toujours
+pas arrêtée**, et le LOT 24 ne la tranche pas. La chronologie porte les tarifs
+**verrouillés** des segments, qui sont des faits enregistrés, jamais un
+décompte ; le document le dit : « Ces tarifs ne constituent pas un décompte ».
+
+**Aucune pénalité n'est calculée** (A-7). Si une facture porte déjà une ligne
+libre saisie à ce titre, le relevé la reprend telle qu'elle existe — comme toute
+autre ligne — sans jamais en établir le barème.
+
+## j. Aucune capacité nouvelle — et ce n'est pas un relâchement
+
+**Plan 02 §10.3** : « `rental.rentals.summary.*` — la synthèse est le 4ᵉ document
+du cycle, sous `rental.rentals.download` / `.print` ». Le catalogue reste à
+**197 capacités**.
+
+Le relevé est gouverné exactement comme les quatre autres pièces du contrat :
+`rental.rentals.view` **en plus de** `rental.rentals.download` ou
+`rental.rentals.print`, selon le mode. Une cinquième capacité documentaire ne
+fermerait rien que celles-ci n'aient déjà fermé (`CLAUDE.md` §19 bis).
+
+🟥 **Mais elle n'ouvre rien non plus.** Le relevé **agrège** des domaines
+gouvernés par d'autres capacités. Chacune est éprouvée séparément avant sa
+lecture :
+
+| Section du relevé | Capacité exigée | Sans elle |
+| --- | --- | --- |
+| Identité du client | `parties.clients.view` | La section est **nommée**, jamais tue |
+| Tarifs de la chronologie | `rental.rentals.financial.view` | La colonne disparaît, et le document le dit |
+| Factures et leurs lignes | `billing.customer_invoices.view` | Section fermée et nommée · **aucune synthèse** |
+| Règlements | `billing.customer_payments.view` | Section fermée · total réglé et solde **absents**, jamais zéro |
+
+**Ce qui n'est pas autorisé n'est pas LU** — donc ne peut pas figurer au PDF. La
+recette l'éprouve avec de vraies sessions : un profil qui voit la location sans
+voir sa facturation n'obtient ni facture ni règlement, **ni par appel PostgREST
+direct, ni par le document**. Son relevé lui est tout de même remis — c'est une
+pièce du contrat — mais amputé, et plus court.
+
+## k. Aucun coût fournisseur — la barrière est le TYPE
+
+**Plan 02 §6.4** : « Aucun document destiné à un tiers ne porte un coût
+d'acquisition, une commission ou une marge. […] ni synthèse de location remise
+au client. »
+
+Le Plan 02 §6.4 envisageait « un seul document, deux compositions », le coût
+n'apparaissant que pour qui détient les deux capacités. **Cette ouverture n'est
+pas retenue** : le relevé est la pièce du cycle la plus susceptible d'être
+remise au client, et une composition conditionnelle n'aurait tenu qu'à la
+vigilance de celui qui l'imprime. Le coût d'exploitation reste lisible là où il
+l'était déjà — fiche véhicule, fiche fournisseur, segment, onglet marge, facture
+fournisseur (Plan 02 §6.5) — et **le relevé ne le compose jamais**.
+
+Le modèle documentaire **ne reçoit pas** le coût :
+
+- `StatementTimelineEntry` réemploie `ContractPeriod` (DEC-045), qui **ne porte
+  pas** la colonne du coût gelé ;
+- aucun champ de `RentalStatement` ne relaie un coût, une commission ou une
+  marge ;
+- le balayage structurel de `document.test.ts` refuse **jusqu'au nom** de ces
+  colonnes dans les fichiers de modèles — y compris en commentaire, et il a
+  d'ailleurs refusé une première rédaction de ce lot qui les citait pour dire
+  qu'elle ne les employait pas.
+
+C'est la seule barrière qui tienne quand le demandeur **détient** le droit de
+lire le coût : un Super Admin qui télécharge un relevé ne peut pas en faire
+sortir ce que le modèle n'a jamais reçu.
+
+## l. Aucune architecture d'audit nouvelle
+
+Le relevé **hérite** de celle des quatre autres pièces du cycle, sans rien y
+ajouter :
+
+- le **téléchargement** est journalisé (`EXPORT`) — il produit un fichier qui
+  quitte le système ;
+- l'**aperçu** et l'**impression** ne le sont pas — ils montrent ce que l'écran
+  montre déjà, et les inscrire noierait le journal (Règles audit §80) ;
+- les **refus** sont tracés (`ACCESS_DENIED`), quel que soit le mode.
+
+**Générer un relevé n'est pas transformé en acte financier.** La recette vérifie
+les trois comportements.
+
+## m. Où il se trouve, et ce que l'écran en dit
+
+Le relevé est la **cinquième pièce de la carte « Documents »** de la fiche de
+location, après le contrat, les avenants, le bon de départ et le procès-verbal
+de retour. **Aucune entrée de navigation nouvelle** : le relevé porte sur un
+contrat, et se produit depuis ce contrat.
+
+L'écran dit ce que le document est **avant** qu'on le produise :
+
+> « Récapitule les factures et les règlements existants de ce contrat. Il ne
+> crée aucune facture ni aucune créance nouvelle. »
+
+Sans cette phrase, un exploitant cliquerait en croyant établir la « facture
+globale » que le client réclame, et s'étonnerait ensuite de ne pas la retrouver
+dans la liste des factures.
+
+La note de l'onglet « Facturation » posée par DEC-047 cesse d'annoncer un lot à
+venir : elle **indique où produire le relevé**.
+
+## n. Ce que le lot ne tranche pas
+
+🟥 **A-7 — les pénalités.** Aucun barème, aucun pourcentage, aucune capacité,
+aucune ligne automatique. Le relevé reprend les lignes qui existent, il n'en
+calcule aucune.
+
+🟥 **DEC-008 — la durée facturable.** Inchangée (§i).
+
+🟥 **P-2 — le coût interne d'un véhicule ADIKOM** et le **véhicule de
+partenariat** : inchangés. Ces sujets concernent les coûts internes, et ne
+touchent pas un document client.
+
+🟥 **P-5 — le fournisseur des coûts de services** : `service_variant_costs` n'a
+été ni touchée ni étendue.
+
+## o. Limites connues du relevé
+
+- **Le détail des lignes est celui des factures.** Une facture sans ligne ne
+  produit pas de bloc de détail : la mention « aucune ligne » sous un montant
+  nul n'apprendrait rien.
+- **Un règlement rattaché à une facture annulée n'est pas remonté.** Sa facture
+  ne porte plus de créance, et l'afficher aurait montré un encaissement sans la
+  dette correspondante — donc un solde négatif.
+- **Le relevé ne porte pas les incidents ni les maintenances.** Ce sont des
+  faits d'exploitation ; ce qui en découle pour le client passe par une ligne de
+  facture, et se lit donc au chapitre des factures.
+- **Aucun export tabulaire.** Le relevé est un document, non un classeur.
+  `rental.rentals.export` continue de gouverner la liste des locations, et rien
+  de ce lot ne l'a touchée.
+
+---
+
 **ADIKOM PILOT — Journal des décisions**
 
 > Une décision prise doit être retrouvable.

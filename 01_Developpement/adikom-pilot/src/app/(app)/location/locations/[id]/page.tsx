@@ -898,6 +898,9 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
                   : []),
                 ...(rental.startedAt ? ['bon de départ'] : []),
                 ...(rental.returnedAt ? ['procès-verbal de retour'] : []),
+                // Le relevé se produit à tout moment : il décrit le contrat à sa
+                // date d'édition, terminé ou non (LOT 24).
+                'relevé de location',
               ])}
             >
               <div className="space-y-4">
@@ -951,6 +954,38 @@ export default async function RentalDetailPage(props: PageProps<'/location/locat
                     canPrint={canPrint}
                   />
                 )}
+
+                {/*
+                  LE RELEVÉ DE LOCATION — LOT 24 (DEC-048).
+
+                  🟩 A-6 : « le client peut exiger une facture globale de toute
+                  la période de location avec les détails et les historiques de
+                  payement. »
+
+                  🟥 L'ÉCRAN DIT CE QUE CE DOCUMENT EST, AVANT QU'ON LE PRODUISE.
+                  Sans cette phrase, un exploitant cliquerait en croyant établir
+                  la « facture globale » que le client réclame — et s'étonnerait
+                  ensuite de ne pas la retrouver dans la liste des factures. Le
+                  relevé récapitule ; il ne facture pas.
+
+                  Il est proposé quel que soit l'état du contrat : c'est EN COURS
+                  de longue durée qu'un client le réclame, et le document porte
+                  sa date d'édition.
+                */}
+                <div className="border-t border-line pt-4">
+                  <p className="mb-1 text-xs font-medium text-ink">Relevé de location</p>
+                  <p className="mb-2 text-xs text-muted">
+                    Récapitule les factures et les règlements existants de ce contrat. Il ne crée
+                    aucune facture ni aucune créance nouvelle.
+                  </p>
+                  <DocumentToolbar
+                    type="releves"
+                    id={id}
+                    label={`relevé ${rental.rentalNo}`}
+                    canDownload={canDownload}
+                    canPrint={canPrint}
+                  />
+                </div>
               </div>
             </Card>
           )}

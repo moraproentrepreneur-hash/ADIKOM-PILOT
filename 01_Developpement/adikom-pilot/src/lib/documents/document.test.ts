@@ -13,6 +13,16 @@ import {
   ReturnReportDocument,
 } from '@/features/rentals/documents/rental-documents'
 import type { ContractPeriod } from '@/features/rentals/documents/rental-blocks'
+import { RentalStatementDocument } from '@/features/rentals/documents/rental-statement'
+import { totals } from '@/features/rentals/documents/statement-data'
+import type {
+  RentalStatement,
+  StatementAmendment,
+  StatementInvoice,
+  StatementPayment,
+  StatementPeriod,
+  StatementTimelineEntry,
+} from '@/features/rentals/documents/statement-data'
 import { RentalAmendmentDocument } from '@/features/amendments/documents/rental-amendment'
 import { CustomerInvoiceDocument } from '@/features/customer-invoices/documents/customer-invoice'
 import type {
@@ -1041,6 +1051,417 @@ describe('facture client de période', () => {
         })
       )
     )
+  })
+})
+
+/* -------------------------------------------------------------------------- */
+/*  Relevé de location — LOT 24, DEC-048                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * 🟥 LE RELEVÉ N'EST PAS UNE FACTURE, et ces rendus l'éprouvent BRANCHE PAR
+ * BRANCHE.
+ *
+ * Le document comporte plus d'états que toute autre pièce du cycle : sept
+ * sections, chacune pouvant être garnie, vide, ou fermée par un défaut de
+ * droit. La panne du 22/08/2026 est née d'une branche jamais rendue ; celui-ci
+ * en offre une douzaine.
+ *
+ * `StatementTimelineEntry` ne porte AUCUN coût gelé : le type écarte la
+ * colonne, et le balayage structurel plus bas refuse jusqu'à son nom.
+ */
+const STATEMENT_TIMELINE: StatementTimelineEntry[] = PERIODS
+
+const STATEMENT_AMENDMENTS: StatementAmendment[] = [
+  {
+    amendmentNo: 'AVN-2026-000001',
+    sequenceNo: 1,
+    kindLabel: 'Changement de véhicule',
+    effectiveAt: '2026-09-02T08:00:00.000Z',
+    reason: 'Panne immobilisante du véhicule initial',
+    rateOverride: false,
+  },
+  {
+    amendmentNo: 'AVN-2026-000002',
+    sequenceNo: 2,
+    kindLabel: 'Prolongation',
+    effectiveAt: '2026-10-01T05:00:00.000Z',
+    reason: 'Prolongation demandée par le client',
+    rateOverride: true,
+  },
+]
+
+const STATEMENT_PERIODS: StatementPeriod[] = [
+  {
+    sequenceNo: 1,
+    from: '2026-09-01T05:00:00.000Z',
+    to: '2026-10-01T05:00:00.000Z',
+    originLabel: 'Échéance mensuelle',
+    stateLabel: 'Facturée',
+    invoiceNo: 'FAC-C-2026-000012',
+  },
+  {
+    sequenceNo: 2,
+    from: '2026-10-01T05:00:00.000Z',
+    to: '2026-11-01T05:00:00.000Z',
+    originLabel: 'Échéance mensuelle',
+    stateLabel: 'Facturable',
+    invoiceNo: null,
+  },
+]
+
+const STATEMENT_INVOICES: StatementInvoice[] = [
+  {
+    invoiceNo: 'FAC-C-2026-000012',
+    statusLabel: 'Partiellement payée',
+    recognised: true,
+    invoiceDate: '2026-10-01',
+    dueDate: '2026-10-31',
+    total: 1_500_000,
+    paidAmount: 500_000,
+    remainingDue: 1_000_000,
+    periodSequenceNo: 1,
+    lines: [
+      {
+        label: 'Location Toyota Land Cruiser — 01/09/2026 au 02/09/2026',
+        quantity: 1,
+        unitPrice: 120_000,
+        lineTotal: 120_000,
+        deduction: false,
+      },
+      {
+        label: 'Remise commerciale',
+        quantity: 1,
+        unitPrice: 20_000,
+        lineTotal: 20_000,
+        deduction: true,
+      },
+    ],
+  },
+  /* Un BROUILLON : montré, jamais compté. */
+  {
+    invoiceNo: 'FAC-C-2026-000013',
+    statusLabel: 'Brouillon',
+    recognised: false,
+    invoiceDate: '2026-11-01',
+    dueDate: null,
+    total: 300_000,
+    paidAmount: 0,
+    remainingDue: 300_000,
+    periodSequenceNo: 2,
+    lines: [],
+  },
+]
+
+const STATEMENT_PAYMENTS: StatementPayment[] = [
+  {
+    paymentNo: 'REG-2026-000045',
+    receivedOn: '2026-10-05',
+    methodLabel: 'Virement bancaire',
+    externalRef: 'VIR-889',
+    amount: 500_000,
+    invoiceNo: 'FAC-C-2026-000012',
+    cancelled: false,
+  },
+  /* Un règlement ANNULÉ : montré pour mémoire, jamais compté. */
+  {
+    paymentNo: 'REG-2026-000046',
+    receivedOn: '2026-10-06',
+    methodLabel: 'Espèces',
+    externalRef: null,
+    amount: 50_000,
+    invoiceNo: 'FAC-C-2026-000012',
+    cancelled: true,
+  },
+]
+
+const LONG_TERM_RENTAL: RentalDetail = {
+  ...RENTAL,
+  status: 'IN_PROGRESS',
+  rentalType: 'LONG_TERM',
+  billingCadence: 'MONTHLY',
+  returnedAt: null,
+}
+
+const STATEMENT: RentalStatement = {
+  rental: LONG_TERM_RENTAL,
+  client: CLIENT,
+  timeline: STATEMENT_TIMELINE,
+  amendments: STATEMENT_AMENDMENTS,
+  periods: STATEMENT_PERIODS,
+  invoices: STATEMENT_INVOICES,
+  payments: STATEMENT_PAYMENTS,
+  totals: totals(STATEMENT_INVOICES, STATEMENT_PAYMENTS),
+  showAmounts: true,
+}
+
+describe('relevé de location', () => {
+  it('produit un PDF complet — longue durée, avenants, factures et règlements', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalStatementDocument({ identity: IDENTITY, statement: STATEMENT, issuedOn: ISSUED })
+      )
+    )
+  })
+
+  /**
+   * LE CAS D'UNE LOCATION À DURÉE FIXÉE — une facture, aucune période.
+   *
+   * Le chapitre « Périodes facturables » disparaît : un tableau d'une ligne
+   * n'aurait fait que redire la période du contrat.
+   */
+  it('produit un PDF pour une location à durée fixée', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalStatementDocument({
+          identity: IDENTITY,
+          statement: {
+            ...STATEMENT,
+            rental: RENTAL,
+            amendments: [],
+            periods: [],
+            timeline: [PERIODS[0]],
+            invoices: [{ ...STATEMENT_INVOICES[0], periodSequenceNo: null }],
+            totals: totals([STATEMENT_INVOICES[0]], STATEMENT_PAYMENTS),
+          },
+          issuedOn: ISSUED,
+        })
+      )
+    )
+  })
+
+  /**
+   * LE CAS VIDE — un contrat qui n'a encore rien produit.
+   *
+   * Aucune facture, aucun règlement, aucun avenant. Chaque section le DIT
+   * plutôt que de disparaître en silence là où l'absence est une information
+   * (DEC-017).
+   */
+  it('produit un PDF pour un contrat sans facture ni règlement', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalStatementDocument({
+          identity: IDENTITY,
+          statement: {
+            ...STATEMENT,
+            amendments: [],
+            periods: [],
+            invoices: [],
+            payments: [],
+            totals: totals([], []),
+          },
+          issuedOn: ISSUED,
+        })
+      )
+    )
+  })
+
+  /**
+   * 🟥 LE RELEVÉ N'EST PAS UNE PORTE DÉROBÉE.
+   *
+   * Un lecteur qui voit la location sans avoir le droit de consulter les
+   * factures ni les règlements n'obtient NI l'un NI l'autre par ce document :
+   * les sections sont fermées et NOMMÉES, et la synthèse financière n'existe
+   * pas. C'est le cas le plus important du lot.
+   */
+  it('produit un PDF sans factures ni règlements lisibles', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalStatementDocument({
+          identity: IDENTITY,
+          statement: { ...STATEMENT, invoices: null, payments: null, totals: null },
+          issuedOn: ISSUED,
+        })
+      )
+    )
+  })
+
+  /**
+   * Les factures sont lisibles, les règlements ne le sont pas.
+   *
+   * Le total facturé s'affiche ; le total réglé et le solde NE S'AFFICHENT PAS
+   * à zéro — ce qui ferait passer un contrat soldé pour impayé (DEC-017).
+   */
+  it('produit un PDF sans droit sur les règlements', async () => {
+    const aveugle = STATEMENT_INVOICES.map((invoice) => ({
+      ...invoice,
+      paidAmount: null,
+      remainingDue: null,
+    }))
+
+    expectPdf(
+      await renderDocument(
+        RentalStatementDocument({
+          identity: IDENTITY,
+          statement: {
+            ...STATEMENT,
+            invoices: aveugle,
+            payments: null,
+            totals: totals(aveugle, null),
+          },
+          issuedOn: ISSUED,
+        })
+      )
+    )
+  })
+
+  /** Sans droit financier ni sur le client : le document reste produisible. */
+  it('produit un PDF sans montants de chronologie ni identité du client', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalStatementDocument({
+          identity: IDENTITY,
+          statement: { ...STATEMENT, client: null, showAmounts: false },
+          issuedOn: ISSUED,
+        })
+      )
+    )
+  })
+
+  /** Les véhicules ne sont pas lisibles : « Non communiqué », jamais un tiret. */
+  it('produit un PDF dont les véhicules ne sont pas lisibles', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalStatementDocument({
+          identity: IDENTITY,
+          statement: {
+            ...STATEMENT,
+            timeline: STATEMENT_TIMELINE.map((entry) => ({ ...entry, vehicleLabel: null })),
+          },
+          issuedOn: ISSUED,
+        })
+      )
+    )
+  })
+
+  /** Une location terminée : la mention « relevé intermédiaire » disparaît. */
+  it('produit un PDF pour une location terminée', async () => {
+    expectPdf(
+      await renderDocument(
+        RentalStatementDocument({
+          identity: IDENTITY,
+          statement: {
+            ...STATEMENT,
+            rental: {
+              ...LONG_TERM_RENTAL,
+              status: 'CLOSED',
+              returnedAt: '2026-11-01T04:00:00.000Z',
+            },
+          },
+          issuedOn: ISSUED,
+        })
+      )
+    )
+  })
+})
+
+/* -------------------------------------------------------------------------- */
+/*  La synthèse financière — LOT 24, le cœur arithmétique du relevé            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * 🟥 CE QUI COMPTE, ET CE QUI NE COMPTE PAS.
+ *
+ * `totals` est un module PUR : il ne lit rien, et c'est ce qui le rend
+ * éprouvable ligne à ligne. Les règles qu'il applique ne sont pas nouvelles —
+ * ce sont celles du pilotage (migration 052), appliquées au périmètre d'un
+ * contrat plutôt qu'à une fenêtre de dates.
+ */
+describe('synthèse financière du relevé', () => {
+  it('additionne les factures émises et les règlements validés', () => {
+    const somme = totals(STATEMENT_INVOICES, STATEMENT_PAYMENTS)
+
+    // La facture émise SEULE : le brouillon de 300 000 n'y est pas.
+    expect(somme.invoiced).toBe(1_500_000)
+    expect(somme.paid).toBe(500_000)
+    expect(somme.balance).toBe(1_000_000)
+  })
+
+  /** Un BROUILLON ne reconnaît aucune créance — mais son existence est dite. */
+  it('écarte les brouillons du total, et les annonce', () => {
+    const somme = totals(STATEMENT_INVOICES, STATEMENT_PAYMENTS)
+
+    expect(somme.draftCount).toBe(1)
+    expect(somme.draftAmount).toBe(300_000)
+  })
+
+  /**
+   * 🟥 AUCUN DOUBLE COMPTAGE.
+   *
+   * Trois factures de période produisent la somme des trois, jamais davantage :
+   * le relevé n'ajoute aucune créance de synthèse au-dessus de celles qu'il
+   * récapitule. C'est la garantie centrale du lot (Plan 02 §3.3).
+   */
+  it('additionne trois factures de période sans en fabriquer une quatrième', () => {
+    const periodiques: StatementInvoice[] = [1, 2, 3].map((n) => ({
+      ...STATEMENT_INVOICES[0],
+      invoiceNo: `FAC-C-2026-00001${n}`,
+      total: 500_000,
+      paidAmount: n === 3 ? 0 : 500_000,
+      remainingDue: n === 3 ? 500_000 : 0,
+      periodSequenceNo: n,
+      lines: [],
+    }))
+
+    const somme = totals(periodiques, [])
+
+    expect(somme.invoiced).toBe(1_500_000)
+    expect(somme.paid).toBe(1_000_000)
+    expect(somme.balance).toBe(500_000)
+  })
+
+  /** Une facture totalement réglée laisse un solde nul, jamais négatif. */
+  it('rend un solde nul pour une facture soldée', () => {
+    const soldee: StatementInvoice[] = [
+      { ...STATEMENT_INVOICES[0], total: 400_000, paidAmount: 400_000, remainingDue: 0 },
+    ]
+
+    expect(totals(soldee, []).balance).toBe(0)
+  })
+
+  /** Aucune facture : trois zéros, et non trois `null`. */
+  it('rend une synthèse nulle pour un contrat jamais facturé', () => {
+    const somme = totals([], [])
+
+    expect(somme.invoiced).toBe(0)
+    expect(somme.paid).toBe(0)
+    expect(somme.balance).toBe(0)
+    expect(somme.draftCount).toBe(0)
+  })
+
+  /**
+   * SANS LE DROIT DE LIRE LES RÈGLEMENTS, ON NE CONCLUT RIEN.
+   *
+   * `paid` et `balance` valent `null`, et le document le DIT. Afficher zéro
+   * ferait passer un contrat intégralement réglé pour entièrement impayé — et
+   * c'est ce relevé qui serait remis au client (DEC-017, DEC-024).
+   */
+  it('ne conclut rien sur l’encaissé lorsque les règlements ne sont pas lisibles', () => {
+    const aveugle = STATEMENT_INVOICES.map((invoice) => ({
+      ...invoice,
+      paidAmount: null,
+      remainingDue: null,
+    }))
+
+    const somme = totals(aveugle, null)
+
+    expect(somme.invoiced).toBe(1_500_000)
+    expect(somme.paid).toBeNull()
+    expect(somme.balance).toBeNull()
+  })
+
+  /**
+   * Une facture ANNULÉE n'atteint jamais ce calcul : `listInvoicesForRental`
+   * l'écarte à la source. Ici, c'est l'état STOCKÉ qui décide — un brouillon
+   * de 900 000 ne gonfle pas un total de 100 000.
+   */
+  it('ne compte que les factures dont l’état stocké reconnaît la créance', () => {
+    const melange: StatementInvoice[] = [
+      { ...STATEMENT_INVOICES[0], total: 100_000, paidAmount: 0, remainingDue: 100_000 },
+      { ...STATEMENT_INVOICES[1], total: 900_000, paidAmount: 0, remainingDue: 900_000 },
+    ]
+
+    expect(totals(melange, []).invoiced).toBe(100_000)
   })
 })
 

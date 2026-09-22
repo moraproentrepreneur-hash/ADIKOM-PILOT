@@ -159,3 +159,65 @@ export async function listClientPayments(clientId: string): Promise<CustomerPaym
 
   return ((data ?? []) as unknown as RawRow[]).map(toPayment)
 }
+
+/**
+ * Règlements d'une LOCATION — LOT 24, DEC-048.
+ *
+ * Le relevé de location doit présenter « les détails et les historiques de
+ * payement » de tout le contrat (A-6). Un règlement ne porte pas la location :
+ * il porte la FACTURE, qui la porte (Location → Facture → Règlement). La
+ * résolution passe donc par les factures, exactement comme `listClientPayments`
+ * passe par elles pour un client — et non par une colonne recopiée qui pourrait
+ * les contredire.
+ *
+ * LES FACTURES ANNULÉES SONT ÉCARTÉES DÈS LA RECHERCHE. Une facture annulée ne
+ * porte plus de créance ; ses règlements — s'il en restait — ne se rapportent à
+ * rien que le relevé reconnaisse. Les remonter aurait affiché un encaissement
+ * sans la dette correspondante, donc un solde négatif.
+ *
+ * Les règlements ANNULÉS, eux, sont remontés : le relevé les MONTRE et ne les
+ * COMPTE pas (§F). Les taire ferait disparaître du récapitulatif un mouvement
+ * que le client a pu voir passer sur son propre relevé bancaire.
+ *
+ * L'appelant ne DOIT l'appeler qu'après avoir vérifié
+ * `billing.customer_payments.view` : une liste vide obtenue par refus de lecture
+ * se lirait « ce contrat n'a jamais été réglé » (DEC-017).
+ */
+export async function listRentalPayments(rentalId: string): Promise<CustomerPayment[]> {
+  const supabase = await createSupabaseServerClient()
+
+  const { data: invoices, error } = await supabase
+    .from('customer_invoices')
+    .select('id')
+    .eq('rental_id', rentalId)
+    .neq('status', 'CANCELLED')
+
+  if (error) {
+    reportQueryFailure(
+      'factures clients',
+      error,
+      'Les règlements de cette location n’ont pas pu être recherchés.'
+    )
+  }
+
+  const ids = (invoices ?? []).map((row) => row.id)
+  if (ids.length === 0) return []
+
+  const { data, error: paymentsError } = await supabase
+    .from('customer_payments')
+    .select(BASE_SELECT)
+    .in('customer_invoice_id', ids)
+    .order('received_on', { ascending: true })
+    .order('created_at', { ascending: true })
+    .limit(200)
+
+  if (paymentsError) {
+    reportQueryFailure(
+      'règlements clients',
+      paymentsError,
+      'La liste des règlements n’a pas pu être chargée.'
+    )
+  }
+
+  return ((data ?? []) as unknown as RawRow[]).map(toPayment)
+}
