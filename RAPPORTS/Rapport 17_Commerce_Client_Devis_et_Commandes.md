@@ -5,7 +5,7 @@
 **Date :** 23 septembre 2026
 **Entreprise :** ADIKOM Technology & Travel
 **Projet :** ADIKOM PILOT
-**Sources :** Plan 02 §7.1, §9.1–9.3, §9.5, §10.2, §13.2 · Plan 01 §15 · Décisions Direction A-10, A-13, A-14 · DEC-006, DEC-010, DEC-017, DEC-023, DEC-024, DEC-043, DEC-046, DEC-049
+**Sources :** Plan 02 §7.1, §9.1–9.3, §9.5, §10.2, §13.2 · Plan 01 §15 · Décisions Direction A-10, A-13, A-14 · DEC-006, DEC-010, DEC-017, DEC-023, DEC-024, DEC-043, DEC-046, DEC-049 · **Clôture du 23/09/2026 : DEC-050, DEC-051**
 
 ---
 
@@ -395,7 +395,8 @@ contrainte technique décidait en silence du métier :
 3. là où le Plan a **voulu** plusieurs factures — la longue durée, A-6 —, il a
    créé l'objet qui les porte, `rental_billing_periods`, et deux index disjoints.
 
-🟥 **Point ouvert, §19.** Voir §21.1.
+🟩 **Question close par DEC-050 : la Direction en fait une décision métier.**
+Voir §21.1.
 
 ## 10.5 Annuler ne crée aucune impasse
 
@@ -441,7 +442,7 @@ Module `commerce`, ordre **11**. Menus `sales_quotes` (1), `sales_orders` (2).
 | --- | --- |
 | `commerce.*.invoice` | Facturer relève de `billing.customer_invoices.create` (migration 007). Une seconde capacité donnerait **deux vérités sur le même acte** |
 | `commerce.*.convert` | Convertir un devis, c'est **créer une commande** |
-| `commerce.*.discount` | Aucune remise n'existe (§13) |
+| `commerce.*.discount` | Aucune remise n'existe (§13). **DEC-051** en a depuis validé le principe et **diffère l'implémentation** : la capacité sera définie au lot concerné |
 | `commerce.*.margin` · `.cost` | Aucun coût, aucune marge (§12) |
 | `commerce.purchase_*` | LOT 26 |
 
@@ -528,7 +529,10 @@ hors catalogue. Le prix d'une ligne de **catalogue**, lui, n'est **pas
 saisissable** — la base refuse un montant transmis avec une variante, précisément
 pour qu'une remise ne se glisse pas là où rien ne la garderait. **Éprouvé.**
 
-🟥 **Point ouvert, §21.2.**
+🟩 **Question close par DEC-051.** La Direction valide le principe des remises,
+**en montant fixe KMF uniquement**, sous **permission indépendante**, et en
+**diffère l'implémentation**. Tout ce que décrit ce §13 reste l'état exact du
+SaaS. Voir §21.2.
 
 ---
 
@@ -847,36 +851,62 @@ explicitement.
 
 ---
 
-# 21. Points ouverts
+# 21. Points ouverts — et les deux que la Direction a clos
 
-## 21.1 🟥 Facturation partielle d'une commande
+> **Clôture du 23 septembre 2026.** Les deux décisions que ce lot avait laissées
+> ouvertes ont été prononcées par la Direction : **DEC-050** et **DEC-051**.
+> **Aucune ligne de code, aucune migration, aucune capacité n'a changé** — seule
+> la nature des règles a changé.
 
-**La question.** Une commande peut-elle produire plusieurs factures — acompte à
-la commande, solde à la livraison ?
+## 21.1 🟩 Facturation d'une commande — **DÉCISION FERMÉE · DEC-050**
 
-**Ce qui est appliqué** : **une commande, au plus une facture non annulée**,
-déduite de l'architecture documentée (§10.4) et **écrite**, non subie.
+**La question posée.** Une commande pouvait-elle produire plusieurs factures —
+acompte à la commande, solde à la livraison ?
 
-**Ce que coûterait l'autre choix** : rien d'irréversible. L'extension est
-**additive** et connue — un objet « tranche de commande » entre la commande et la
-facture, sur le modèle exact de `rental_billing_periods`, et deux index
-disjoints comme au LOT 23.
+**La décision.** **Une commande client produit au plus une facture client non
+annulée.** La facturation par tranches **n'est pas retenue.**
 
-**Conséquence si la règle actuelle est fausse** : ADIKOM devrait facturer en une
-fois ce qu'elle encaisse en deux — ce que le **règlement partiel** (A-10) couvre
-déjà, mais sans la pièce comptable intermédiaire.
+**Le paiement progressif reste pleinement géré**, par la chaîne existante :
 
-## 21.2 🟥 Remises commerciales
+```
+COMMANDE ─▶ FACTURE UNIQUE ─▶ RÈGLEMENT 1 ─▶ RÈGLEMENT 2 ─▶ … ─▶ SOLDE 0
+```
 
-**La question.** ADIKOM accorde-t-elle des remises sur devis et commandes ? Si
-oui : de ligne ou globales, en pourcentage ou en montant, et **qui a le droit de
-les consentir** ?
+Commande de 1 000 000 KMF → **une** facture de 1 000 000 KMF → règlements de
+300 000, 400 000 puis 300 000 KMF → solde **0 KMF**. 🟩 **A-10**, module de
+règlements du LOT 8, **inchangé**.
 
-**Ce qui est appliqué** : aucune remise (§13). Une ligne libre à prix choisi
-reste possible, et n'est pas présentée comme une remise.
+**Ce qui change dans le SaaS : rien.** La règle du §10.4 était déjà appliquée et
+écrite ; elle cesse simplement d'être une déduction d'architecture. **L'objet
+« tranche de commande » ne sera pas construit** — ni ici, ni ailleurs.
 
-**Ce qu'il faudrait** : une capacité pour la gouverner — le Plan 02 en a créé une
-pour le PDV, et le raisonnement vaut ici.
+## 21.2 🟩 Remises commerciales — **DÉCISION FERMÉE · DEC-051**
+
+**La question posée.** ADIKOM accorde-t-elle des remises sur devis et commandes ?
+De ligne ou globales, en pourcentage ou en montant, et qui a le droit de les
+consentir ?
+
+**La décision.** Les remises sont autorisées, **exclusivement en montant fixe
+KMF** — **aucune remise en pourcentage** —, à deux niveaux facultatifs :
+
+| Niveau | Portée |
+| --- | --- |
+| **Remise de ligne**, en KMF | Une seule ligne ; elle **n'affecte jamais** les autres |
+| **Remise globale**, en KMF | Le document, **après** les remises de lignes |
+
+```
+net de ligne = brut de ligne − remise de ligne
+sous-total   = Σ des nets de lignes
+TOTAL NET    = sous-total − remise globale
+```
+
+🟥 **Permission indépendante (A-14).** Créer ou modifier un devis ou une commande
+**ne donnera pas** le droit d'accorder une remise.
+
+**Ce qui change dans le SaaS : rien, aujourd'hui.** L'implémentation est
+**différée** à un lot approprié et **aucune capacité n'est créée** — le catalogue
+reste à **213**. Tout ce que décrit le §13 est toujours l'état exact du produit.
+Gardes, plafonds écartés et points à préciser : **DEC-051**.
 
 ## 21.3 Points antérieurs, intouchés
 
@@ -1048,6 +1078,12 @@ Le commit qui suit — celui de ce rapport — ne touche **que `RAPPORTS/`**. Ve
 le redéploie parce qu'il observe la branche, mais il ne change **ni une ligne de
 code, ni une migration, ni une capacité** : le comportement mis en production est
 exactement celui qui a été éprouvé.
+
+**Clôture documentaire du 23 septembre 2026.** Un commit postérieur ferme les
+deux décisions du §21 — **DEC-050** et **DEC-051**. Il ne touche que `RAPPORTS/`
+et `00 Documentation/`, et ne change **ni code, ni schéma, ni migration, ni
+capacité, ni comportement**. **Le SHA éprouvé reste `0d56cb3`** · catalogue
+**213** · sauvegarde **58** tables · dernière migration **100**.
 
 ---
 

@@ -83,6 +83,8 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-047 | Longue durée, prolongations et facturation périodique — LOT 23 | Une capacité, une table, **deux index disjoints**, A-7 et DEC-008 non tranchées | Appliquée — **plusieurs factures par contrat, jamais deux par période** | 2026-09-22 |
 | DEC-048 | Relevé global de location — LOT 24 | **Aucune table, aucune capacité** : un cinquième document du cycle, sans effet financier | Appliquée — **un relevé n'est pas une facture** | 2026-09-22 |
 | DEC-049 | Commerce client — devis et commandes — LOT 25 | Quatre tables, **seize capacités**, prix figé sur la ligne, **aucune facture parallèle** | Appliquée — **ouvre le Module 11** | 2026-09-23 |
+| DEC-050 | Facturation d'une commande client | Décision Direction — **clôt la question laissée ouverte par DEC-049 §g** | Validée — **confirme la règle appliquée au LOT 25** | 2026-09-23 |
+| DEC-051 | Remises commerciales — montant fixe en KMF | Décision Direction — **clôt la question laissée ouverte par DEC-049 §f** | Validée — **implémentation différée** | 2026-09-23 |
 
 > **DEC-045 a été consignée le 18 septembre 2026.** Le Plan 02 lui avait assigné
 > son objet — l'avenant de location — et le LOT 22 l'a livré. La réservation
@@ -5673,7 +5675,7 @@ touchent pas un document client.
 | Nature | **Quatre tables, quatre migrations, seize capacités.** Un module nouveau |
 | Portée | Module 11 · Commerce — Devis clients, Commandes clients |
 | Réemploie | Le catalogue de services (DEC-043), la chaîne de facturation du LOT 7, les règlements du LOT 8, la trésorerie du LOT 6, le registre documentaire (DEC-024), le numéroteur (DEC-023) |
-| Laisse ouvert | 🟥 **Facturation partielle d'une commande** (§g) · 🟥 **Remises commerciales** (§f) · 🟦 `commercial_line_costs` **séquencée au LOT 28** · 🟥 A-7 · 🟥 DEC-008 · 🟥 P-2 · 🟥 P-5 |
+| Laisse ouvert | 🟩 **Facturation partielle d'une commande** (§g) — **close par DEC-050** · 🟩 **Remises commerciales** (§f) — **close par DEC-051** · 🟦 `commercial_line_costs` **séquencée au LOT 28** · 🟥 A-7 · 🟥 DEC-008 · 🟥 P-2 · 🟥 P-5 |
 
 ## a. Ce que le lot ajoute, et ce qu'il ne touche pas
 
@@ -5766,6 +5768,12 @@ où rien ne la garderait.
 devis et commandes, il faut une capacité pour les gouverner — et donc une
 décision. La question est posée ; elle n'est pas tranchée par ce lot.
 
+> 🟩 **Question close par DEC-051, le 23 septembre 2026.** La Direction valide le
+> principe des remises commerciales, **exclusivement en montant fixe KMF** — sans
+> aucun pourcentage —, à deux niveaux facultatifs, sous **permission
+> indépendante** (A-14). **L'implémentation est différée** : tout ce que décrit
+> ce §f reste, au 23 septembre 2026, l'état exact du SaaS.
+
 ## g. 🟥 Une commande, au plus une facture non annulée
 
 **La règle appliquée**, portée par un index d'unicité partiel de la même forme
@@ -5788,6 +5796,13 @@ métier :
 solde à la livraison —, l'extension est **additive** et connue : un objet
 « tranche de commande » entre la commande et la facture, sur le modèle exact des
 périodes facturables. Rien dans ce lot ne l'empêche.
+
+> 🟩 **Question close par DEC-050, le 23 septembre 2026.** La Direction **ne
+> retient pas** la facturation par tranches : **une commande client produit au
+> plus une facture client non annulée**, et le paiement progressif se fait par
+> **plusieurs règlements sur cette même facture** (A-10). La règle appliquée par
+> le LOT 25 n'est donc plus une déduction d'architecture : c'est une décision
+> métier. **L'objet « tranche de commande » ne sera pas construit.**
 
 ## h. Annuler ne crée aucune impasse
 
@@ -5926,8 +5941,11 @@ L'un et l'autre du genre que le LOT 24 avait appris à chercher :
 
 ## o. Limites connues du commerce client
 
-- **Aucune facturation partielle d'une commande** (§g) — décision à prendre.
-- **Aucune remise** (§f) — décision à prendre.
+- **Aucune facturation partielle d'une commande** (§g) — **décision prise :
+  DEC-050 la refuse définitivement.** Ce n'est plus une limite, c'est la règle.
+- **Aucune remise** (§f) — **décision prise : DEC-051** valide les remises en
+  montant fixe KMF et **en diffère l'implémentation**. La limite reste exacte au
+  23 septembre 2026.
 - **Aucune marge** : elle exige le coût copié, séquencé au LOT 28.
 - **Aucun document de livraison** : la prestation se constate par un statut
   (décision B-6). La Direction refuse les étapes inutiles.
@@ -5936,6 +5954,216 @@ L'un et l'autre du genre que le LOT 24 avait appris à chercher :
   prix possibles pour la même prestation — c'est la conséquence normale de
   l'historisation, et la conversion ne les mélange jamais.
 - **Aucune taxe** (DEC-014 : régime non défini).
+
+---
+
+# DEC-050 — Facturation d'une commande client : une commande, une facture
+
+| | |
+| --- | --- |
+| Date | 23 septembre 2026 |
+| Origine | **Décision de la Direction du 23 septembre 2026** — clôture des arbitrages du LOT 25 |
+| Nature | **Décision métier.** Aucune table, aucune migration, aucune capacité, aucune ligne de code |
+| Portée | Module 11 · Commerce — Commandes clients · Module 07 · Facturation & Paiement |
+| Clôt | 🟥 **DEC-049 §g** — « facturation partielle d'une commande », laissée ouverte par le LOT 25 |
+| Laisse intacts | 🟥 A-7 · 🟥 DEC-008 · 🟥 P-2 · 🟥 P-5 · Plan 02 §5.7 / DEC-002 · véhicules de partenariat |
+
+## a. La question posée
+
+Le LOT 25 a appliqué — et **écrit** — la règle « une commande, au plus une
+facture non annulée », en la **déduisant de l'architecture documentée**
+(DEC-049 §g). Il a refusé de la faire passer pour un choix métier tant que la
+Direction ne l'avait pas prononcée, et a posé la question : **ADIKOM
+facture-t-elle une commande en plusieurs fois — acompte à la commande, solde à
+la livraison ?**
+
+## b. La décision
+
+> **Une commande client produit au plus une facture client non annulée.**
+
+La facturation d'une même commande **en plusieurs factures, ou par tranches,
+n'est pas retenue.**
+
+Ce que le SaaS fait aujourd'hui **ne change pas** ; ce qui change, c'est son
+fondement. La règle n'est plus une déduction d'architecture : **c'est une
+décision métier de la Direction.**
+
+## c. Le paiement progressif — ce qui est retenu
+
+Un client qui paie en plusieurs fois reste pleinement géré, par la chaîne
+existante :
+
+```
+COMMANDE ─▶ FACTURE CLIENT UNIQUE ─▶ RÈGLEMENT 1 ─▶ RÈGLEMENT 2 ─▶ … ─▶ SOLDE
+```
+
+| Étape | Montant | Solde de la facture |
+| --- | ---: | ---: |
+| Commande | 1 000 000 KMF | — |
+| Facture client — **une seule** | 1 000 000 KMF | 1 000 000 KMF |
+| Règlement 1 | 300 000 KMF | 700 000 KMF |
+| Règlement 2 | 400 000 KMF | 300 000 KMF |
+| Règlement 3 | 300 000 KMF | **0 KMF** |
+
+🟩 **A-10, reconduite.** Le paiement partiel est déjà porté par le module de
+règlements clients du **LOT 8**, et une facture née d'une commande y entre comme
+n'importe quelle autre `customer_invoices` (DEC-049 §n). **Rien n'est
+reconstruit.**
+
+## d. La distinction que cette décision fige
+
+| | Retenu ? |
+| --- | :-: |
+| **Facturation partielle / par tranches** — plusieurs factures pour une commande | ❌ **Non** |
+| **Paiement partiel d'une facture** — plusieurs règlements pour une facture | ✅ **Oui, déjà en production** |
+
+Ce sont deux gestes différents : l'un multiplie la **pièce comptable**, l'autre
+multiplie l'**encaissement**. ADIKOM ne multiplie que le second.
+
+## e. Ce que la décision interdit aux lots suivants
+
+- **Aucun objet « tranche de commande »** ne sera construit — ni sous ce nom, ni
+  sous un autre, ni sur le modèle de `rental_billing_periods` ;
+- **aucune seconde facture active** pour une même commande ;
+- **aucun état de commande « partiellement facturée »** ;
+- le paiement progressif **reste dans le module de règlements existant**, et
+  n'est reconstruit nulle part ailleurs.
+
+L'index d'unicité partiel qui porte la règle en base devient donc **définitif**.
+
+## f. Ce que la décision ne touche pas
+
+Elle ne concerne **que la commande client**. La **facturation périodique de
+location** (A-6, DEC-047) garde ses `rental_billing_periods` et ses plusieurs
+factures par contrat : c'est le cas où le Plan a **voulu** plusieurs factures, et
+où l'objet qui les porte existe. Les deux règles ne se contredisent pas — elles
+s'appliquent à deux objets différents.
+
+Elle ne touche **ni le commerce fournisseur** (LOT 26), **ni le point de vente**
+(LOT 28).
+
+---
+
+# DEC-051 — Remises commerciales : montant fixe en KMF, à deux niveaux
+
+| | |
+| --- | --- |
+| Date | 23 septembre 2026 |
+| Origine | **Décision de la Direction du 23 septembre 2026** — clôture des arbitrages du LOT 25 |
+| Nature | **Décision métier — modèle commercial ADIKOM.** Règle figée, **implémentation différée** |
+| Portée | Le modèle commercial. **Le lot d'implémentation et les documents concernés seront désignés séparément** |
+| Clôt | 🟥 **DEC-049 §f** — « remises commerciales », laissée ouverte par le LOT 25 |
+| N'implémente rien | Au 23 septembre 2026 : **aucune colonne, aucune fonction, aucune capacité, aucun écran** |
+
+## a. La question posée
+
+Le LOT 25 n'a bâti **aucun moteur de remises**, et a écrit pourquoi : bâtir une
+remise qu'**aucune capacité ne garderait** contredirait A-14 / DEC-024
+(DEC-049 §f). Trois questions étaient posées à la Direction : **ADIKOM
+accorde-t-elle des remises ? De ligne ou globales ? En pourcentage ou en
+montant ?**
+
+## b. La décision
+
+> **Les remises commerciales sont autorisées, et s'expriment EXCLUSIVEMENT en
+> MONTANT FIXE, en KMF.**
+>
+> **Aucune remise en pourcentage.**
+
+Deux niveaux, l'un et l'autre **facultatifs** :
+
+| Niveau | Champ | Portée |
+| --- | --- | --- |
+| **A — Remise de ligne** | « Remise », en KMF | Une **seule** ligne. Elle **n'affecte jamais** les autres lignes |
+| **B — Remise globale** | « Remise globale », en KMF, en bas du document | Le **document entier**, **après** les remises de lignes |
+
+**Une remise absente vaut fonctionnellement 0 KMF.**
+
+## c. Les règles de calcul
+
+```
+montant brut de ligne   = quantité × prix unitaire
+montant net de ligne    = montant brut de ligne − remise de ligne
+sous-total              = Σ des montants nets de lignes
+TOTAL NET du document   = sous-total − remise globale
+```
+
+**Exemple.**
+
+| | Brut | Remise de ligne | Net |
+| --- | ---: | ---: | ---: |
+| Service A | 100 000 | 10 000 | 90 000 |
+| Service B | 200 000 | 0 | 200 000 |
+| **Sous-total après remises de lignes** | | | **290 000** |
+| **Remise globale** | | | **− 20 000** |
+| **TOTAL NET** | | | **270 000 KMF** |
+
+🟩 **DEC-010 reconduite.** Tous les montants restent des **entiers en KMF**.
+**Aucun calcul de pourcentage n'est introduit** — et c'est précisément ce qui
+garantit qu'aucune règle d'arrondi n'a à être arbitrée.
+
+## d. Les protections métier à garantir
+
+La future implémentation devra **au minimum** garantir :
+
+| Garde | Règle |
+| --- | --- |
+| Remise de ligne | `>= 0` |
+| Remise de ligne | `<= montant brut de la ligne` |
+| Remise globale | `>= 0` |
+| Remise globale | `<= sous-total après remises de lignes` |
+| Montant net d'une ligne | **jamais négatif** |
+| Total du document | **jamais négatif** |
+
+## e. Aucun plafond commercial n'est fixé
+
+La Direction **ne valide aucun plafond** du type « 10 % maximum », « 20 %
+maximum » ou « X KMF maximum ». Un tel plafond **ne doit pas être inventé** par
+le lot d'implémentation : il exigerait sa propre décision.
+
+## f. 🟥 Une permission indépendante — A-14 / DEC-024
+
+> **L'application ou la modification d'une remise commerciale nécessite une
+> autorisation indépendante, conformément à A-14.**
+
+Pouvoir **créer** ou **modifier** un devis ou une commande **ne donne pas** le
+droit d'accorder une remise. Consentir un rabais engage ADIKOM : c'est un geste
+distinct, et il s'attribue séparément — exactement le raisonnement que le
+Plan 02 tient pour le point de vente (`pos.sales.discount`).
+
+**Le code exact de la capacité n'est pas créé par cette décision.** Il le sera au
+lot d'implémentation, selon la procédure en six étapes de CLAUDE.md §19 bis. Le
+catalogue reste à **213** capacités.
+
+## g. Portée — ce que cette décision ne fait PAS
+
+Elle **fige la règle métier**. Elle ne désigne **aucun document** comme devant
+recevoir ces champs dès maintenant, et **ne modifie rien** :
+
+- **ni les devis clients**, ni les commandes clients (LOT 25) ;
+- **ni `customer_invoices`** ;
+- **ni le point de vente** (LOT 28) ;
+- **ni le commerce fournisseur** (LOT 26).
+
+La **portée technique exacte** — quels documents, dans quel lot — sera traitée
+dans le lot approprié. **Ne pas en déduire** que tout document commercial futur
+reçoit automatiquement ces deux champs.
+
+## h. Ce qui reste à préciser au lot d'implémentation
+
+Ces points **ne sont pas tranchés ici**, et ne doivent pas être improvisés :
+
+- **quels documents** reçoivent les deux champs, et dans quel ordre ;
+- ce qu'il advient des remises lors de la **conversion devis → commande** : la
+  doctrine du prix figé (D13, D16(b), DEC-049 §c) impose de ne rien réécrire, et
+  une remise consentie fait partie de ce que le client a accepté ;
+- l'articulation avec la garde existante du LOT 25 — le prix d'une **ligne de
+  catalogue n'est pas saisissable**, précisément pour qu'une remise ne se glisse
+  pas là où rien ne la garderait (DEC-049 §f). Un champ de remise **gouverné par
+  sa propre capacité** ne contourne pas cette garde ; **la manière exacte de les
+  articuler reste à écrire** ;
+- la présence, ou non, de la remise sur les **documents PDF** ;
+- le **code** de la capacité, et la journalisation de son usage.
 
 ---
 

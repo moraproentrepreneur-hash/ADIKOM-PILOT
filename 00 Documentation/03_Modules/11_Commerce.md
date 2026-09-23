@@ -327,6 +327,13 @@ la commande et la facture, sur le modèle exact des périodes facturables. Rien
 dans ce lot ne l'empêche. **La question n'a pas été tranchée par le LOT 25 :
 elle est posée.**
 
+> 🟩 **Question close par DEC-050, le 23 septembre 2026.** La Direction **ne
+> retient pas** la facturation par tranches : **une commande client produit au
+> plus une facture client non annulée**. Le paiement progressif se fait par
+> **plusieurs règlements sur cette même facture** (A-10, module du LOT 8).
+> **L'objet « tranche de commande » ne sera pas construit.** La règle décrite
+> ci-dessus est **définitive** — elle n'est plus une déduction d'architecture.
+
 ## 7.5 Annuler ne crée aucune impasse
 
 | Acte | Conséquence |
@@ -361,6 +368,15 @@ consentir un rabais engage ADIKOM, et doit pouvoir s'attribuer séparément.
 **Une ligne libre à prix choisi n'est pas une remise.** C'est une prestation
 hors catalogue, à un montant convenu, et le document ne prétend pas le
 contraire.
+
+> 🟩 **Question close par DEC-051, le 23 septembre 2026.** La Direction valide le
+> principe des remises commerciales, **exclusivement en montant fixe KMF** —
+> **aucun pourcentage** —, à deux niveaux facultatifs : **remise de ligne** et
+> **remise globale du document**, cette dernière s'appliquant **après** les
+> remises de lignes. Les accorder exigera une **permission indépendante** (A-14).
+> **L'implémentation est différée à un lot approprié** : tout ce que décrit ce §8
+> reste l'état exact du module au 23 septembre 2026, et **aucune capacité de
+> remise n'existe**.
 
 ---
 
@@ -610,12 +626,17 @@ de devis dont elle est née, et une facture cite sa commande.
 
 | # | Point | Nature |
 | :-: | --- | --- |
-| 1 | **Facturation partielle d'une commande** — acompte puis solde | 🟥 **Décision Direction** (§7.4). Extension additive connue |
-| 2 | **Remises commerciales** — de ligne ou globales | 🟥 **Décision Direction** (§8). Aucune capacité ne les garderait aujourd'hui |
+| 1 | **Facturation partielle d'une commande** — acompte puis solde | 🟩 **Tranchée — DEC-050** : **non retenue** (§7.4). Le paiement progressif passe par les règlements |
+| 2 | **Remises commerciales** — de ligne ou globales | 🟩 **Tranchée — DEC-051** : **montant fixe KMF**, permission indépendante, **implémentation différée** (§8) |
 | 3 | **Marge commerciale** — coût copié sur la ligne | 🟦 **Séquencé au LOT 28** (Plan 02 §13.2) |
 | 4 | **Convention définitive des références** | 🟦 DEC-023 §5 — à confirmer avant première émission réelle |
 | 5 | **Devis et commandes fournisseurs** | 🟦 LOT 26 |
 | 6 | **Produits** | 🟦 Non développés. Le modèle de ligne les accueillera sans réécriture |
+
+> 🟩 **Points 1 et 2 — clos le 23 septembre 2026.** Ils cessent d'être des
+> questions ouvertes : ils deviennent des règles. **Le module, lui, n'a pas
+> changé** — DEC-050 confirme le comportement déjà en production, et DEC-051
+> diffère son implémentation.
 
 ---
 
