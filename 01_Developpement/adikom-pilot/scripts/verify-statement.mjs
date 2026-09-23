@@ -341,11 +341,23 @@ async function photographie(admin, decor) {
     .in('id', rentalIds)
     .order('id')
 
-  const { data: couts } = await admin
+  /*
+   * ⚠ LA COLONNE S'APPELLE `amount`.
+   *
+   * Écrite `locked_cost_amount`, la requête ÉCHOUE, `data` revient `null`, et
+   * la photographie comparait deux fois « rien » — donc ne surveillait pas le
+   * coût gelé du tout. Une erreur de requête silencieuse ne se distingue pas
+   * d'une donnée absente : il faut donc la nommer.
+   */
+  const { data: couts, error: coutsError } = await admin
     .from('rental_segment_costs')
-    .select('segment_id, locked_cost_amount')
+    .select('segment_id, amount')
     .in('rental_id', rentalIds)
     .order('segment_id')
+
+  if (coutsError) {
+    throw new Error(`photographie : coûts gelés illisibles — ${coutsError.message}`)
+  }
 
   return {
     /* Les décomptes, lisibles d'un coup d'œil dans un message d'échec. */
@@ -1157,14 +1169,24 @@ async function main() {
         password: accounts.releve.password,
       })
 
-      const { data: couts } = await session
+      /*
+       * 🟥 UN REFUS DE LECTURE, ET NON UNE REQUÊTE MALFORMÉE.
+       *
+       * Écrite avec une colonne inexistante, cette requête échouait — et le
+       * contrôle passait pour cette raison-là, non parce que RLS avait refusé.
+       * Une garantie de confidentialité qui tient à une faute de frappe n'en
+       * est pas une. L'erreur est donc DISTINGUÉE du refus : seul un `data`
+       * vide SANS erreur prouve que la policy a fait son travail.
+       */
+      const { data: couts, error: coutsError } = await session
         .from('rental_segment_costs')
-        .select('locked_cost_amount')
+        .select('amount')
         .eq('rental_id', decor.longue.id)
 
       check(
-        (couts ?? []).length === 0,
-        '🟥 Le producteur du relevé n’obtient AUCUN coût gelé, même par appel direct'
+        !coutsError && (couts ?? []).length === 0,
+        '🟥 Le producteur du relevé n’obtient AUCUN coût gelé, même par appel direct',
+        coutsError ? `requête en erreur : ${coutsError.message}` : `${(couts ?? []).length} ligne(s)`
       )
 
       const { data: tarifs } = await session
@@ -1259,17 +1281,19 @@ async function main() {
         password: accounts.avecCout.password,
       })
 
-      const { data: coutsLus } = await sessionCout
+      const { data: coutsLus, error: lusError } = await sessionCout
         .from('rental_segment_costs')
-        .select('locked_cost_amount')
+        .select('amount')
         .eq('rental_id', decor.longue.id)
 
       await sessionCout.auth.signOut()
 
       check(
-        (coutsLus ?? []).length > 0,
+        !lusError && (coutsLus ?? []).length > 0,
         'Le profil privilégié lit RÉELLEMENT le coût gelé — sans quoi la comparaison ne prouverait rien',
-        `${(coutsLus ?? []).length} coût(s) lisible(s)`
+        lusError
+          ? `requête en erreur : ${lusError.message}`
+          : `${(coutsLus ?? []).length} coût(s) lisible(s)`
       )
 
       const pdfAvecCout = await fetchAs(
@@ -1674,14 +1698,38 @@ async function main() {
     console.log('NETTOYAGE\n')
 
     await browser.close()
-    await purgeStrays(admin)
 
-    const restes = await admin
-      .from('vehicles')
-      .select('id', { count: 'exact', head: true })
-      .like('brand', 'RECETTE REL%')
+    /*
+     * 🟥 LE NETTOYAGE VÉRIFIE SON PROPRE EFFET, ET LE REJOUE.
+     *
+     * `purgeStrays` ignore l'erreur de chaque suppression — à dessein : un
+     * ordre partiellement inapplicable ne doit pas interrompre les suivants.
+     * Mais une défaillance passagère laisse alors des résidus SANS que rien ne
+     * le dise, et c'est arrivé : trois véhicules, deux contrats et quatre
+     * segments sont restés en production après un passage dont chaque ordre,
+     * rejoué à la main, s'exécutait sans broncher.
+     *
+     * Le balayage est donc rejoué tant qu'il reste quelque chose, dans la
+     * limite de trois passages. Ce qui subsiste après est un vrai blocage, et
+     * le contrôle le nomme.
+     */
+    let restes = 0
 
-    check(restes.count === 0, 'Aucun résidu de recette', `${restes.count ?? 0} véhicule(s)`)
+    for (let passage = 1; passage <= 3; passage += 1) {
+      await purgeStrays(admin)
+
+      const { count } = await admin
+        .from('vehicles')
+        .select('id', { count: 'exact', head: true })
+        .like('brand', 'RECETTE REL%')
+
+      restes = count ?? 0
+      if (restes === 0) break
+
+      console.log(`${DIM}Résidus après le passage ${passage} : ${restes} véhicule(s). Nouveau balayage.${RESET}`)
+    }
+
+    check(restes === 0, 'Aucun résidu de recette', `${restes} véhicule(s)`)
 
     const after = await demoFootprint(admin)
     const bouge = Object.keys(before).filter((cle) => before[cle] !== after[cle])
