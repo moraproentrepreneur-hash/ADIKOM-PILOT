@@ -91,6 +91,8 @@
     "verify:statement": "node scripts/verify-statement.mjs",
     "db:verify:commerce": "node scripts/run-sql.mjs supabase/tests/commerce.sql",
     "verify:commerce": "node scripts/verify-commerce.mjs",
+    "db:verify:purchasing": "node scripts/run-sql.mjs supabase/tests/purchasing.sql",
+    "verify:purchasing": "node scripts/verify-purchasing.mjs",
     "verify:password-reset": "node scripts/verify-password-reset.mjs",
     "verify:ajustements": "node scripts/verify-ajustements.mjs",
     "verify:production": "node scripts/verify-production.mjs"

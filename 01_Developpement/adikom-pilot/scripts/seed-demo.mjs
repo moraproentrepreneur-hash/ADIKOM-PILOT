@@ -551,6 +551,7 @@ async function main() {
   await seedCustomerBilling(admin, ids)
   await seedTreasuryOperations(admin, ids)
   await seedCommerce(admin, ids)
+  await seedPurchasing(admin, ids)
   await seedProjects(admin, ids)
 
   console.log(`\n${'─'.repeat(78)}`)
@@ -2287,6 +2288,232 @@ async function seedCommerce(admin, ids) {
       'issue_customer_invoice',
       { p_invoice_id: invoice.id, p_reason: 'Émission de démonstration' },
       'émission de la facture'
+    )
+  }
+}
+
+/* ========================================================================== */
+/*  Commerce fournisseur — Module 11, menus 3 et 4 (LOT 26)                    */
+/* ========================================================================== */
+
+/**
+ * LE SCÉNARIO D'ACHAT, DE BOUT EN BOUT.
+ *
+ *   FOURNISSEUR DEMO 01
+ *        └─ OFFRE REÇUE (DEV-F) ─ retenue ─▶ COMMANDE (CDE-F) ─ passée ─▶ FACTURE
+ *                                                                         FOURNISSEUR
+ *
+ * CE QU'IL MONTRE, ET QUI NE SE VOIT NULLE PART AILLEURS :
+ *
+ *   · 🟥 LE PRIX EST CELUI DE L'OFFRE — le catalogue de démonstration porte un
+ *     coût de RÉFÉRENCE de 45 000 KMF pour « SERVICE DEMO 03 » ; le fournisseur,
+ *     lui, propose 52 000. C'est 52 000 qui est figé sur la ligne. La
+ *     démonstration du lot tient dans cet écart, et il est visible à l'écran ;
+ *   · LES DEUX RÉFÉRENCES — celle d'ADIKOM (DEV-F) et celle du fournisseur
+ *     (PRO-2026-0147), côte à côte et jamais confondues ;
+ *   · 🟩 A-13 — une ligne LIBRE coexiste avec une ligne de catalogue ;
+ *   · L'OFFRE CONSERVÉE après conversion, avec sa propre référence ;
+ *   · LA FACTURE née de la commande, ORDINAIRE : même numérotation FAC-F, même
+ *     écran, même imputation, même règlement.
+ *
+ * ⚠ AUCUN `continue` NE PRÉCÈDE UNE ÉTAPE ULTÉRIEURE.
+ *
+ * Défaut relevé au LOT 24 : un `continue` posé pour sauter la création d'un
+ * objet déjà présent sautait aussi tout ce qui venait après, et un ajout d'un
+ * lot suivant n'atteignait jamais un jeu DEMO déjà en place. Ici, chaque étape
+ * RETROUVE son objet et poursuit — un second passage complète ce que le premier
+ * n'avait pas fait.
+ */
+async function seedPurchasing(admin, ids) {
+  section('Commerce fournisseur')
+
+  const supplierId = ids.suppliers['FOURNISSEUR DEMO 01']
+  if (!supplierId) {
+    console.log(
+      `  ${DIM}Aucun fournisseur de démonstration : le commerce fournisseur est ignoré.${RESET}`
+    )
+    return
+  }
+
+  /* --- La variante achetable du catalogue de démonstration ---------------- */
+  const { data: variante } = await admin
+    .from('service_variants')
+    .select('id')
+    .eq('service_id', ids.services.assistance)
+    .eq('label', 'Standard')
+    .maybeSingle()
+
+  if (!variante?.id) {
+    console.log(
+      `  ${DIM}Catalogue de démonstration incomplet : le commerce fournisseur est ignoré.${RESET}`
+    )
+    return
+  }
+
+  /* --- L'OFFRE REÇUE ------------------------------------------------------- */
+  const quoteNote = tag('DEVF1')
+  let quote = await rowByNotes(admin, 'purchase_quotes', quoteNote)
+  let quoteId = quote?.id ?? null
+
+  if (!quoteId) {
+    quoteId = await rpc(
+      admin,
+      'create_purchase_quote',
+      {
+        p_supplier_id: supplierId,
+        p_quote_date: dayOffset(-12),
+        p_valid_until: dayOffset(18),
+        // La référence que LE FOURNISSEUR a donnée à son offre.
+        p_external_ref: 'PRO-2026-0147',
+        p_notes: quoteNote,
+        p_terms: 'Intervention sous 72 h, pièces et déplacement inclus.',
+      },
+      'devis fournisseur de démonstration'
+    )
+
+    /*
+     * 🟥 LE PRIX EST SAISI, ET C'EST CELUI DE L'OFFRE.
+     *
+     * Le coût de référence du catalogue vaut 45 000 KMF pour cette prestation.
+     * Ce fournisseur-ci en demande 52 000 : c'est 52 000 qui est enregistré, et
+     * le catalogue n'est pas interrogé (P-5 reste ouvert).
+     */
+    await rpc(
+      admin,
+      'add_purchase_quote_line',
+      {
+        p_quote_id: quoteId,
+        p_quantity: 3,
+        p_unit_price: 52000,
+        p_variant_id: variante.id,
+        p_label: null,
+      },
+      'ligne catalogue (assistance)'
+    )
+
+    // 🟩 A-13 — UNE LIGNE LIBRE, sans aucun service au catalogue.
+    await rpc(
+      admin,
+      'add_purchase_quote_line',
+      {
+        p_quote_id: quoteId,
+        p_quantity: 2,
+        p_unit_price: 7500,
+        p_variant_id: null,
+        p_label: 'Pièce détachée — hors catalogue',
+      },
+      'ligne libre (A-13)'
+    )
+
+    report('devis fournisseur', 'Offre de démonstration', null, true)
+  } else {
+    report('devis fournisseur', 'Offre de démonstration', quote.quote_no, false)
+  }
+
+  /* --- SON CYCLE — chaque étape se reprend là où elle en est ---------------- */
+  quote = await rowBy(admin, 'purchase_quotes', 'id', quoteId)
+
+  if (quote?.status === 'DRAFT') {
+    await rpc(
+      admin,
+      'set_purchase_quote_status',
+      { p_quote_id: quoteId, p_status: 'SENT', p_reason: 'Offre reçue du fournisseur' },
+      'enregistrement de l’offre'
+    )
+    quote = await rowBy(admin, 'purchase_quotes', 'id', quoteId)
+  }
+
+  if (quote?.status === 'SENT') {
+    await rpc(
+      admin,
+      'set_purchase_quote_status',
+      { p_quote_id: quoteId, p_status: 'ACCEPTED', p_reason: 'Offre retenue par ADIKOM' },
+      'offre retenue'
+    )
+    quote = await rowBy(admin, 'purchase_quotes', 'id', quoteId)
+  }
+
+  /* --- LA COMMANDE --------------------------------------------------------- */
+  let order = await rowBy(admin, 'purchase_orders', 'purchase_quote_id', quoteId)
+
+  if (!order && quote?.status === 'ACCEPTED') {
+    const orderId = await rpc(
+      admin,
+      'convert_purchase_quote_to_order',
+      {
+        p_quote_id: quoteId,
+        p_order_date: dayOffset(-9),
+        p_expected_date: dayOffset(-2),
+      },
+      'conversion de l’offre'
+    )
+    order = await rowBy(admin, 'purchase_orders', 'id', orderId)
+    report('commande fournisseur', 'Commande issue de l’offre', order?.order_no ?? null, true)
+  } else if (order) {
+    report('commande fournisseur', 'Commande issue de l’offre', order.order_no, false)
+  }
+
+  if (!order) return
+
+  if (order.status === 'DRAFT') {
+    await rpc(
+      admin,
+      'set_purchase_order_status',
+      { p_order_id: order.id, p_status: 'CONFIRMED', p_reason: 'Commande transmise au fournisseur' },
+      'passage de la commande'
+    )
+    order = await rowBy(admin, 'purchase_orders', 'id', order.id)
+  }
+
+  if (order.status === 'CONFIRMED') {
+    // 🟩 B-6 : la réception se constate par un statut, jamais par un document.
+    await rpc(
+      admin,
+      'set_purchase_order_status',
+      { p_order_id: order.id, p_status: 'DELIVERED', p_reason: 'Prestation reçue' },
+      'réception de la commande'
+    )
+    order = await rowBy(admin, 'purchase_orders', 'id', order.id)
+  }
+
+  /* --- LA FACTURE — par la chaîne EXISTANTE, jamais une table parallèle ----- */
+  let invoice = await rowBy(admin, 'supplier_invoices', 'purchase_order_id', order.id)
+
+  if (!invoice && (order.status === 'CONFIRMED' || order.status === 'DELIVERED')) {
+    const invoiceId = await rpc(
+      admin,
+      'create_invoice_from_purchase_order',
+      {
+        p_order_id: order.id,
+        p_invoice_date: dayOffset(-4),
+        p_due_date: dayOffset(26),
+        p_external_ref: 'FA-2026-0912',
+      },
+      'facture de la commande fournisseur'
+    )
+    invoice = await rowBy(admin, 'supplier_invoices', 'id', invoiceId)
+    report('facture fournisseur', 'Facture issue de la commande', invoice?.invoice_no ?? null, true)
+  } else if (invoice) {
+    report('facture fournisseur', 'Facture issue de la commande', invoice.invoice_no, false)
+  }
+
+  // La dette se reconnaît en deux actes distincts, ceux du LOT 5.
+  if (invoice?.status === 'DRAFT') {
+    await rpc(
+      admin,
+      'submit_supplier_invoice',
+      { p_invoice_id: invoice.id },
+      'soumission de la facture'
+    )
+    invoice = await rowBy(admin, 'supplier_invoices', 'id', invoice.id)
+  }
+
+  if (invoice?.status === 'PENDING') {
+    await rpc(
+      admin,
+      'validate_supplier_invoice',
+      { p_invoice_id: invoice.id, p_reason: 'Contrôle de démonstration' },
+      'validation de la facture'
     )
   }
 }

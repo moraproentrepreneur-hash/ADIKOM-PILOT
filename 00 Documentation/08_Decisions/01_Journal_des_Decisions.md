@@ -85,6 +85,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-049 | Commerce client — devis et commandes — LOT 25 | Quatre tables, **seize capacités**, prix figé sur la ligne, **aucune facture parallèle** | Appliquée — **ouvre le Module 11** | 2026-09-23 |
 | DEC-050 | Facturation d'une commande client | Décision Direction — **clôt la question laissée ouverte par DEC-049 §g** | Validée — **confirme la règle appliquée au LOT 25** | 2026-09-23 |
 | DEC-051 | Remises commerciales — montant fixe en KMF | Décision Direction — **clôt la question laissée ouverte par DEC-049 §f** | Validée — **implémentation différée** | 2026-09-23 |
+| DEC-052 | Commerce fournisseur — devis et commandes — LOT 26 | Quatre tables, **seize capacités dont deux lectures sensibles**, prix de l'offre figé, **P-5 intact** | Appliquée — **complète le Module 11** | 2026-09-23 |
 
 > **DEC-045 a été consignée le 18 septembre 2026.** Le Plan 02 lui avait assigné
 > son objet — l'avenant de location — et le LOT 22 l'a livré. La réservation
@@ -6164,6 +6165,230 @@ Ces points **ne sont pas tranchés ici**, et ne doivent pas être improvisés :
   articuler reste à écrire** ;
 - la présence, ou non, de la remise sur les **documents PDF** ;
 - le **code** de la capacité, et la journalisation de son usage.
+
+---
+
+# DEC-052 — Commerce fournisseur : devis et commandes (LOT 26)
+
+| | |
+| --- | --- |
+| Date | 23 septembre 2026 |
+| Origine | Plan 02 §6, §7.1, §9.1–9.2, §9.5, §10.2, §13.2, §18.2 · Plan 01 §15.3–15.5, §17.2 · décisions Direction **A-13**, **A-14**, **B-6**, **B-7** · DEC-023, DEC-024, DEC-044, DEC-049 |
+| Nature | **Quatre tables, trois migrations, seize capacités.** Deux menus de plus sous un module existant |
+| Portée | Module 11 · Commerce — Devis fournisseurs, Commandes fournisseurs |
+| Réemploie | Le catalogue de services (DEC-043), la facturation fournisseur du LOT 5, les règlements du LOT 6, la trésorerie du LOT 6, le registre documentaire (DEC-024), le numéroteur (DEC-023), les **énumérations** du LOT 25 |
+| Laisse ouvert | 🟥 **Plusieurs factures pour une même commande** (§g) · 🟥 **P-5**, intact (§c) · 🟦 remises fournisseurs (§h) · 🟥 A-7 · 🟥 DEC-008 · 🟥 P-2 |
+
+## a. Ce que le lot ajoute, et ce qu'il ne touche pas
+
+Le LOT 26 pose la **couche commerciale du côté achat**, entre le catalogue et la
+facturation fournisseur :
+
+```
+CATALOGUE (LOT 20) ─▶ DEVIS F. ─▶ COMMANDE F. ─▶ FACTURE F. (LOT 5) ─▶ RÈGLEMENT (LOT 6) ─▶ TRÉSORERIE (LOT 6)
+```
+
+**Aucune de ces briques n'est réécrite.** `create_supplier_invoice`,
+`add_supplier_invoice_line`, `submit_supplier_invoice`,
+`validate_supplier_invoice`, `cancel_supplier_invoice`, `record_supplier_payment`
+et `fn_treasury_entry_source` restent celles des LOTS 5 et 6 — quatre d'entre
+elles reçoivent des **paramètres facultatifs** supplémentaires, et rien d'autre.
+
+**Le commerce CLIENT n'est pas touché.** Aucune de ses tables, aucune de ses
+fonctions, aucune de ses capacités n'a été modifiée. DEC-051 — les remises
+clients — **n'a pas été implémentée** : son report reste entier.
+
+## b. 🟥 Un « devis fournisseur » est un document REÇU
+
+C'est le point de vocabulaire qui gouverne tout le lot, et il a été tranché
+**contre** la tentation de recopier le commerce client.
+
+ADIKOM n'émet aucun devis à destination d'un fournisseur : elle **enregistre
+l'offre** qu'il lui a remise. La pièce est reçue, comme une facture fournisseur
+l'est (Module 07 §28). Le statut `SENT` se lit donc « **Reçu** », `ACCEPTED`
+« **Retenu** », `REFUSED` « **Écarté** », et `DELIVERED` « **Réceptionnée** ».
+
+**Les CODES sont ceux du LOT 25 ; les LIBELLÉS disent l'achat.** Plan 02 §9.5 ne
+crée qu'une seule énumération pour les quatre tables, délibérément nommée sans
+préfixe de domaine — `commercial_document_status`, `order_status`. Réemployer un
+TYPE n'est pas partager une valeur métier : DEC-006 refuse qu'une réservation et
+une location partagent un jeu de statuts parce que ce sont deux **entités** ; ici,
+il s'agit du même **type de données** appliqué à deux entités distinctes, dans
+deux tables distinctes, sous deux jeux de déclencheurs et de capacités distincts.
+
+## c. 🟥 Le prix vient de l'offre — et P-5 sort intact
+
+**La règle s'inverse par rapport au commerce client, et ce n'est pas une
+facilité.**
+
+Côté client, le prix d'une ligne de catalogue est **résolu du catalogue**, et un
+prix saisi y est refusé : ce serait une remise déguisée. Côté fournisseur, le
+prix est **toujours saisi** — ligne de catalogue comprise.
+
+**Pourquoi.** `service_variant_costs` porte un coût de **référence** : une valeur
+par variante et par date, **sans dimension fournisseur**. C'est exactement le
+point **P-5**, resté ouvert. Résoudre ce coût et l'imposer à la ligne ferait
+passer une valeur interne pour une offre reçue, et **trancherait P-5 par un
+défaut d'implémentation** — ce que CLAUDE.md §55 interdit.
+
+🟥 **`service_variant_costs` n'a reçu ni `supplier_id` ni aucune autre colonne.**
+La migration du lot refuse de s'appliquer si c'est le cas. P-5 sort du lot
+exactement comme il y est entré, et **le commerce fournisseur fonctionne sans
+l'avoir tranché**.
+
+Le coût de référence est **affiché** dans l'éditeur de lignes, à titre indicatif,
+et uniquement à qui détient `catalog.services.cost.view`. Il n'est jamais
+recopié, n'entre dans aucun document, aucun export, aucune ligne enregistrée — et
+un balayage des sources documentaires **refuse son nom de variable**.
+
+## d. 🟩 A-13 s'applique, et c'est la documentation qui le dit
+
+La question A-13 (Plan 01 §23) ne parle ni du client ni du fournisseur : « **un
+devis / une commande** peut-il porter une ligne libre, sans service au
+catalogue ? — **Oui**, `service_id` nullable ». Et le Plan 01 §15.3–15.4 décrit
+les quatre tables du lot comme « **même structure, symétrique** ».
+
+A-13 n'a donc pas été **étendue par ressemblance** : elle était générale, et ces
+tables sont celles qu'elle visait. Aucun service « Divers » n'est créé.
+
+## e. Deux références, jamais confondues
+
+Module 07 §30 pose déjà la règle pour la facture reçue. Elle vaut pour l'offre, et
+c'est **la même colonne, du même nom, avec la même contrainte** : `external_ref`.
+
+Le numéro d'ADIKOM (`DEV-F-2026-000001`) classe l'offre chez elle ; la référence
+du fournisseur la retrouve chez lui. La recherche porte sur les deux ; le bon de
+commande **imprime les deux** ; et la référence externe est **gelée** avec l'acte
+— la laisser réécrivable permettrait de faire passer une offre pour une autre.
+
+## f. 🟥 Ici, `view` EST la barrière de confidentialité
+
+Un devis fournisseur ne porte **rien d'autre** que ce que le fournisseur demande :
+lui retirer ses montants ne laisserait qu'un nom et une date.
+
+Le Plan 02 §10.2 ne prévoit donc **aucune capacité de montants** pour ces deux
+menus — contrairement aux sessions de caisse, où « qui était en caisse » garde un
+sens sans « combien ». **`commerce.purchase_quotes.view` et
+`commerce.purchase_orders.view` sont marquées SENSIBLES**, comme
+`catalog.services.cost.view` et `rental.pricing.supplier.view` (Plan 02 §6,
+DEC-044).
+
+Ce n'est **pas une capacité de plus** : c'est le drapeau que porte une capacité
+déjà prévue. Il ne change aucun droit — il **dit** à l'écran d'attribution ce que
+cette attribution engage.
+
+🟥 **Et le document destiné au fournisseur n'est pas une fuite.** Un bon de
+commande doit dire le prix convenu **avec lui** : c'est ce qu'il lit pour
+l'honorer. Ce qui n'y a jamais sa place, c'est le **coût de référence du
+catalogue**, qui lui apprendrait ce qu'ADIKOM paie ailleurs.
+
+## g. 🟥 Une commande, au plus une facture non annulée — déduite, et posée
+
+**Ce point n'a PAS été tranché par symétrie avec DEC-050**, qui porte
+expressément sur la commande **client**. Il est **déduit de l'architecture
+documentée**, et le raisonnement est écrit plutôt que subi :
+
+1. Plan 02 §9.2 ajoute `supplier_invoices.purchase_order_id` — **une** colonne,
+   au singulier ;
+2. `order_status` porte `INVOICED` et **aucun état partiel**, et il est
+   **partagé** avec le commerce client : c'est un statut de la commande entière ;
+3. `create_invoice_from_purchase_order` ne sait exprimer ni sélection de lignes,
+   ni quantité à facturer ;
+4. là où le Plan a **voulu** plusieurs factures — la longue durée, A-6 —, il a
+   créé l'objet qui les porte ;
+5. **aucune règle documentaire ne parle d'acompte fournisseur** : Module 07,
+   Règles finance §8, Règles fournisseurs §2 et Workflow 08 ont été relus.
+
+**Ce que l'architecture impose** : si deux factures pouvaient se rattacher à une
+même commande, `INVOICED` deviendrait ambigu, et l'annulation de l'une ne saurait
+pas si la commande redevient « passée ».
+
+🟥 **CE QUI N'EST PAS EMPÊCHÉ.** Un fournisseur qui facture une commande en deux
+fois n'est **pas bloqué** : la seconde facture s'enregistre comme toute facture
+reçue — chaîne du LOT 5, inchangée — et cite la commande en observations. **Seul
+le lien structurel est unique. Aucune dette ne disparaît, aucun paiement n'est
+empêché.**
+
+> 🟥 **QUESTION POSÉE À LA DIRECTION.** ADIKOM reçoit-elle, en pratique,
+> **plusieurs factures pour une même commande fournisseur** — acompte puis solde ?
+>
+> **Option A** — conserver la règle actuelle : le lien reste unique, le
+> complément s'enregistre sans commande d'origine. Aucun développement.
+>
+> **Option B** — rattacher plusieurs factures à une commande : il faudrait alors
+> un objet « tranche de commande », sur le modèle exact de
+> `rental_billing_periods`, et un état de facturation partielle. Extension
+> **additive** ; rien dans ce lot ne l'empêche.
+>
+> **Aucune option n'a été choisie d'office.** La règle appliquée est celle que
+> l'architecture documentée impose aujourd'hui.
+
+## h. 🟥 Une facture reçue CONSTATE — elle n'exécute pas la commande
+
+C'est l'asymétrie de fond entre les deux côtés, et elle gouverne ce que le lot
+**n'impose pas** :
+
+| | Côté client | Côté fournisseur |
+| --- | --- | --- |
+| La facture | **exprime** l'engagement d'ADIKOM | **constate** ce que le tiers réclame |
+| Son montant | celui de la commande | celui du **document reçu** (Module 07 §28, §54) |
+
+**Rien n'oblige donc les deux totaux à coïncider.** Les lignes sont recopiées pour
+épargner une ressaisie, et restent modifiables tant que la facture est en saisie.
+Le système les rend **comparables** — la fiche de la commande affiche l'écart —
+il ne les force pas. Les forcer reviendrait à **réécrire un document reçu**.
+
+**Aucune remise fournisseur n'est modélisée.** DEC-051 porte sur les remises
+**clients** ; rien n'a été validé pour l'achat. Le prix d'une ligne est le prix
+**net convenu**, et le document ne prétend pas autre chose.
+
+## i. Ce qui a été livré
+
+| | |
+| --- | --- |
+| Tables | `purchase_quotes`, `purchase_quote_lines`, `purchase_orders`, `purchase_order_lines` |
+| Migrations | 101 (tables, RLS, capacités, numérotation, journal) · 102 (facturation) · 103 (sauvegarde) |
+| Colonnes ajoutées | `supplier_invoices.purchase_order_id` · `supplier_invoice_lines.service_id`, `.service_variant_id`, `.quantity`, `.unit_price` — **toutes nullables** |
+| Capacités | **+16 · 213 → 229**, dont **deux lectures sensibles** |
+| Numérotation | `purchase_quote` → `DEV-F` · `purchase_order` → `CDE-F` |
+| Périmètre de sauvegarde | **58 → 62 tables** |
+| Documents | `devis-fournisseurs` (interne) · `commandes-fournisseurs` (destiné au fournisseur) |
+| Exports | deux classeurs, chacun sous `view` **et** `export` |
+| Navigation | deux entrées de plus sous **Commerce** — aucun second module « Achats » |
+
+## j. Ce que le lot n'a PAS fait, et l'a écrit
+
+- 🟥 **Aucune table de facture fournisseur parallèle.** Une facture née d'une
+  commande est une `supplier_invoices` ordinaire : même numérotation `FAC-F`,
+  mêmes imputations, mêmes règlements partiels, même trésorerie.
+- 🟥 **Aucun mécanisme de paiement.** La trésorerie ne bouge qu'au **règlement**,
+  par `record_supplier_payment`, inchangée. Et **une imputation n'est jamais un
+  paiement** (CLAUDE.md §57, DEC-013).
+- 🟥 **Aucune écriture au devis ni à la commande** — la recette le constate par
+  une photographie prise avant et reprise après.
+- 🟥 **Aucune modification de `supplier_vehicle_rates`** (LOT 21) : le tarif
+  fournisseur d'un **véhicule** et l'achat d'un **service** sont deux actes
+  différents, qui peuvent concerner le même fournisseur sans se confondre.
+- 🟥 **Aucun produit, aucun stock, aucun entrepôt, aucune réception physique.**
+  La réception se constate par un statut (B-6).
+- 🟥 **Aucune fonction de marge** : « on n'a pas de marge sur un achat »
+  (Plan 01 §15.3).
+- 🟥 **Aucune fonction `SECURITY DEFINER`** (doctrine D4).
+- 🟥 **A-7, DEC-008, P-2, P-5, DEC-051 : intouchés.**
+
+## k. Limites connues
+
+- **Plusieurs factures par commande** (§g) — **question posée**, non tranchée.
+- **P-5** (§c) — ouvert, et volontairement laissé tel quel.
+- **Remises fournisseurs** (§h) — non modélisées, aucune règle validée.
+- **Traçabilité ligne à ligne de la facture** : Plan 02 §9.2 énumère **quatre**
+  colonnes pour `supplier_invoice_lines`, sans `source_order_line_id`. L'origine
+  est portée par l'en-tête ; une ligne ajoutée après coup n'est donc pas
+  distinguable d'une ligne recopiée. **Assumé, et conforme au Plan.**
+- **Commande directe et référence externe** : une commande sans offre n'a pas de
+  référence du fournisseur. Elle peut être consignée en observations.
+- **Convention définitive des références** : `DEV-F` / `CDE-F` restent
+  provisoires, comme `FAC-F` (DEC-023 §5).
 
 ---
 

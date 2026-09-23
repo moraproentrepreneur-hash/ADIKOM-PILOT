@@ -446,6 +446,48 @@ export const PERMISSIONS = {
   SALES_ORDERS_DOWNLOAD: 'commerce.sales_orders.download',
   SALES_ORDERS_PRINT: 'commerce.sales_orders.print',
 
+  /* --- Commerce fournisseur — LOT 26 ---------------------------------------
+   *
+   * LE MÊME module `commerce`, ordre 11 : aucun second menu « Achats »
+   * (Plan 02 §7.1). Deux menus de plus — `purchase_quotes` (3),
+   * `purchase_orders` (4) —, huit actions chacun (Plan 01 §17.2).
+   *
+   * 🟥 `view` OUVRE UN COÛT D'ACHAT, ET C'EST LA BARRIÈRE DE CONFIDENTIALITÉ.
+   *
+   * Un devis fournisseur ne porte rien d'autre que ce que le fournisseur
+   * demande : lui retirer ses montants ne laisserait qu'un nom et une date. Le
+   * Plan 02 §10.2 ne prévoit donc, pour ces deux menus, aucune capacité de
+   * montants — contrairement aux sessions de caisse, où « qui était en caisse »
+   * garde un sens sans « combien ». Ces deux `view` sont marquées SENSIBLES au
+   * catalogue, comme `catalog.services.cost.view` et
+   * `rental.pricing.supplier.view` (Plan 02 §6, DEC-044).
+   *
+   * `validate` FAIT AVANCER le document : enregistrer l'offre reçue, la retenir
+   * ou l'écarter, passer la commande, constater sa réception. `cancel` le
+   * RETIRE — une offre écartée n'est pas une offre annulée.
+   *
+   * AUCUNE capacité de FACTURATION : enregistrer la facture d'une commande
+   * relève de `billing.supplier_invoices.create`. AUCUNE capacité de remise, de
+   * marge ni de coût de catalogue — un achat n'a pas de marge (Plan 01 §15.3).
+   */
+  PURCHASE_QUOTES_VIEW: 'commerce.purchase_quotes.view',
+  PURCHASE_QUOTES_CREATE: 'commerce.purchase_quotes.create',
+  PURCHASE_QUOTES_UPDATE: 'commerce.purchase_quotes.update',
+  PURCHASE_QUOTES_VALIDATE: 'commerce.purchase_quotes.validate',
+  PURCHASE_QUOTES_CANCEL: 'commerce.purchase_quotes.cancel',
+  PURCHASE_QUOTES_EXPORT: 'commerce.purchase_quotes.export',
+  PURCHASE_QUOTES_DOWNLOAD: 'commerce.purchase_quotes.download',
+  PURCHASE_QUOTES_PRINT: 'commerce.purchase_quotes.print',
+
+  PURCHASE_ORDERS_VIEW: 'commerce.purchase_orders.view',
+  PURCHASE_ORDERS_CREATE: 'commerce.purchase_orders.create',
+  PURCHASE_ORDERS_UPDATE: 'commerce.purchase_orders.update',
+  PURCHASE_ORDERS_VALIDATE: 'commerce.purchase_orders.validate',
+  PURCHASE_ORDERS_CANCEL: 'commerce.purchase_orders.cancel',
+  PURCHASE_ORDERS_EXPORT: 'commerce.purchase_orders.export',
+  PURCHASE_ORDERS_DOWNLOAD: 'commerce.purchase_orders.download',
+  PURCHASE_ORDERS_PRINT: 'commerce.purchase_orders.print',
+
   // --- Paramètres ------------------------------------------------------------
   SETTINGS_COMPANY_VIEW: 'settings.company.view',
   SETTINGS_COMPANY_UPDATE: 'settings.company.update',

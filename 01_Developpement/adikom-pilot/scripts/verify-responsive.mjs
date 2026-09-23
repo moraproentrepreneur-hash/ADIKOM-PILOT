@@ -91,6 +91,22 @@ const ROUTES = [
   ['/catalogue/services', 'Services'],
   ['/catalogue/services/nouveau', 'Nouveau service'],
   ['/catalogue/categories', 'Catégories de services'],
+  /*
+   * MODULE 11 — COMMERCE. Les quatre menus, listes ET écrans de saisie.
+   *
+   * L'éditeur de lignes est le composant le plus dense du module — nature de la
+   * ligne, prestation, quantité, prix, repère de coût — et c'est lui qui se
+   * mesure mal à 360 px. Il vit sur la FICHE d'un acte, donc sur une route
+   * résolue à l'exécution (plus bas) ; les écrans de création, eux, ont une
+   * route fixe et se mesurent ici.
+   */
+  ['/commerce/devis', 'Devis clients'],
+  ['/commerce/devis/nouveau', 'Nouveau devis client'],
+  ['/commerce/commandes', 'Commandes clients'],
+  ['/commerce/devis-fournisseurs', 'Devis fournisseurs'],
+  ['/commerce/devis-fournisseurs/nouveau', 'Nouveau devis fournisseur'],
+  ['/commerce/commandes-fournisseurs', 'Commandes fournisseurs'],
+  ['/commerce/commandes-fournisseurs/nouvelle', 'Nouvelle commande fournisseur'],
   ['/tresorerie/comptes', 'Comptes'],
   ['/tresorerie/ecritures', 'Écritures'],
   ['/tresorerie/virements', 'Virements'],
@@ -374,6 +390,33 @@ async function main() {
           ? 'Location · Facturation (contrat de longue durée)'
           : 'Location · Facturation (durée fixée)',
       ])
+    }
+
+    /*
+     * LES FICHES COMMERCIALES — LOT 25 et LOT 26.
+     *
+     * C'est là que vit l'ÉDITEUR DE LIGNES, le composant le plus dense du
+     * module : nature de la ligne, prestation, désignation, quantité, prix, et —
+     * côté achat — le repère de coût. Une liste ne dirait rien de lui.
+     *
+     * La route est résolue à l'exécution : un acte se reconnaît par son
+     * identifiant, jamais par une adresse fixe. Aucune donnée n'est créée pour
+     * autant — si la base n'en porte aucun, la route est omise et la recette le
+     * DIT, plutôt que d'inventer un document pour se donner quelque chose à
+     * mesurer.
+     */
+    for (const [table, chemin, libelle] of [
+      ['sales_quotes', '/commerce/devis', 'Devis client · fiche'],
+      ['purchase_quotes', '/commerce/devis-fournisseurs', 'Devis fournisseur · fiche'],
+      ['purchase_orders', '/commerce/commandes-fournisseurs', 'Commande fournisseur · fiche'],
+    ]) {
+      const { data } = await admin.from(table).select('id').limit(1)
+
+      if (data?.[0]?.id) {
+        routes.push([`${chemin}/${data[0].id}`, libelle])
+      } else {
+        console.log(`  ${DIM}Aucun acte dans « ${table} » : ${libelle} n’est pas mesurée.${RESET}`)
+      }
     }
 
     for (const [route, libelle] of routes) {

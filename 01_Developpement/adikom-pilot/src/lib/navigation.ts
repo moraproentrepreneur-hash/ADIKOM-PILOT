@@ -319,18 +319,21 @@ export const NAVIGATION: NavEntry[] = [
     ],
   },
   /*
-   * Module 11 — ouvert par le LOT 25 (DEC-049).
+   * Module 11 — ouvert par le LOT 25 (DEC-049), complété par le LOT 26.
    *
-   * DEUX ENTRÉES, ET DEUX SEULEMENT. Le périmètre Direction prévoit aussi
-   * « Devis fournisseurs » et « Commandes fournisseurs » — ils relèvent du
-   * LOT 26 et NE SONT PAS AFFICHÉS : le projet a retiré toutes ses entrées
-   * « à venir » (DEC-042 §d) et n'en réintroduit pas. Une entrée inerte promet
-   * ce que l'écran ne fait pas.
+   * QUATRE ENTRÉES, DANS L'ORDRE DU PLAN 02 §7.1 : les deux menus du commerce
+   * CLIENT (1, 2), puis les deux du commerce FOURNISSEUR (3, 4). Le LOT 26
+   * n'ajoute aucun second module « Achats » : le Plan les place tous les quatre
+   * sous Commerce, et les séparer obligerait à chercher au même endroit deux
+   * fois.
+   *
+   * Aucune entrée « à venir » n'a jamais été affichée pour les deux dernières
+   * (DEC-042 §d) : elles apparaissent le jour où elles fonctionnent.
    *
    * Le module s'intercale entre « Produits & Services », qu'il consomme, et
-   * « Banques & Caisses » : il suit l'ordre de la chaîne commerciale — un devis
-   * naît d'un service, une commande produit une facture, une facture appelle un
-   * règlement.
+   * « Banques & Caisses » : il suit l'ordre des deux chaînes commerciales — un
+   * devis naît d'un service, une commande produit une facture, une facture
+   * appelle un règlement.
    */
   {
     label: 'Commerce',
@@ -348,6 +351,20 @@ export const NAVIGATION: NavEntry[] = [
         href: '/commerce/commandes',
         icon: ShoppingCart,
         permission: PERMISSIONS.SALES_ORDERS_VIEW,
+        status: 'ready',
+      },
+      {
+        label: 'Devis fournisseurs',
+        href: '/commerce/devis-fournisseurs',
+        icon: FileText,
+        permission: PERMISSIONS.PURCHASE_QUOTES_VIEW,
+        status: 'ready',
+      },
+      {
+        label: 'Commandes fournisseurs',
+        href: '/commerce/commandes-fournisseurs',
+        icon: ShoppingCart,
+        permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
         status: 'ready',
       },
     ],

@@ -66,6 +66,16 @@ import {
   listSalesOrderLines,
   listSalesQuoteLines,
 } from '@/features/commerce/data'
+import {
+  PurchaseOrderDocument,
+  PurchaseQuoteDocument,
+} from '@/features/purchasing/documents/purchase-documents'
+import {
+  getPurchaseOrder,
+  getPurchaseQuote,
+  listPurchaseOrderLines,
+  listPurchaseQuoteLines,
+} from '@/features/purchasing/data'
 
 /**
  * Registre des documents.
@@ -700,6 +710,97 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
         }),
         reference: order.orderNo,
         label: 'Commande-client',
+      }
+    },
+  },
+
+  /* ------------------------------------------------- Commerce fournisseur -- */
+  //
+  // DEUX PIÈCES, DEUX MENUS, QUATRE CAPACITÉS DOCUMENTAIRES — et DEUX
+  // DESTINATIONS DIFFÉRENTES :
+  //
+  //   `devis-fournisseurs`     pièce INTERNE. Elle restitue une offre reçue.
+  //   `commandes-fournisseurs` pièce DESTINÉE AU FOURNISSEUR. Elle porte le prix
+  //                            convenu AVEC LUI — ce n'est pas une fuite, c'est
+  //                            ce qu'il doit lire pour honorer la commande.
+  //
+  // 🟥 AUCUN COÛT DE RÉFÉRENCE DU CATALOGUE — voir l'en-tête de
+  // `purchase-documents.tsx` : la garantie est portée par le TYPE
+  // `PurchaseLine`, qui ne porte que le prix de l'offre. Le repère interne
+  // n'existe qu'à l'écran, dans l'éditeur de lignes.
+  'devis-fournisseurs': {
+    entityType: 'purchase_quotes',
+    moduleCode: 'commerce',
+    viewPermission: PERMISSIONS.PURCHASE_QUOTES_VIEW,
+    downloadPermission: PERMISSIONS.PURCHASE_QUOTES_DOWNLOAD,
+    printPermission: PERMISSIONS.PURCHASE_QUOTES_PRINT,
+
+    async build(id) {
+      const quote = await getPurchaseQuote(id)
+      if (!quote) return null
+
+      // Les coordonnées du fournisseur relèvent de `parties.suppliers.view` :
+      // sans elle, `supplierLabel` revient déjà `null` de la couche de données,
+      // et le document le dit plutôt que d'inventer un destinataire.
+      const mayReadSupplier = await can(PERMISSIONS.SUPPLIERS_VIEW)
+      const supplier = mayReadSupplier ? await getSupplierDetail(quote.supplierId) : null
+
+      const [lines, identity] = await Promise.all([
+        listPurchaseQuoteLines(id),
+        getDocumentIdentity(),
+      ])
+
+      return {
+        element: PurchaseQuoteDocument({
+          identity,
+          quote,
+          lines,
+          supplierAddress: supplier
+            ? [supplier.address, supplier.city, supplier.country].filter(
+                (line): line is string => Boolean(line)
+              )
+            : null,
+          issuedOn: issuedOnLabel(),
+        }),
+        reference: quote.quoteNo,
+        label: 'Devis-fournisseur',
+      }
+    },
+  },
+
+  'commandes-fournisseurs': {
+    entityType: 'purchase_orders',
+    moduleCode: 'commerce',
+    viewPermission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
+    downloadPermission: PERMISSIONS.PURCHASE_ORDERS_DOWNLOAD,
+    printPermission: PERMISSIONS.PURCHASE_ORDERS_PRINT,
+
+    async build(id) {
+      const order = await getPurchaseOrder(id)
+      if (!order) return null
+
+      const mayReadSupplier = await can(PERMISSIONS.SUPPLIERS_VIEW)
+      const supplier = mayReadSupplier ? await getSupplierDetail(order.supplierId) : null
+
+      const [lines, identity] = await Promise.all([
+        listPurchaseOrderLines(id),
+        getDocumentIdentity(),
+      ])
+
+      return {
+        element: PurchaseOrderDocument({
+          identity,
+          order,
+          lines,
+          supplierAddress: supplier
+            ? [supplier.address, supplier.city, supplier.country].filter(
+                (line): line is string => Boolean(line)
+              )
+            : null,
+          issuedOn: issuedOnLabel(),
+        }),
+        reference: order.orderNo,
+        label: 'Commande-fournisseur',
       }
     },
   },

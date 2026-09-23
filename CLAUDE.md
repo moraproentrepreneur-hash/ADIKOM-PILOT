@@ -334,7 +334,13 @@ Le module \*\*Commerce\*\* (code `commerce`) a été ajouté au LOT 25 sur déci
 
 
 
-\*\*Seul le commerce CLIENT est développé\*\* — devis clients et commandes clients. Le commerce fournisseur relève du LOT 26 : aucune table `purchase_*`, aucune capacité `commerce.purchase_*`, aucune entrée de navigation « à venir ».
+Le commerce CLIENT — devis et commandes clients — a été livré au LOT 25 (DEC-049). Le commerce FOURNISSEUR — devis et commandes fournisseurs — a été livré au LOT 26 (DEC-052).
+
+\*\*Les quatre menus vivent sous le module `commerce`\*\* : ne crée aucun second module « Achats » (Plan 02 §7.1).
+
+\*\*Un « devis fournisseur » est un document REÇU\*\* : ADIKOM enregistre l'offre d'un fournisseur, elle ne lui émet rien. Son prix est celui de l'offre, saisi — jamais résolu du catalogue, dont le coût de référence n'a pas de dimension fournisseur (P-5, resté ouvert).
+
+\*\*Produits : toujours pas.\*\* Aucune table de produit, aucun stock, aucun entrepôt, aucune réception physique de marchandise.
 
 
 

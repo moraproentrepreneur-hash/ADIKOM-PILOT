@@ -462,6 +462,36 @@ export default async function SupplierInvoiceDetailPage(
                   </span>
                 )}
               </InfoRow>
+              {/*
+                L'ORIGINE COMMERCIALE — LOT 26. Elle ne s'affiche que lorsqu'elle
+                existe : la très grande majorité des factures reçues n'a aucune
+                commande enregistrée en amont, et une ligne « aucune » n'aurait
+                rien appris.
+
+                Sans `commerce.purchase_orders.view`, RLS ne rend pas la
+                commande : l'écran DIT que la référence ne lui est pas
+                communiquée, plutôt que de laisser croire qu'elle n'existe pas
+                (DEC-017).
+              */}
+              {invoice.purchaseOrderId && (
+                <InfoRow
+                  label="Commande d’origine"
+                  hint="Cette facture a été préparée à partir d’une commande fournisseur."
+                >
+                  {invoice.purchaseOrderNo ? (
+                    <Link
+                      href={`/commerce/commandes-fournisseurs/${invoice.purchaseOrderId}`}
+                      className="text-adikom-500 hover:underline tabular"
+                    >
+                      {invoice.purchaseOrderNo}
+                    </Link>
+                  ) : (
+                    <span className="text-muted">
+                      Sa référence ne vous est pas communiquée.
+                    </span>
+                  )}
+                </InfoRow>
+              )}
               <InfoRow label="Date">{formatDate(invoice.invoiceDate)}</InfoRow>
               <InfoRow label="Échéance">{formatDate(invoice.dueDate) ?? <Empty />}</InfoRow>
               <InfoRow label="Observations">{invoice.notes ?? <Empty />}</InfoRow>

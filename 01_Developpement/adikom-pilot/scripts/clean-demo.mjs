@@ -154,9 +154,31 @@ async function main() {
   const maintenances = await idsWhere(admin, 'vehicle_maintenances', (q) =>
     q.like('reason', `${DEMO_NOTE}%`)
   )
-  const supplierInvoices = await idsWhere(admin, 'supplier_invoices', (q) =>
+  /*
+   * COMMERCE FOURNISSEUR — LOT 26.
+   *
+   * L'offre porte le marqueur ; la commande et la facture, non : c'est la
+   * CONVERSION puis la facturation qui écrivent leurs notes (« Commande
+   * CDE-F-… »). Leur appartenance à la démonstration se lit donc de leur
+   * RATTACHEMENT, et non d'un texte.
+   *
+   * ⚠ Les factures de commande fournisseur rejoignent `supplierInvoices` :
+   * elles se retirent avec les autres, dans le même ordre, et AVANT les
+   * commandes qu'elles désignent.
+   */
+  const purchaseQuotes = await idsWhere(admin, 'purchase_quotes', (q) =>
     q.like('notes', `${DEMO_NOTE}%`)
   )
+  const purchaseOrders = await idsWhere(admin, 'purchase_orders', (q) =>
+    q.in('purchase_quote_id', safe(purchaseQuotes))
+  )
+
+  const supplierInvoices = [
+    ...(await idsWhere(admin, 'supplier_invoices', (q) => q.like('notes', `${DEMO_NOTE}%`))),
+    ...(await idsWhere(admin, 'supplier_invoices', (q) =>
+      q.in('purchase_order_id', safe(purchaseOrders))
+    )),
+  ]
   /*
    * COMMERCE CLIENT — LOT 25.
    *
@@ -262,6 +284,20 @@ async function main() {
     (q) => q.in('supplier_invoice_id', safe(supplierInvoices)), 'lignes de factures fournisseurs')
   await purge(admin, 'supplier_invoices',
     (q) => q.in('id', safe(supplierInvoices)), 'factures fournisseurs')
+
+  /* --- Commerce fournisseur — LOT 26 ---------------------------------------- */
+  //
+  // APRÈS les factures fournisseurs, qui citent la commande ; et les lignes de
+  // commande AVANT celles de l'offre, qu'elles désignent par
+  // `source_quote_line_id`.
+  await purge(admin, 'purchase_order_lines',
+    (q) => q.in('purchase_order_id', safe(purchaseOrders)), 'lignes de commandes fournisseurs')
+  await purge(admin, 'purchase_orders',
+    (q) => q.in('id', safe(purchaseOrders)), 'commandes fournisseurs')
+  await purge(admin, 'purchase_quote_lines',
+    (q) => q.in('purchase_quote_id', safe(purchaseQuotes)), 'lignes de devis fournisseurs')
+  await purge(admin, 'purchase_quotes',
+    (q) => q.in('id', safe(purchaseQuotes)), 'devis fournisseurs')
 
   /* --- Commerce client — LOT 25 --------------------------------------------- */
   //

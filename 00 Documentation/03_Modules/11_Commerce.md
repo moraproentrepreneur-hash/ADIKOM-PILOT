@@ -6,8 +6,13 @@
 **Statut :** Document de référence fonctionnelle
 **Entreprise :** ADIKOM Technology & Travel
 **Projet :** ADIKOM PILOT
-**Périmètre :** LOT 25 — **Commerce client uniquement** (devis et commandes clients)
-**Sources :** `RAPPORTS/Plan 02` §7.1, §9.1, §9.2, §9.5, §10.2, §13.2 · `RAPPORTS/Plan 01` §15 · décisions Direction A-10, A-13, A-14 · DEC-023, DEC-024, DEC-049
+**Périmètre :** LOT 25 — **Commerce client** (devis et commandes clients) · LOT 26 — **Commerce fournisseur** (devis et commandes fournisseurs, §17 à §26)
+**Sources :** `RAPPORTS/Plan 02` §6, §7.1, §9.1, §9.2, §9.5, §10.2, §13.2, §18.2 · `RAPPORTS/Plan 01` §15 · décisions Direction A-10, A-13, A-14, B-6, B-7 · DEC-023, DEC-024, DEC-044, DEC-049, DEC-050, DEC-051, DEC-052
+
+> **Comment lire ce document.** Les §1 à §16 décrivent le **commerce client**
+> (LOT 25). Les §17 à §26 décrivent le **commerce fournisseur** (LOT 26), et ne
+> répètent que ce qui **diffère** : tout ce qu'ils ne contredisent pas vaut des
+> deux côtés.
 
 ---
 
@@ -33,7 +38,7 @@ CATALOGUE DE SERVICES (LOT 20)
         └───────────────────▶ TRÉSORERIE (LOT 6)
 ```
 
-## 1.1 Ce que le LOT 25 livre
+## 1.1 Ce que le LOT 25 livre — commerce client
 
 - les **devis clients**, leurs lignes et leur cycle de vie ;
 - les **commandes clients**, leurs lignes et leur cycle de vie ;
@@ -43,10 +48,10 @@ CATALOGUE DE SERVICES (LOT 20)
 - les **exports** des deux listes ;
 - **16 capacités**, huit par menu.
 
-## 1.2 Ce que le LOT 25 ne livre pas
+## 1.2 Ce que le LOT 25 ne livre pas — commerce client
 
-- **aucun commerce fournisseur** : devis et commandes fournisseurs relèvent du
-  LOT 26, et aucune entrée de navigation ne les annonce (DEC-042 §d) ;
+- 🟩 **le commerce fournisseur** — devis et commandes fournisseurs — a été livré
+  par le **LOT 26** (DEC-052). Il est décrit aux §17 à §26 ;
 - **aucune remise** : ni de ligne, ni globale (§8) ;
 - **aucun coût, aucune marge** : la photographie du coût commercial relève du
   LOT 28 (§9) ;
@@ -478,7 +483,7 @@ Plan 02 §10.2, exactement.
 | `commerce.*.convert` | Convertir un devis, c'est **créer une commande** : `commerce.sales_orders.create` |
 | `commerce.*.discount` | Aucune remise n'existe (§8) |
 | `commerce.*.margin`, `.cost` | Aucun coût, aucune marge (§9) |
-| `commerce.purchase_*` | Le commerce fournisseur est le LOT 26 |
+| `commerce.purchase_*` | 🟩 **Livrées par le LOT 26** (§24). Elles n'existaient pas au LOT 25 |
 
 ## 11.2 Étanchéité
 
@@ -617,8 +622,9 @@ facturation** :
   reservations, rentals, … customer_invoices, customer_invoice_lines, …
 ```
 
-**54 → 58 tables.** L'ordre est impératif : une ligne de commande cite la ligne
-de devis dont elle est née, et une facture cite sa commande.
+**54 → 58 tables** au LOT 25 ; **58 → 62** au LOT 26 (§25.3). L'ordre est
+impératif : une ligne de commande cite la ligne de devis dont elle est née, et
+une facture cite sa commande.
 
 ---
 
@@ -630,7 +636,7 @@ de devis dont elle est née, et une facture cite sa commande.
 | 2 | **Remises commerciales** — de ligne ou globales | 🟩 **Tranchée — DEC-051** : **montant fixe KMF**, permission indépendante, **implémentation différée** (§8) |
 | 3 | **Marge commerciale** — coût copié sur la ligne | 🟦 **Séquencé au LOT 28** (Plan 02 §13.2) |
 | 4 | **Convention définitive des références** | 🟦 DEC-023 §5 — à confirmer avant première émission réelle |
-| 5 | **Devis et commandes fournisseurs** | 🟦 LOT 26 |
+| 5 | **Devis et commandes fournisseurs** | 🟩 **Livrés — LOT 26, DEC-052** (§17 à §26). Le commerce client n'en a été ni modifié ni touché |
 | 6 | **Produits** | 🟦 Non développés. Le modèle de ligne les accueillera sans réécriture |
 
 > 🟩 **Points 1 et 2 — clos le 23 septembre 2026.** Ils cessent d'être des
@@ -640,5 +646,585 @@ de devis dont elle est née, et une facture cite sa commande.
 
 ---
 
+# PARTIE II — LE COMMERCE FOURNISSEUR (LOT 26)
+
+# 17. Objet, et ce qui change de sens
+
+Le commerce fournisseur enregistre les actes d'ACHAT qui précèdent la facture
+reçue : ce qu'un fournisseur **propose**, puis ce qu'ADIKOM lui **commande**.
+
+Il ne paie rien, n'impute rien et ne tient aucune trésorerie. Il s'insère entre
+deux briques déjà livrées, et ne réécrit ni l'une ni l'autre :
+
+```
+CATALOGUE DE SERVICES (LOT 20)
+        │
+        ▼
+ DEVIS FOURNISSEUR ──────────▶  COMMANDE FOURNISSEUR
+        │  retenu, converti            │  passée, facturée
+        │  (conservé)                  ▼
+        │                    FACTURE FOURNISSEUR (LOT 5)
+        │                              ▼
+        │                    RÈGLEMENT FOURNISSEUR (LOT 6)
+        │                              ▼
+        └───────────────────▶  TRÉSORERIE (LOT 6)
+```
+
+## 17.1 🟥 Un « devis fournisseur » est un document REÇU
+
+C'est le point de vocabulaire qui gouverne tout le reste. **ADIKOM n'émet aucun
+devis à destination d'un fournisseur** : elle **enregistre l'offre** qu'il lui a
+remise. La pièce est reçue, comme une facture fournisseur l'est (Module 07 §28).
+
+Trois conséquences :
+
+| | Devis **client** | Devis **fournisseur** |
+| --- | --- | --- |
+| Qui produit le document | ADIKOM | **le fournisseur** |
+| L'acte d'ADIKOM | *émettre* | **enregistrer, puis décider** |
+| Référence externe | aucune | **celle du fournisseur** (§18.2) |
+| Le prix vient | **du catalogue**, à la date | **de l'offre**, saisi (§19) |
+
+## 17.2 Ce que le LOT 26 livre
+
+- les **devis fournisseurs**, leurs lignes et leur cycle de vie ;
+- les **commandes fournisseurs**, leurs lignes et leur cycle de vie ;
+- la **conversion** d'une offre retenue en commande ;
+- l'enregistrement de la **facture reçue** **par la chaîne existante** ;
+- les **documents** PDF de l'offre et du bon de commande ;
+- les **exports** des deux listes ;
+- **16 capacités**, huit par menu — dont **deux lectures sensibles** (§23).
+
+## 17.3 Ce que le LOT 26 ne livre pas
+
+- **aucune marge** : « on n'a pas de marge sur un achat » (Plan 01 §15.3) ;
+- **aucune remise fournisseur** : DEC-051 porte sur les remises **clients**, et
+  rien n'est décidé sur les rabais consentis par un fournisseur. Le prix d'une
+  ligne est le **prix net convenu**, et le document ne prétend pas autre chose ;
+- **aucun produit, aucun stock, aucun entrepôt, aucune réception de
+  marchandise** ; la réception d'une prestation se constate **par un statut**
+  (décision B-6) ;
+- **aucune taxe** (DEC-014) ; **aucune devise** autre que le KMF (DEC-010) ;
+- **aucun second module « Achats »** : les quatre menus vivent sous Commerce
+  (Plan 02 §7.1) ;
+- **aucune résolution de P-5** (§19.3).
+
+---
+
+# 18. Le devis fournisseur
+
+## 18.1 Identité
+
+| Donnée | Règle |
+| --- | --- |
+| **Référence interne** | `DEV-F-2026-000001` — préfixe, année, six chiffres, remise à zéro annuelle. Le suffixe `-F` est celui de `FAC-F` : lire la référence dit de quel côté on se trouve |
+| **Référence du fournisseur** | **Facultative, et distincte** — §18.2 |
+| **Fournisseur** | Le fournisseur du module Tiers, **jamais recopié**. Aucune table parallèle |
+| **Date de l'offre** | Obligatoire. ⚠ **Elle ne détermine aucun prix** (§19) |
+| **Validité** | **Facultative**, et jamais inventée : c'est **le fournisseur** qui la fixe |
+| **Devise** | KMF (DEC-010) |
+| **Conditions**, **Observations** | Texte libre, repris sur le document |
+
+## 18.2 🟥 Deux références, jamais confondues
+
+Module 07 §30 pose déjà la règle pour la facture reçue : « le numéro de facture
+fourni par le fournisseur peut également être enregistré comme référence
+externe », **distinct du numéro interne**. Elle vaut ici, et c'est **la même
+colonne, du même nom, avec la même contrainte**.
+
+- le **numéro d'ADIKOM** classe l'offre chez elle ;
+- la **référence du fournisseur** la retrouve chez lui — c'est elle qu'il citera
+  au téléphone.
+
+La recherche porte sur **les deux** : l'une est souvent la seule dont on dispose.
+
+**Elle est gelée avec l'offre** (§21) : la laisser réécrivable permettrait de
+faire passer une offre enregistrée pour une autre.
+
+## 18.3 Cycle de vie
+
+```
+BROUILLON ──enregistrer──▶ REÇU ──retenir──▶ RETENU ──convertir──▶ CONVERTI
+    │                       │                  │
+    │                       └──écarter──▶ ÉCARTÉ│
+    │                       │                  │
+    └───────────────────────┴──────────────────┴──annuler──▶ ANNULÉ
+```
+
+Les **codes** sont ceux du commerce client — Plan 02 §9.5 ne crée qu'une seule
+énumération, `commercial_document_status`, délibérément nommée sans préfixe de
+domaine. **Seuls les libellés diffèrent**, et ils disent l'achat :
+
+| Code | Libellé | Ce qu'il signifie | Capacité |
+| --- | --- | --- | --- |
+| `DRAFT` | **Brouillon** | L'offre se saisit. En-tête et lignes librement modifiables | `create` |
+| `SENT` | 🟥 **Reçu** | L'offre est enregistrée **telle qu'elle a été remise**. En-tête, référence, conditions et lignes figés | `validate` |
+| `ACCEPTED` | **Retenu** | ADIKOM retient cette offre | `validate` |
+| `REFUSED` | **Écarté** | ADIKOM en préfère une autre. Conservé comme acte antérieur | `validate` |
+| `CONVERTED` | **Converti** | Une commande en est née. **Ne se déclare pas** | `purchase_orders.create` |
+| `ANNULÉ` | **Annulé** | L'enregistrement est retiré. Historisé, jamais supprimé | `cancel` |
+
+**Pourquoi écarter relève de `validate` et non de `cancel`** : retenir et écarter
+sont **le même geste** — la décision d'ADIKOM sur cette offre —, par la même
+personne, sur le même écran. Annuler, c'est dire que l'enregistrement n'aurait
+pas dû exister. **Une offre écartée n'est pas une offre annulée.**
+
+**Une offre convertie revient à « retenue »** si sa commande est annulée. C'est
+le seul chemin de retour, et il n'est ouvert qu'à
+`commerce.purchase_orders.cancel`.
+
+**Aucun état « expiré »** — décision B-7, comme pour le devis client : la
+péremption se **calcule** de `valid_until` et du jour comorien. L'écran la
+signale ; il ne décide rien.
+
+---
+
+# 19. 🟥 Le prix d'une ligne d'achat — et pourquoi la règle s'inverse
+
+## 19.1 La règle
+
+> **Sur une ligne d'achat, le prix est TOUJOURS SAISI — ligne de catalogue
+> comprise. C'est le prix que CE fournisseur propose, sur CET acte.**
+
+Côté client, le prix d'une ligne de catalogue est **résolu du catalogue** et un
+prix saisi y est **refusé** : ce serait une remise déguisée, que rien ne
+garderait. Côté fournisseur, la règle s'inverse — et ce n'est pas une facilité.
+
+## 19.2 Pourquoi
+
+`service_variant_costs` porte un coût de **référence** : **une** valeur par
+variante et par date, **sans dimension fournisseur**.
+
+Résoudre ce coût et l'imposer à la ligne ferait passer **une valeur interne pour
+une offre reçue** : le devis ne dirait plus ce que le fournisseur a proposé.
+
+```
+Catalogue :   SERVICE DEMO 03 — coût de référence 45 000 KMF
+
+Fournisseur A propose  52 000  ──▶ ligne du devis A : 52 000
+Fournisseur B propose  38 000  ──▶ ligne du devis B : 38 000
+Catalogue relevé à     70 000  ──▶ les deux devis restent à 52 000 et 38 000
+```
+
+## 19.3 🟥 P-5 reste ouvert, et ce lot ne le tranche pas
+
+Le point **P-5** — « un service a-t-il un prix d'achat unique, ou un prix par
+fournisseur ? » (Plan 02 §15) — **n'est pas tranché**, et le LOT 26 **n'a pas eu
+besoin de le trancher** : le prix vit sur l'ACTE, non dans le référentiel.
+
+| | Coût de **référence** | Prix **fournisseur** |
+| --- | --- | --- |
+| Où | `service_variant_costs` | `purchase_*_lines.unit_price` |
+| Combien | **une** valeur par date | **une par offre**, par fournisseur |
+| Gardé par | `catalog.services.cost.view` | `commerce.purchase_*.view` |
+| Écrit par | `catalog.services.cost.update` | `commerce.purchase_quotes.create` |
+
+🟥 **`service_variant_costs` n'a reçu ni `supplier_id`, ni aucune autre colonne.**
+La migration du lot refuserait de s'appliquer si c'était le cas.
+
+## 19.4 Le repère, et seulement un repère
+
+L'éditeur de lignes **affiche** le coût de référence à la date du document, à
+côté du champ de saisie, avec l'écart — « voici ce que nous payons d'habitude ».
+
+- il n'est **jamais recopié** dans le champ ;
+- il n'est montré qu'à qui détient **`catalog.services.cost.view`**, et l'écran
+  **dit** pourquoi la case est vide quand ce n'est pas le cas (DEC-017) ;
+- il **n'entre dans aucun document, aucun export, aucune ligne enregistrée**. Un
+  balayage des sources documentaires **refuse jusqu'à son nom de variable**.
+
+**Un acheteur travaille sans lui** : la recette éprouve tout le parcours avec un
+profil qui ne détient pas cette capacité.
+
+---
+
+# 20. Les lignes — 🟩 A-13 s'applique
+
+La question A-13, telle que le Plan 01 §23 l'a posée à la Direction, ne parle ni
+du client ni du fournisseur : « **un devis / une commande** peut-il porter une
+ligne libre, sans service au catalogue ? — **Oui**, `service_id` nullable ». Et
+le Plan 01 §15.3–15.4 décrit les quatre tables de ce lot comme « **même
+structure, symétrique** ».
+
+**A-13 n'est donc pas étendue par ressemblance : elle était générale, et ces
+tables sont celles qu'elle visait.** Aucun service « Divers » n'est créé.
+
+| | **Ligne de catalogue** | **Ligne libre** |
+| --- | --- | --- |
+| Service, variante | obligatoires — **traçabilité** | aucun |
+| Désignation | **copiée** du catalogue, ajustable | **saisie** |
+| Prix unitaire | **saisi** (§19) | **saisi** |
+| Quantité | saisie, entière (B-14) | saisie, entière |
+
+La base garantit, exactement comme côté client : le couple service/variante va
+**ensemble ou pas du tout** ; la variante **appartient bien à son service**, par
+une clé étrangère **composite** et non par un déclencheur ; quantité et prix sont
+des **entiers strictement positifs** ; une ligne **s'archive**, elle ne s'efface
+pas (D6).
+
+---
+
+# 21. La commande fournisseur
+
+## 21.1 Identité et origines
+
+| Donnée | Règle |
+| --- | --- |
+| **Référence** | `CDE-F-2026-000001` |
+| **Fournisseur** | Le fournisseur du module Tiers |
+| **Offre d'origine** | **Facultative** |
+| **Date de commande** | Obligatoire |
+| **Réception attendue** | Facultative |
+
+| Cas | Chemin |
+| :-: | --- |
+| **A** | Conversion d'une **offre retenue**, depuis sa fiche |
+| **B** | **Création directe** — ADIKOM commande sans avoir demandé d'offre |
+
+Le **cas B est prévu par l'architecture** : Plan 01 §15.2 écrit, pour la commande
+client, « origine facultative », et §15.3–15.4 donnent aux tables fournisseurs la
+même structure. C'est aussi **le cas le plus courant d'un achat de routine** :
+l'interdire obligerait à saisir une offre fictive pour pouvoir commander.
+
+## 21.2 Cycle de vie
+
+```
+BROUILLON ──passer──▶ PASSÉE ──réceptionner──▶ RÉCEPTIONNÉE
+                         │                          │
+                         └────────facturer──────────┴──▶ FACTURÉE
+                                                          │
+   (annulation de la facture)  ◀──────────────────────────┘
+
+BROUILLON · PASSÉE · RÉCEPTIONNÉE ──annuler──▶ ANNULÉE
+```
+
+| Code | Libellé | Ce qu'il signifie | Capacité |
+| --- | --- | --- | --- |
+| `DRAFT` | **Brouillon** | Se prépare. Lignes modifiables | `create` |
+| `CONFIRMED` | **Passée** | La commande est transmise. **Conditions et lignes figées** | `validate` |
+| `DELIVERED` | 🟥 **Réceptionnée** | Prestation constatée reçue. **Aucun bon de réception** (B-6) | `validate` |
+| `INVOICED` | **Facturée** | Une facture fournisseur en est née. **Ne se déclare pas** | `billing.supplier_invoices.create` |
+| `CANCELLED` | **Annulée** | Historisée. Son offre d'origine redevient « retenue » | `cancel` |
+
+**La réception n'est pas un passage obligé**, et **ce n'est pas un document**.
+Plan 01 §15.5, décision B-6 : « Aucune livraison, aucun bon de livraison, aucune
+réception. La réception d'une prestation est constatée par le passage de la
+commande fournisseur à `DELIVERED` — un statut, pas un document. »
+
+## 21.3 Ce qui se fige, et ce qui reste annotable
+
+Exactement la doctrine du §7.3 bis, appliquée d'emblée : hors brouillon, le
+fournisseur, l'origine, la date, le numéro, la devise **et les conditions** sont
+gelés ; les **observations** restent annotables, mais **exigent
+`commerce.purchase_orders.update` dans tous les états** — annoter, c'est
+modifier. La même règle vaut pour l'offre, dont **la référence externe** rejoint
+le gel.
+
+---
+
+# 22. 🟥 La facture reçue — aucun système parallèle
+
+## 22.1 Le principe
+
+`create_invoice_from_purchase_order` est un **orchestrateur**. Elle n'écrit
+elle-même **aucune ligne** dans les tables de facturation : elle appelle les
+fonctions existantes, qui portent déjà leurs cinq couches de contrôle.
+
+```
+create_invoice_from_purchase_order(commande, date, échéance, réf. fournisseur)
+        │
+        ├─▶ create_supplier_invoice(…)          ← EXISTANTE, non dupliquée
+        │
+        └─▶ add_supplier_invoice_line(…)        ← EXISTANTE, une par ligne active
+                 label · quantité · prix unitaire   ← COPIÉS de la commande
+                 service · variante                 ← traçabilité
+                 amount = quantité × prix           ← CALCULÉ, jamais fourni
+```
+
+**La facture naît en BROUILLON.** La **soumettre au contrôle** puis la **valider**
+restent des actes distincts, sous `billing.supplier_invoices.update` et
+`.validate` : c'est **la validation qui reconnaît la dette**, et elle seule ouvre
+l'imputation et le règlement.
+
+Une facture née d'une commande est une `supplier_invoices` **ordinaire** : même
+numérotation `FAC-F`, même écran, même cycle, **mêmes imputations**, **mêmes
+règlements partiels**, **mêmes écritures de trésorerie**, même place dans le
+pilotage.
+
+## 22.2 🟥 Une facture reçue CONSTATE — elle n'exécute pas la commande
+
+C'est l'asymétrie de fond entre les deux côtés du commerce :
+
+| | Côté **client** | Côté **fournisseur** |
+| --- | --- | --- |
+| La facture | **exprime** l'engagement d'ADIKOM | **constate** ce que le tiers réclame |
+| Son montant | celui de la commande, décidé par ADIKOM | celui du **document reçu** (Module 07 §28, §54) |
+
+**Rien n'oblige donc le total de la facture à égaler celui de la commande.** Un
+fournisseur peut facturer un extra, consentir un geste, livrer une quantité
+différente. Les lignes sont recopiées **pour épargner une ressaisie**, et restent
+modifiables tant que la facture est en saisie.
+
+Le système les rend **comparables** — la fiche de la commande affiche les deux
+totaux et leur **écart** — il ne les force pas à coïncider. Les forcer
+reviendrait à **réécrire un document reçu**.
+
+## 22.3 🟦 Une commande, au plus une facture non annulée
+
+**La règle appliquée.** Une commande fournisseur porte **au plus une facture non
+annulée**, par un index d'unicité partiel — de la même forme que côté client.
+
+🟥 **Ce point n'est PAS tranché par symétrie avec DEC-050**, qui porte
+expressément sur la commande **client**. Il est **déduit de l'architecture**, et
+le raisonnement est écrit :
+
+1. Plan 02 §9.2 ajoute `supplier_invoices.purchase_order_id` — **une** colonne,
+   au singulier ;
+2. `order_status` porte `INVOICED` et **aucun état partiel** — et il est
+   **partagé** avec le commerce client : c'est un statut de la commande
+   **entière**, des deux côtés ;
+3. `create_invoice_from_purchase_order` ne sait exprimer ni sélection de lignes,
+   ni quantité à facturer ;
+4. là où le Plan a **voulu** plusieurs factures — la longue durée, A-6 —, il a
+   créé l'objet qui les porte. Ici, rien de tel n'existe ;
+5. **aucune règle documentaire** ne parle d'acompte fournisseur : Module 07,
+   Règles finance §8, Règles fournisseurs §2 et Workflow 08 ont été relus.
+
+**Ce que l'architecture impose** : si deux factures pouvaient se rattacher à une
+même commande, `INVOICED` deviendrait ambigu — facturée pour quel montant ? — et
+l'annulation de l'une ne saurait pas si la commande redevient « passée ».
+
+🟥 **CE QUI N'EST PAS EMPÊCHÉ POUR AUTANT.** Un fournisseur qui facture une même
+commande en deux fois **n'est pas bloqué** : la seconde facture s'enregistre
+comme toute facture reçue — c'est la chaîne du LOT 5, inchangée — et cite la
+commande dans ses observations. **Seul le lien structurel est unique. Aucune
+dette ne disparaît, aucun paiement n'est empêché.**
+
+> 🟥 **Question ouverte, posée à la Direction.** ADIKOM reçoit-elle, en pratique,
+> **plusieurs factures pour une même commande fournisseur** — acompte puis solde ?
+> Si oui, l'extension est connue et **additive**. **Aucune option n'a été choisie
+> d'office** : la règle appliquée est celle que l'architecture documentée impose
+> aujourd'hui. Voir le Rapport 18.
+
+## 22.4 Colonnes ajoutées — toutes nullables
+
+| Table | Colonne | Rôle |
+| --- | --- | --- |
+| `supplier_invoices` | `purchase_order_id` | La commande dont la facture est née |
+| `supplier_invoice_lines` | `service_id`, `service_variant_id` | Traçabilité de l'origine |
+| `supplier_invoice_lines` | `quantity`, `unit_price` | **Décomposition facultative** |
+
+🟥 **`amount` reste l'unique source du montant brut (D1).** Plan 01 §15.5 :
+« ajouter `quantity` et `unit_price` créerait deux sources du même chiffre ». La
+décomposition, **quand elle existe**, est vérifiée par la base :
+
+```sql
+check ( (quantity is null and unit_price is null)
+     or amount = quantity::bigint * unit_price )
+```
+
+C'est la garantie que Plan 02 §18.2 exige nommément du LOT 26. La fonction
+d'ajout **calcule** `amount` et **refuse** qu'on le fournisse en même temps que
+la décomposition.
+
+**Aucune donnée existante n'est modifiée** : les factures déjà en base reçoivent
+`NULL` partout. **Aucune colonne de coût de catalogue n'est ajoutée.**
+
+## 22.5 Aucune tranche, aucun mouvement anticipé
+
+Créer une offre, la retenir, passer une commande, préparer une facture :
+**aucun** de ces actes ne meut un compte. La trésorerie ne bouge qu'au
+**règlement**, par `record_supplier_payment`, inchangée. Et **une imputation
+n'est jamais un paiement** (CLAUDE.md §57, DEC-013).
+
+---
+
+# 23. 🟥 Confidentialité — ici, `view` EST la barrière
+
+## 23.1 Ce que le module manipule
+
+**Des prix d'achat, et rien d'autre.** C'est ce qui le distingue du commerce
+client, où le §9 pouvait écarter le coût du modèle : ici, l'objet **est** le
+coût.
+
+## 23.2 Pourquoi aucune capacité « montants » n'est créée
+
+Un devis fournisseur ne porte rien d'autre que ce que le fournisseur demande :
+**lui retirer ses montants ne laisserait qu'un nom et une date.**
+
+Le Plan 02 §10.2 ne prévoit donc, pour ces deux menus, **aucune capacité de
+montants** — contrairement aux sessions de caisse (LOT 27), où `pos.sessions.view`
+répond à « **qui** était en caisse » sans dire « **combien** il y avait dedans ».
+Là, la séparation ouvre quelque chose ; **ici, elle ne laisserait rien**.
+
+🟥 **`commerce.purchase_quotes.view` et `commerce.purchase_orders.view` sont donc
+marquées SENSIBLES au catalogue** — comme `catalog.services.cost.view` et
+`rental.pricing.supplier.view` (Plan 02 §6, DEC-044). Ce n'est pas une capacité
+de plus : c'est le **drapeau** que porte une capacité déjà prévue, et il ne change
+aucun droit — il **dit** à l'écran d'attribution ce que cette attribution engage.
+
+## 23.3 Comment la confidentialité est prouvée
+
+🟥 **Pas par un balayage d'octets.** Le LOT 24 a établi qu'un balayage du PDF
+produit **ne prouve rien** : les flux sont compressés et les polices
+sous-ensemblées.
+
+| Barrière | Nature | Où elle est éprouvée |
+| :-: | --- | --- |
+| 1 | **RLS** — un profil sans capacité d'achat n'obtient **aucune ligne**, par écran comme par appel direct | Recette de production |
+| 2 | **Fonctions** — `purchase_quote_total` est `SECURITY INVOKER` : elle rend 0 à qui ne lit pas les lignes | Recette de production |
+| 3 | **Documents** — les trois modes (aperçu, téléchargement, impression) sont refusés, chacun sous **sa** capacité (DEC-024) | Recette de production |
+| 4 | **Exports** — un export n'est **jamais plus permissif que l'écran** : il exige `view` **et** `export` | Recette de production |
+| 5 | **Journal** — l'avant/après d'un événement d'achat exige la capacité de **son menu** (DEC-038) | Recette SQL |
+| 6 | **Anti-vacuité** — un profil autorisé lit **réellement** ces montants, sans quoi les cinq barrières ne prouveraient rien | Recette de production |
+
+## 23.4 🟥 Le document destiné au fournisseur n'est pas une fuite
+
+| Pièce | Destination | Ce qu'elle porte |
+| --- | --- | --- |
+| **Devis fournisseur** | **interne** | L'offre reçue, telle qu'enregistrée |
+| **Bon de commande** | **le fournisseur** | Le prix convenu **avec lui** |
+
+Un bon de commande **doit** dire le prix convenu : c'est ce que le fournisseur
+lit pour l'honorer. **La confidentialité ne consiste pas ici à taire des
+montants**, mais à ce que la pièce n'existe que pour qui détient `download` ou
+`print`, chacune distincte de `view`.
+
+🟥 **Ce qui n'a jamais sa place sur une pièce d'achat, en revanche, c'est le coût
+de RÉFÉRENCE du catalogue** : l'imprimer apprendrait au fournisseur ce qu'ADIKOM
+paie ailleurs. Le balayage des sources documentaires **refuse ce terme jusque
+dans le nom d'une variable**.
+
+Et, symétriquement : **aucune pièce remise à un client ne porte de coût d'achat**
+(§9, Plan 02 §6.4). Les deux domaines sont deux tables, deux jeux de capacités.
+
+---
+
+# 24. Capacités — 16, et pas une de plus
+
+Module `commerce`, **le même**, ordre **11**. Deux menus de plus :
+`purchase_quotes` (3), `purchase_orders` (4) — Plan 01 §17.2. Huit actions
+chacun.
+
+| Code | Action | Sensible | Libellé |
+| --- | --- | :-: | --- |
+| `commerce.purchase_quotes.view` | VIEW | **✓** | Consulter les devis fournisseurs et leurs prix d'achat |
+| `commerce.purchase_quotes.create` | CREATE | | Enregistrer un devis fournisseur |
+| `commerce.purchase_quotes.update` | UPDATE | | Modifier un devis fournisseur |
+| `commerce.purchase_quotes.validate` | VALIDATE | | Enregistrer l'offre reçue, la retenir ou l'écarter |
+| `commerce.purchase_quotes.cancel` | CANCEL | | Annuler un devis fournisseur |
+| `commerce.purchase_quotes.export` | EXPORT | ✓ | Exporter la liste |
+| `commerce.purchase_quotes.download` | DOWNLOAD | ✓ | Télécharger le document |
+| `commerce.purchase_quotes.print` | PRINT | ✓ | Imprimer le document |
+| `commerce.purchase_orders.view` | VIEW | **✓** | Consulter les commandes fournisseurs et leurs prix d'achat |
+| `commerce.purchase_orders.create` | CREATE | | Créer une commande, **convertir un devis** |
+| `commerce.purchase_orders.update` | UPDATE | | Modifier une commande fournisseur |
+| `commerce.purchase_orders.validate` | VALIDATE | | Passer une commande, constater sa réception |
+| `commerce.purchase_orders.cancel` | CANCEL | | Annuler une commande fournisseur |
+| `commerce.purchase_orders.export` | EXPORT | ✓ | Exporter la liste |
+| `commerce.purchase_orders.download` | DOWNLOAD | ✓ | Télécharger le document |
+| `commerce.purchase_orders.print` | PRINT | ✓ | Imprimer le document |
+
+**Catalogue : 213 → 229.**
+
+## 24.1 Ce qui n'est **pas** créé
+
+| Non créé | Raison |
+| --- | --- |
+| `commerce.purchase_*.invoice` | Enregistrer la facture d'une commande relève de `billing.supplier_invoices.create`, qui existe depuis la migration 007 |
+| `commerce.purchase_*.convert` | Convertir une offre, c'est **créer une commande** |
+| `commerce.purchase_*.amounts.view` | Un devis fournisseur **est** un prix d'achat (§23.2) |
+| `commerce.purchase_*.discount`, `.margin`, `.cost` | Aucune remise, aucune marge, aucun coût de catalogue |
+| `catalog.products.*`, stock, réception | La partie Produits n'existe pas |
+
+## 24.2 Capacités exigées par les actes composés
+
+| Acte | Capacités exigées |
+| --- | --- |
+| **Enregistrer une offre** | `purchase_quotes.create` + `.view` + `parties.suppliers.view` |
+| **Ajouter une ligne de catalogue** | `purchase_quotes.create` **ou** `.update`, + `.view`, + `catalog.services.view` |
+| **Convertir une offre** | `purchase_orders.create` + `.view` + `purchase_quotes.view` + `parties.suppliers.view` |
+| **Enregistrer la facture** | `purchase_orders.view` + `billing.supplier_invoices.create` + `.view` + `parties.suppliers.view`. **Ni `submit`, ni `validate`** : reconnaître la dette reste un acte distinct |
+| **Annuler la facture d'une commande** | `billing.supplier_invoices.cancel` + `.view` + `billing.imputations.view` + `billing.supplier_payments.view` + `purchase_orders.view` |
+| **Voir le repère de coût du catalogue** | `catalog.services.cost.view` — et elle seule |
+
+## 24.3 Étanchéité
+
+**Consulter les devis fournisseurs n'ouvre pas les commandes**, et réciproquement
+— ni les deux menus du commerce **client**. Ce sont **quatre menus, quatre
+capacités** (A-14). Une fiche d'offre convertie dont le lecteur n'a pas
+`commerce.purchase_orders.view` **dit** que la commande existe et que sa
+référence ne lui est pas communiquée (DEC-017).
+
+---
+
+# 25. Documents, audit, sauvegarde
+
+## 25.1 Documents
+
+Deux pièces, produites par l'**architecture documentaire existante** —
+`DocumentShell`, charte ADIKOM, logo officiel, pagination, blocs partagés. Aucun
+second moteur PDF.
+
+| Document | Type | Capacités |
+| --- | --- | --- |
+| **Devis fournisseur** | `devis-fournisseurs` | `purchase_quotes.view` + `.download` / `.print` |
+| **Bon de commande fournisseur** | `commandes-fournisseurs` | `purchase_orders.view` + `.download` / `.print` |
+
+Le bon de commande porte **les deux références** — celle d'ADIKOM et celle du
+fournisseur — parce que **le numéro d'ADIKOM ne dit rien chez lui**.
+
+Ce qu'ils ne portent jamais : **aucun coût de référence du catalogue**, **aucune
+marge**, **aucune nature de ligne** (catalogue ou libre regarde ADIKOM), **aucune
+mention de créance** — ni une offre ni une commande n'appelle de règlement.
+
+## 25.2 Audit
+
+| Acte | Type | Module |
+| --- | --- | --- |
+| Enregistrement d'une offre, d'une commande | `CREATE` | `commerce` |
+| Modification d'un en-tête, d'une ligne | `UPDATE` | `commerce` |
+| Enregistrement, décision, annulation | `STATUS_CHANGE` | `commerce` |
+| Conversion en commande | `STATUS_CHANGE` + `CREATE` | `commerce` |
+| Passage, réception | `STATUS_CHANGE` | `commerce` |
+| Enregistrement de la facture | `CREATE` | `billing` |
+| Téléchargement, impression, export | `DOWNLOAD` / `PRINT` / `EXPORT` | `commerce` |
+| Refus d'accès à un document | `ACCESS_DENIED` | `commerce` |
+
+🟥 **Le journal n'ouvre pas ce que la table ferme** (DEC-038) — et ici, l'enjeu
+est un **prix d'achat** : l'avant/après d'un événement d'offre exige
+`commerce.purchase_quotes.view` ; celui d'une commande,
+`commerce.purchase_orders.view`.
+
+## 25.3 Sauvegarde
+
+Les quatre tables entrent au périmètre, **entre le commerce client et le cycle
+d'exploitation** :
+
+```
+… sales_quotes, sales_quote_lines, sales_orders, sales_order_lines,
+  purchase_quotes, purchase_quote_lines, purchase_orders, purchase_order_lines,
+  reservations, rentals, … supplier_invoices, supplier_invoice_lines, …
+```
+
+**58 → 62 tables.** L'ordre est impératif : une ligne de commande cite la ligne
+d'offre dont elle est née, et une facture fournisseur cite sa commande.
+
+---
+
+# 26. Limites et points ouverts — commerce fournisseur
+
+| # | Point | Nature |
+| :-: | --- | --- |
+| 1 | **Plusieurs factures pour une même commande** — acompte puis solde | 🟥 **Question posée à la Direction** (§22.3). La règle appliquée est celle que l'architecture impose ; rien n'est perdu entre-temps |
+| 2 | **Prix d'achat par fournisseur au catalogue** — P-5 | 🟥 **Ouvert, et intact** (§19.3). Le lot fonctionne sans le trancher |
+| 3 | **Remises consenties par un fournisseur** | 🟦 Non modélisées. DEC-051 porte sur les remises **clients** ; rien n'a été validé pour l'achat (§17.3) |
+| 4 | **Traçabilité ligne à ligne de la facture** | 🟦 Plan 02 §9.2 énumère **quatre** colonnes pour `supplier_invoice_lines`, sans `source_order_line_id`. L'origine est portée par l'en-tête |
+| 5 | **Référence du fournisseur sur une commande directe** | 🟦 Non prévue : la commande directe n'a pas d'offre, donc pas de référence externe. Elle peut être consignée en observations |
+| 6 | **Convention définitive des références** | 🟦 DEC-023 §5 — `DEV-F` / `CDE-F` restent provisoires, comme `FAC-F` |
+| 7 | **Produits, stock, réception physique** | 🟦 Non développés. Le modèle de ligne les accueillera par le même couple de colonnes nullables |
+
+---
+
 **ADIKOM PILOT — Module 11 : Commerce**
-**LOT 25 · DEC-049 · Commerce client**
+**LOT 25 · DEC-049 · Commerce client — LOT 26 · DEC-052 · Commerce fournisseur**

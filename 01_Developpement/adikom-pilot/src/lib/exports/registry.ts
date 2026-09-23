@@ -63,6 +63,13 @@ import {
   type OrderStatus,
   type QuoteStatus,
 } from '@/features/commerce/constants'
+import { listPurchaseOrders, listPurchaseQuotes } from '@/features/purchasing/data'
+import {
+  PURCHASE_ORDER_STATUS_LABELS,
+  PURCHASE_QUOTE_STATUS_LABELS,
+  type PurchaseOrderStatus,
+  type PurchaseQuoteStatus,
+} from '@/features/purchasing/constants'
 import { EXPORT_LIMIT, listAuditEventsForExport } from '@/features/audit/data'
 import {
   ACTION_LABELS as AUDIT_ACTION_LABELS,
@@ -743,6 +750,100 @@ export const EXPORTS: Record<string, ExportDefinition> = {
           { header: 'Total', width: 16, format: 'amount', value: (r) => r.total },
         ],
         'Commandes clients — montants repris du devis, jamais relus du catalogue'
+      )
+    },
+  },
+
+  /*
+   * 🟥 DEUX CLASSEURS DE COÛTS D'ACHAT — Plan 02 §30 du cadrage LOT 26 :
+   * « un utilisateur qui ne peut pas voir les montants fournisseurs ne doit pas
+   * les récupérer via CSV ».
+   *
+   * `viewPermission` ET `permission` sont exigées toutes les deux, comme pour
+   * tous les exports du SaaS : l'export n'est JAMAIS plus permissif que l'écran.
+   * Ici, `viewPermission` est elle-même la barrière de confidentialité — un
+   * devis fournisseur n'est qu'un prix d'achat.
+   */
+  'devis-fournisseurs': {
+    title: 'Devis fournisseurs',
+    viewPermission: PERMISSIONS.PURCHASE_QUOTES_VIEW,
+    permission: PERMISSIONS.PURCHASE_QUOTES_EXPORT,
+    entityType: 'purchase_quotes',
+    moduleCode: 'commerce',
+    async build(filters) {
+      const rows = await listPurchaseQuotes({
+        search: filters.q,
+        status: filters.statut as PurchaseQuoteStatus | 'ALL' | undefined,
+        supplierId: filters.fournisseur,
+        from: filters.du,
+        to: filters.au,
+      })
+
+      /*
+       * Le TOTAL y figure, le DÉTAIL DES LIGNES non : un classeur de suivi des
+       * achats répond à « où en sont mes consultations », pas à « que contient
+       * celle-ci ». Le détail se lit sur la fiche.
+       *
+       * LES DEUX RÉFÉRENCES y figurent : celle d'ADIKOM classe, celle du
+       * fournisseur permet de rapprocher avec ses propres documents.
+       */
+      return dataset(
+        rows,
+        [
+          { header: 'Numéro', width: 20, value: (r) => r.quoteNo },
+          { header: 'Réf. fournisseur', width: 20, value: (r) => r.externalRef },
+          { header: 'Date', width: 13, format: 'date', value: (r) => toExcelDate(r.quoteDate) },
+          {
+            header: 'Valable jusqu’au',
+            width: 16,
+            format: 'date',
+            value: (r) => toExcelDate(r.validUntil),
+          },
+          { header: 'Fournisseur', width: 34, value: (r) => r.supplierLabel },
+          { header: 'Statut', width: 14, value: (r) => PURCHASE_QUOTE_STATUS_LABELS[r.status] },
+          { header: 'Lignes', width: 10, format: 'number', value: (r) => r.lineCount },
+          { header: 'Total', width: 16, format: 'amount', value: (r) => r.total },
+        ],
+        'Devis fournisseurs — prix proposés par chaque fournisseur, figés à la date de son offre'
+      )
+    },
+  },
+
+  'commandes-fournisseurs': {
+    title: 'Commandes fournisseurs',
+    viewPermission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
+    permission: PERMISSIONS.PURCHASE_ORDERS_EXPORT,
+    entityType: 'purchase_orders',
+    moduleCode: 'commerce',
+    async build(filters) {
+      const rows = await listPurchaseOrders({
+        search: filters.q,
+        status: filters.statut as PurchaseOrderStatus | 'ALL' | undefined,
+        supplierId: filters.fournisseur,
+        from: filters.du,
+        to: filters.au,
+      })
+
+      return dataset(
+        rows,
+        [
+          { header: 'Numéro', width: 20, value: (r) => r.orderNo },
+          { header: 'Date', width: 13, format: 'date', value: (r) => toExcelDate(r.orderDate) },
+          {
+            header: 'Réception attendue',
+            width: 18,
+            format: 'date',
+            value: (r) => toExcelDate(r.expectedDate),
+          },
+          { header: 'Fournisseur', width: 34, value: (r) => r.supplierLabel },
+          // `null` sans `commerce.purchase_quotes.view` : la colonne se tait
+          // plutôt que d'affirmer qu'aucune offre n'est à l'origine (DEC-017).
+          { header: 'Offre d’origine', width: 20, value: (r) => r.quoteNo },
+          { header: 'Statut', width: 14, value: (r) => PURCHASE_ORDER_STATUS_LABELS[r.status] },
+          { header: 'Lignes', width: 10, format: 'number', value: (r) => r.lineCount },
+          { header: 'Total', width: 16, format: 'amount', value: (r) => r.total },
+        ],
+        'Commandes fournisseurs — montants repris de l’offre retenue, jamais relus du catalogue'
       )
     },
   },

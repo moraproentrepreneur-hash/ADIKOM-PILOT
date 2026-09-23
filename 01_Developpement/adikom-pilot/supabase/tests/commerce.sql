@@ -70,29 +70,42 @@ begin
     raise exception 'Capacités du LOT 25 absentes : %', v_manquantes;
   end if;
 
+  /*
+   * ⚠ LE PÉRIMÈTRE EST CELUI DU COMMERCE **CLIENT**, ET NON DU MODULE ENTIER.
+   *
+   * Le LOT 26 a ajouté `commerce.purchase_quotes.*` et
+   * `commerce.purchase_orders.*` sous le MÊME module `commerce` (Plan 02 §7.1 :
+   * aucun second module « Achats »). Cette recette éprouve le commerce client :
+   * elle filtre donc sur `commerce.sales_` plutôt que sur `module_code`, sans
+   * quoi elle accuserait les capacités d'un autre lot d'avoir été « inventées ».
+   *
+   * Le contrôle du commerce fournisseur, lui, vit dans `purchasing.sql` — et la
+   * migration 101 affirme, elle, que le module N'A QUE ces trente-deux codes.
+   */
   select array_agg(p.code) into v_inconnues
   from public.permissions p
-  where p.module_code = 'commerce' and not (p.code = any (v_attendu));
+  where p.code like 'commerce.sales_%' and not (p.code = any (v_attendu));
 
   if v_inconnues is not null then
     raise exception 'Capacité créée sans fonctionnalité correspondante : %', v_inconnues;
   end if;
 
-  -- AUCUNE capacité de remise, de marge, de coût, de facturation propre ni de
-  -- commerce fournisseur : le lot ne les livre pas (CLAUDE.md §19 bis).
+  -- AUCUNE capacité de remise, de marge, de coût ni de facturation propre du
+  -- côté CLIENT : le lot ne les livre pas (CLAUDE.md §19 bis).
   if exists (
     select 1 from public.permissions
-    where code like 'commerce.%'
+    where code like 'commerce.sales_%'
       and (code like '%discount%' or code like '%margin%' or code like '%cost%'
-        or code like '%invoice%' or code like '%purchase%')
+        or code like '%invoice%')
   ) then
-    raise exception 'Une capacité de remise, de marge, de coût ou d''achat a été créée.';
+    raise exception 'Une capacité de remise, de marge, de coût ou de facturation a été créée.';
   end if;
 
-  -- Les six capacités documentaires et d'export sont sensibles.
+  -- Les six capacités documentaires et d'export du commerce client sont
+  -- sensibles.
   if exists (
     select 1 from public.permissions
-    where code like 'commerce.%'
+    where code like 'commerce.sales_%'
       and action in ('EXPORT', 'DOWNLOAD', 'PRINT')
       and is_sensitive is not true
   ) then

@@ -74,6 +74,17 @@ export type SupplierInvoiceDetail = SupplierInvoiceListItem & {
   cancelledAt: string | null
   createdAt: string
   updatedAt: string
+  /**
+   * Commande fournisseur dont la facture est née — LOT 26. `null` pour une
+   * facture reçue sans commande enregistrée, ce qui reste le cas ordinaire.
+   */
+  purchaseOrderId: string | null
+  /**
+   * `null` sans `commerce.purchase_orders.view` : RLS ne rend alors rien, et
+   * l'écran DIT qu'il ne sait pas plutôt que d'affirmer qu'aucune commande
+   * n'existe (DEC-017, DEC-024).
+   */
+  purchaseOrderNo: string | null
 }
 
 export type SupplierInvoiceLine = {
@@ -362,7 +373,8 @@ export async function getSupplierInvoiceDetail(
   const { data, error } = await supabase
     .from('supplier_invoices')
     .select(
-      `${BASE_SELECT}, notes, status_reason, validated_at, cancelled_at, created_at, updated_at`
+      `${BASE_SELECT}, notes, status_reason, validated_at, cancelled_at, created_at, updated_at,
+       purchase_order_id, purchase_orders ( order_no )`
     )
     .eq('id', id)
     .maybeSingle()
@@ -379,6 +391,10 @@ export async function getSupplierInvoiceDetail(
     cancelled_at: string | null
     created_at: string
     updated_at: string
+    purchase_order_id: string | null
+    // ⚠ PostgREST rend un OBJET, non un tableau, quand la clé étrangère est
+    // unique. Lu comme un tableau, l'embarqué vaudrait `undefined`.
+    purchase_orders?: { order_no: string } | null
   }
 
   const amounts = await loadAmounts([row.id], options)
@@ -398,6 +414,8 @@ export async function getSupplierInvoiceDetail(
     cancelledAt: row.cancelled_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    purchaseOrderId: row.purchase_order_id,
+    purchaseOrderNo: row.purchase_orders?.order_no ?? null,
     ...(amounts.get(row.id) ?? NO_AMOUNTS),
   }
 }

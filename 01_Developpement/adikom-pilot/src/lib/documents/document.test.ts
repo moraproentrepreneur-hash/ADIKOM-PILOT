@@ -1578,6 +1578,26 @@ describe('aucun document client ne compose un coût d’acquisition', () => {
     'listPurchaseCosts',
     'unitCost',
     'purchaseCost',
+    /*
+     * LOT 26 — LE COÛT DE RÉFÉRENCE DU CATALOGUE, SUR UNE PIÈCE D'ACHAT.
+     *
+     * Le commerce fournisseur manipule des prix d'achat, et ses documents en
+     * portent LÉGITIMEMENT : un bon de commande adressé à un fournisseur doit
+     * dire le prix convenu AVEC LUI — c'est ce qu'il doit lire pour l'honorer.
+     * Ce n'est pas une fuite.
+     *
+     * 🟥 CE QUI N'A RIEN À Y FAIRE, EN REVANCHE, C'EST LE COÛT DE RÉFÉRENCE
+     * D'ADIKOM. Il vit dans `service_variant_costs`, gardée par
+     * `catalog.services.cost.view`, il est UNIQUE par prestation — sans
+     * distinction de fournisseur, point P-5 non tranché — et il n'existe, dans
+     * toute l'application, qu'à UN endroit : l'éditeur de lignes, à l'écran, où
+     * il sert de repère à l'acheteur sous le nom `referenceCost`.
+     *
+     * L'imprimer sur une pièce remise à un fournisseur lui apprendrait ce
+     * qu'ADIKOM paie ailleurs. Le terme est donc refusé jusque dans le nom d'une
+     * variable de modèle documentaire.
+     */
+    'referenceCost',
   ]
 
   it('aucun modèle documentaire ne touche au domaine du coût fournisseur', () => {
