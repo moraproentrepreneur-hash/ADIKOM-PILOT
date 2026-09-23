@@ -89,6 +89,8 @@
     "verify:amendments": "node scripts/verify-amendments.mjs",
     "verify:billing": "node scripts/verify-billing-periods.mjs",
     "verify:statement": "node scripts/verify-statement.mjs",
+    "db:verify:commerce": "node scripts/run-sql.mjs supabase/tests/commerce.sql",
+    "verify:commerce": "node scripts/verify-commerce.mjs",
     "verify:password-reset": "node scripts/verify-password-reset.mjs",
     "verify:ajustements": "node scripts/verify-ajustements.mjs",
     "verify:production": "node scripts/verify-production.mjs"

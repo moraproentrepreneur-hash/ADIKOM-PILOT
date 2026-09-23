@@ -56,6 +56,13 @@ import {
   ENTRY_KIND_LABELS,
   ENTRY_STATUS_LABELS,
 } from '@/features/treasury/constants'
+import { listSalesOrders, listSalesQuotes } from '@/features/commerce/data'
+import {
+  ORDER_STATUS_LABELS,
+  QUOTE_STATUS_LABELS,
+  type OrderStatus,
+  type QuoteStatus,
+} from '@/features/commerce/constants'
 import { EXPORT_LIMIT, listAuditEventsForExport } from '@/features/audit/data'
 import {
   ACTION_LABELS as AUDIT_ACTION_LABELS,
@@ -652,6 +659,90 @@ export const EXPORTS: Record<string, ExportDefinition> = {
           { header: 'Description', width: 46, value: (r) => r.description },
         ],
         'Identité du catalogue — les prix se lisent sur la fiche, à une date donnée'
+      )
+    },
+  },
+
+  'devis-clients': {
+    title: 'Devis clients',
+    viewPermission: PERMISSIONS.SALES_QUOTES_VIEW,
+    permission: PERMISSIONS.SALES_QUOTES_EXPORT,
+    entityType: 'sales_quotes',
+    moduleCode: 'commerce',
+    async build(filters) {
+      const rows = await listSalesQuotes({
+        search: filters.q,
+        status: filters.statut as QuoteStatus | 'ALL' | undefined,
+        clientId: filters.client,
+        from: filters.du,
+        to: filters.au,
+      })
+
+      /*
+       * Le TOTAL y figure, le DÉTAIL DES LIGNES non : un classeur de suivi
+       * commercial répond à « où en sont mes devis », pas à « que contient
+       * celui-ci ». Le détail se lit sur la fiche, ou se remet au client sous
+       * forme de document (`commerce.sales_quotes.download`).
+       *
+       * 🟥 AUCUN COÛT, AUCUNE MARGE — `SalesQuoteListItem` n'en porte aucun,
+       * parce que la table n'en a aucun (Plan 02 §9.3).
+       */
+      return dataset(
+        rows,
+        [
+          { header: 'Numéro', width: 20, value: (r) => r.quoteNo },
+          { header: 'Date', width: 13, format: 'date', value: (r) => toExcelDate(r.quoteDate) },
+          {
+            header: 'Valable jusqu’au',
+            width: 16,
+            format: 'date',
+            value: (r) => toExcelDate(r.validUntil),
+          },
+          { header: 'Client', width: 34, value: (r) => r.clientLabel },
+          { header: 'Statut', width: 14, value: (r) => QUOTE_STATUS_LABELS[r.status] },
+          { header: 'Lignes', width: 10, format: 'number', value: (r) => r.lineCount },
+          { header: 'Total', width: 16, format: 'amount', value: (r) => r.total },
+        ],
+        'Devis clients — montants figés à la date de chaque devis'
+      )
+    },
+  },
+
+  'commandes-clients': {
+    title: 'Commandes clients',
+    viewPermission: PERMISSIONS.SALES_ORDERS_VIEW,
+    permission: PERMISSIONS.SALES_ORDERS_EXPORT,
+    entityType: 'sales_orders',
+    moduleCode: 'commerce',
+    async build(filters) {
+      const rows = await listSalesOrders({
+        search: filters.q,
+        status: filters.statut as OrderStatus | 'ALL' | undefined,
+        clientId: filters.client,
+        from: filters.du,
+        to: filters.au,
+      })
+
+      return dataset(
+        rows,
+        [
+          { header: 'Numéro', width: 20, value: (r) => r.orderNo },
+          { header: 'Date', width: 13, format: 'date', value: (r) => toExcelDate(r.orderDate) },
+          {
+            header: 'Livraison attendue',
+            width: 18,
+            format: 'date',
+            value: (r) => toExcelDate(r.expectedDate),
+          },
+          { header: 'Client', width: 34, value: (r) => r.clientLabel },
+          // `null` sans `commerce.sales_quotes.view` : la colonne se tait
+          // plutôt que d'affirmer qu'aucun devis n'est à l'origine (DEC-017).
+          { header: 'Devis d’origine', width: 20, value: (r) => r.quoteNo },
+          { header: 'Statut', width: 14, value: (r) => ORDER_STATUS_LABELS[r.status] },
+          { header: 'Lignes', width: 10, format: 'number', value: (r) => r.lineCount },
+          { header: 'Total', width: 16, format: 'amount', value: (r) => r.total },
+        ],
+        'Commandes clients — montants repris du devis, jamais relus du catalogue'
       )
     },
   },

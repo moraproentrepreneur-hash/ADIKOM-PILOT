@@ -157,9 +157,27 @@ async function main() {
   const supplierInvoices = await idsWhere(admin, 'supplier_invoices', (q) =>
     q.like('notes', `${DEMO_NOTE}%`)
   )
-  const customerInvoices = await idsWhere(admin, 'customer_invoices', (q) =>
+  /*
+   * COMMERCE CLIENT — LOT 25.
+   *
+   * Le devis porte le marqueur ; la commande et la facture, non : c'est la
+   * CONVERSION qui écrit leurs notes (« Commande CDE-C-… »). Leur appartenance
+   * à la démonstration se lit donc de leur RATTACHEMENT, et non d'un texte —
+   * un marqueur recopié après coup aurait divergé au premier changement.
+   */
+  const salesQuotes = await idsWhere(admin, 'sales_quotes', (q) =>
     q.like('notes', `${DEMO_NOTE}%`)
   )
+  const salesOrders = await idsWhere(admin, 'sales_orders', (q) =>
+    q.in('sales_quote_id', safe(salesQuotes))
+  )
+
+  const customerInvoices = [
+    ...(await idsWhere(admin, 'customer_invoices', (q) => q.like('notes', `${DEMO_NOTE}%`))),
+    ...(await idsWhere(admin, 'customer_invoices', (q) =>
+      q.in('sales_order_id', safe(salesOrders))
+    )),
+  ]
   const imputations = await idsWhere(admin, 'imputations', (q) =>
     q.like('justification', `${DEMO_NOTE}%`)
   )
@@ -244,6 +262,18 @@ async function main() {
     (q) => q.in('supplier_invoice_id', safe(supplierInvoices)), 'lignes de factures fournisseurs')
   await purge(admin, 'supplier_invoices',
     (q) => q.in('id', safe(supplierInvoices)), 'factures fournisseurs')
+
+  /* --- Commerce client — LOT 25 --------------------------------------------- */
+  //
+  // APRÈS les factures, qui citent la commande et ses lignes ; et les lignes de
+  // commande AVANT celles du devis, qu'elles désignent par
+  // `source_quote_line_id`.
+  await purge(admin, 'sales_order_lines',
+    (q) => q.in('sales_order_id', safe(salesOrders)), 'lignes de commandes clients')
+  await purge(admin, 'sales_orders', (q) => q.in('id', safe(salesOrders)), 'commandes clients')
+  await purge(admin, 'sales_quote_lines',
+    (q) => q.in('sales_quote_id', safe(salesQuotes)), 'lignes de devis clients')
+  await purge(admin, 'sales_quotes', (q) => q.in('id', safe(salesQuotes)), 'devis clients')
 
   /* --- Maintenance et incidents -------------------------------------------- */
   await purge(admin, 'maintenance_documents',

@@ -550,6 +550,7 @@ async function main() {
   await seedSupplierBilling(admin, ids)
   await seedCustomerBilling(admin, ids)
   await seedTreasuryOperations(admin, ids)
+  await seedCommerce(admin, ids)
   await seedProjects(admin, ids)
 
   console.log(`\n${'─'.repeat(78)}`)
@@ -1765,6 +1766,23 @@ async function advanceRental(admin, rentalId, target) {
   }
 }
 
+/**
+ * La LIGNE entière, et non son seul identifiant.
+ *
+ * `findBy` et `findByNotes` ne rendent que l'`id` : suffisant pour rattacher un
+ * enfant, insuffisant pour REPRENDRE un cycle là où il s'est arrêté — il faut
+ * alors lire le statut. Deux helpers plutôt qu'un changement de signature : les
+ * appelants existants n'ont pas à être relus.
+ */
+async function rowBy(admin, table, column, value) {
+  const { data } = await admin.from(table).select('*').eq(column, value).maybeSingle()
+  return data ?? null
+}
+
+async function rowByNotes(admin, table, note) {
+  return rowBy(admin, table, 'notes', note)
+}
+
 async function findByNotes(admin, table, note) {
   const { data } = await admin.from(table).select('id').eq('notes', note).maybeSingle()
   return data?.id ?? null
@@ -2060,6 +2078,218 @@ const PROJECTS = [
     ],
   },
 ]
+
+/* ========================================================================== */
+/*  Commerce client — LOT 25, DEC-049                                          */
+/* ========================================================================== */
+
+/**
+ * La chaîne commerciale, jouée de bout en bout.
+ *
+ *     DEVIS (2 lignes catalogue + 1 ligne libre)
+ *        └─ émis ─ accepté ─▶ COMMANDE ─ confirmée ─▶ FACTURE CLIENT émise
+ *
+ * CE QU'ELLE MONTRE, ET QUI NE SE VOIT NULLE PART AILLEURS :
+ *
+ *   · 🟩 A-13 — une ligne LIBRE coexiste avec des lignes de catalogue ;
+ *   · le PRIX FIGÉ — le catalogue de démonstration porte une révision À VENIR
+ *     (60 000 aujourd'hui, 65 000 dans trente jours). Le devis gardera 60 000
+ *     le jour où elle prendra effet : c'est la démonstration du lot, et elle
+ *     se vérifiera d'elle-même avec le temps ;
+ *   · le DEVIS CONSERVÉ après conversion, avec sa propre référence ;
+ *   · la FACTURE née de la commande, ORDINAIRE : même numérotation, même
+ *     émission, même place dans le pilotage.
+ *
+ * ⚠ AUCUN `continue` NE PRÉCÈDE UNE ÉTAPE ULTÉRIEURE.
+ *
+ * Défaut relevé au LOT 24 : un `continue` posé pour sauter la création d'un
+ * objet déjà présent sautait aussi tout ce qui venait après, et un ajout d'un
+ * lot suivant n'atteignait jamais un jeu DEMO déjà en place. Ici, chaque étape
+ * RETROUVE son objet et poursuit — un second passage complète ce que le premier
+ * n'avait pas fait.
+ */
+async function seedCommerce(admin, ids) {
+  section('Commerce client')
+
+  const clientId = ids.clients['CLIENT DEMO 01']
+  if (!clientId) {
+    console.log(`  ${DIM}Aucun client de démonstration : le commerce client est ignoré.${RESET}`)
+    return
+  }
+
+  /* --- Les deux variantes vendables du catalogue de démonstration ---------- */
+  const variantIds = {}
+  for (const [key, label] of [
+    ['standard', 'Standard'],
+    ['premium', 'Premium'],
+  ]) {
+    const { data } = await admin
+      .from('service_variants')
+      .select('id')
+      .eq('service_id', ids.services.transfert)
+      .eq('label', label)
+      .maybeSingle()
+    variantIds[key] = data?.id ?? null
+  }
+
+  if (!variantIds.standard) {
+    console.log(
+      `  ${DIM}Catalogue de démonstration incomplet : le commerce client est ignoré.${RESET}`
+    )
+    return
+  }
+
+  /* --- LE DEVIS ------------------------------------------------------------ */
+  const quoteNote = tag('DEV1')
+  let quote = await rowByNotes(admin, 'sales_quotes', quoteNote)
+  let quoteId = quote?.id ?? null
+
+  if (!quoteId) {
+    quoteId = await rpc(
+      admin,
+      'create_sales_quote',
+      {
+        p_client_id: clientId,
+        p_quote_date: dayOffset(-10),
+        p_valid_until: dayOffset(20),
+        p_notes: quoteNote,
+        p_terms: 'Prestation réglable à réception de la facture.',
+      },
+      'devis de démonstration'
+    )
+
+    // Deux lignes de CATALOGUE — le prix est résolu à la date du devis.
+    await rpc(
+      admin,
+      'add_sales_quote_line',
+      {
+        p_quote_id: quoteId,
+        p_quantity: 4,
+        p_variant_id: variantIds.standard,
+        p_label: null,
+        p_unit_price: null,
+      },
+      'ligne catalogue (standard)'
+    )
+
+    if (variantIds.premium) {
+      await rpc(
+        admin,
+        'add_sales_quote_line',
+        {
+          p_quote_id: quoteId,
+          p_quantity: 1,
+          p_variant_id: variantIds.premium,
+          p_label: null,
+          p_unit_price: null,
+        },
+        'ligne catalogue (premium)'
+      )
+    }
+
+    // 🟩 A-13 — UNE LIGNE LIBRE, sans aucun service au catalogue.
+    await rpc(
+      admin,
+      'add_sales_quote_line',
+      {
+        p_quote_id: quoteId,
+        p_quantity: 2,
+        p_variant_id: null,
+        p_label: 'Accompagnement bagages — prestation hors catalogue',
+        p_unit_price: 7500,
+      },
+      'ligne libre (A-13)'
+    )
+
+    report('devis', 'Devis de démonstration', null, true)
+  } else {
+    report('devis', 'Devis de démonstration', quote.quote_no, false)
+  }
+
+  /* --- SON CYCLE — chaque étape se reprend là où elle en est ---------------- */
+  quote = await rowBy(admin, 'sales_quotes', 'id', quoteId)
+
+  if (quote?.status === 'DRAFT') {
+    await rpc(
+      admin,
+      'set_sales_quote_status',
+      { p_quote_id: quoteId, p_status: 'SENT', p_reason: 'Remis au client' },
+      'émission du devis'
+    )
+    quote = await rowBy(admin, 'sales_quotes', 'id', quoteId)
+  }
+
+  if (quote?.status === 'SENT') {
+    await rpc(
+      admin,
+      'set_sales_quote_status',
+      { p_quote_id: quoteId, p_status: 'ACCEPTED', p_reason: 'Accord du client' },
+      'acceptation du devis'
+    )
+    quote = await rowBy(admin, 'sales_quotes', 'id', quoteId)
+  }
+
+  /* --- LA COMMANDE --------------------------------------------------------- */
+  let order = await rowBy(admin, 'sales_orders', 'sales_quote_id', quoteId)
+
+  if (!order && quote?.status === 'ACCEPTED') {
+    const orderId = await rpc(
+      admin,
+      'convert_sales_quote_to_order',
+      {
+        p_quote_id: quoteId,
+        p_order_date: dayOffset(-8),
+        p_expected_date: dayOffset(-2),
+      },
+      'conversion du devis'
+    )
+    order = await rowBy(admin, 'sales_orders', 'id', orderId)
+    report('commande', 'Commande issue du devis', order?.order_no ?? null, true)
+  } else if (order) {
+    report('commande', 'Commande issue du devis', order.order_no, false)
+  }
+
+  if (!order) return
+
+  if (order.status === 'DRAFT') {
+    await rpc(
+      admin,
+      'set_sales_order_status',
+      { p_order_id: order.id, p_status: 'CONFIRMED', p_reason: 'Engagement du client' },
+      'confirmation de la commande'
+    )
+    order = await rowBy(admin, 'sales_orders', 'id', order.id)
+  }
+
+  /* --- LA FACTURE — par la chaîne EXISTANTE, jamais une table parallèle ----- */
+  let invoice = await rowBy(admin, 'customer_invoices', 'sales_order_id', order.id)
+
+  if (!invoice && (order.status === 'CONFIRMED' || order.status === 'DELIVERED')) {
+    const invoiceId = await rpc(
+      admin,
+      'create_invoice_from_sales_order',
+      {
+        p_order_id: order.id,
+        p_invoice_date: dayOffset(-5),
+        p_due_date: dayOffset(25),
+      },
+      'facture de la commande'
+    )
+    invoice = await rowBy(admin, 'customer_invoices', 'id', invoiceId)
+    report('facture', 'Facture issue de la commande', invoice?.invoice_no ?? null, true)
+  } else if (invoice) {
+    report('facture', 'Facture issue de la commande', invoice.invoice_no, false)
+  }
+
+  if (invoice?.status === 'DRAFT') {
+    await rpc(
+      admin,
+      'issue_customer_invoice',
+      { p_invoice_id: invoice.id, p_reason: 'Émission de démonstration' },
+      'émission de la facture'
+    )
+  }
+}
 
 async function seedProjects(admin, ids) {
   section('Projets, tâches et planification')

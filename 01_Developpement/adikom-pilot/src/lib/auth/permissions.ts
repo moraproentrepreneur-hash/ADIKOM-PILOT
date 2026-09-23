@@ -409,6 +409,43 @@ export const PERMISSIONS = {
   SERVICE_CATEGORIES_UPDATE: 'catalog.categories.update',
   SERVICE_CATEGORIES_ARCHIVE: 'catalog.categories.archive',
 
+  /* --- Commerce client — LOT 25 (DEC-049) ---------------------------------
+   *
+   * Module `commerce`, ordre 11. Deux menus, huit actions chacun — exactement
+   * celles du Plan 02 §10.2, et rien de plus.
+   *
+   * `validate` FAIT AVANCER le document : émettre un devis, enregistrer la
+   * réponse du client, confirmer une commande, constater sa livraison.
+   * `cancel` le RETIRE. Un devis refusé par le client n'est pas un devis
+   * annulé par ADIKOM : ce sont deux faits différents, et c'est pourquoi le
+   * refus relève de `validate`.
+   *
+   * AUCUNE capacité de FACTURATION ici. Facturer une commande relève de
+   * `billing.customer_invoices.create`, qui existe depuis la migration 007 :
+   * en créer une seconde donnerait deux vérités sur le même acte.
+   *
+   * AUCUNE capacité de REMISE, de MARGE ni de COÛT. Le lot n'en livre aucune
+   * fonctionnalité, et une permission qui ne débloque rien ne s'attribue pas
+   * (CLAUDE.md §19 bis).
+   */
+  SALES_QUOTES_VIEW: 'commerce.sales_quotes.view',
+  SALES_QUOTES_CREATE: 'commerce.sales_quotes.create',
+  SALES_QUOTES_UPDATE: 'commerce.sales_quotes.update',
+  SALES_QUOTES_VALIDATE: 'commerce.sales_quotes.validate',
+  SALES_QUOTES_CANCEL: 'commerce.sales_quotes.cancel',
+  SALES_QUOTES_EXPORT: 'commerce.sales_quotes.export',
+  SALES_QUOTES_DOWNLOAD: 'commerce.sales_quotes.download',
+  SALES_QUOTES_PRINT: 'commerce.sales_quotes.print',
+
+  SALES_ORDERS_VIEW: 'commerce.sales_orders.view',
+  SALES_ORDERS_CREATE: 'commerce.sales_orders.create',
+  SALES_ORDERS_UPDATE: 'commerce.sales_orders.update',
+  SALES_ORDERS_VALIDATE: 'commerce.sales_orders.validate',
+  SALES_ORDERS_CANCEL: 'commerce.sales_orders.cancel',
+  SALES_ORDERS_EXPORT: 'commerce.sales_orders.export',
+  SALES_ORDERS_DOWNLOAD: 'commerce.sales_orders.download',
+  SALES_ORDERS_PRINT: 'commerce.sales_orders.print',
+
   // --- Paramètres ------------------------------------------------------------
   SETTINGS_COMPANY_VIEW: 'settings.company.view',
   SETTINGS_COMPANY_UPDATE: 'settings.company.update',

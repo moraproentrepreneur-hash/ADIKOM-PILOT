@@ -56,6 +56,16 @@ import {
 import { listInvoiceImputations } from '@/features/imputations/data'
 import { MiscPaymentReceiptDocument } from '@/features/misc-payments/documents/misc-payment-receipt'
 import { getMiscPayment } from '@/features/misc-payments/data'
+import {
+  SalesOrderDocument,
+  SalesQuoteDocument,
+} from '@/features/commerce/documents/commercial-documents'
+import {
+  getSalesOrder,
+  getSalesQuote,
+  listSalesOrderLines,
+  listSalesQuoteLines,
+} from '@/features/commerce/data'
 
 /**
  * Registre des documents.
@@ -600,6 +610,96 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
         }),
         reference: invoice.invoiceNo,
         label: 'Facture-client',
+      }
+    },
+  },
+
+  /* ------------------------------------------------------ Commerce client -- */
+  //
+  // DEUX PIÈCES, DEUX MENUS, QUATRE CAPACITÉS DOCUMENTAIRES.
+  //
+  // Contrairement aux cinq documents du cycle de location, qui partagent
+  // `rental.rentals.download` / `.print`, le devis et la commande relèvent de
+  // MENUS DISTINCTS (Plan 02 §10.2). Un collaborateur peut légitimement
+  // produire un devis sans produire une commande : ce sont deux gestes
+  // commerciaux différents, et A-14 veut qu'ils s'attribuent séparément.
+  //
+  // 🟥 AUCUN COÛT, AUCUNE MARGE — voir l'en-tête de `commercial-documents.tsx` :
+  // la garantie est portée par le TYPE `CommercialLine`, qui ne comporte
+  // aucune colonne de coût parce que la table n'en a aucune.
+  'devis-clients': {
+    entityType: 'sales_quotes',
+    moduleCode: 'commerce',
+    viewPermission: PERMISSIONS.SALES_QUOTES_VIEW,
+    downloadPermission: PERMISSIONS.SALES_QUOTES_DOWNLOAD,
+    printPermission: PERMISSIONS.SALES_QUOTES_PRINT,
+
+    async build(id) {
+      const quote = await getSalesQuote(id)
+      if (!quote) return null
+
+      // Les coordonnées du client relèvent de `parties.clients.view` : sans
+      // elle, `clientLabel` revient déjà `null` de la couche de données, et le
+      // document le dit plutôt que d'inventer un destinataire.
+      const mayReadClient = await can(PERMISSIONS.CLIENTS_VIEW)
+      const client = mayReadClient ? await getClientDetail(quote.clientId) : null
+
+      const [lines, identity] = await Promise.all([
+        listSalesQuoteLines(id),
+        getDocumentIdentity(),
+      ])
+
+      return {
+        element: SalesQuoteDocument({
+          identity,
+          quote,
+          lines,
+          clientAddress: client
+            ? [client.address, client.city, client.country].filter(
+                (line): line is string => Boolean(line)
+              )
+            : null,
+          issuedOn: issuedOnLabel(),
+        }),
+        reference: quote.quoteNo,
+        label: 'Devis-client',
+      }
+    },
+  },
+
+  'commandes-clients': {
+    entityType: 'sales_orders',
+    moduleCode: 'commerce',
+    viewPermission: PERMISSIONS.SALES_ORDERS_VIEW,
+    downloadPermission: PERMISSIONS.SALES_ORDERS_DOWNLOAD,
+    printPermission: PERMISSIONS.SALES_ORDERS_PRINT,
+
+    async build(id) {
+      const order = await getSalesOrder(id)
+      if (!order) return null
+
+      const mayReadClient = await can(PERMISSIONS.CLIENTS_VIEW)
+      const client = mayReadClient ? await getClientDetail(order.clientId) : null
+
+      const [lines, identity] = await Promise.all([
+        listSalesOrderLines(id),
+        getDocumentIdentity(),
+      ])
+
+      return {
+        element: SalesOrderDocument({
+          identity,
+          order,
+          lines,
+          clientAddress: client
+            ? [client.address, client.city, client.country].filter(
+                (line): line is string => Boolean(line)
+              )
+            : null,
+          issuedOn: issuedOnLabel(),
+        }),
+        reference: order.orderNo,
+        label: 'Commande-client',
       }
     },
   },

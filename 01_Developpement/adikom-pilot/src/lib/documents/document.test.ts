@@ -1553,6 +1553,31 @@ describe('aucun document client ne compose un coût d’acquisition', () => {
     'rental_segment_costs',
     'lockedCost',
     'segmentCommission',
+    /*
+     * LOT 25 — LE PRIX D'ACHAT D'UN SERVICE.
+     *
+     * Un devis et une commande composent le PRIX DE VENTE ; le prix d'achat vit
+     * dans `service_variant_costs`, gardée par `catalog.services.cost.view`, et
+     * n'a rien à faire sur une pièce remise au client (Plan 02 §6.4).
+     *
+     * 🟥 CE BALAYAGE PORTE SUR LES SOURCES, PAS SUR LES OCTETS DU PDF.
+     *
+     * Le LOT 24 a établi qu'un balayage du PDF produit NE PROUVE RIEN : les
+     * flux sont compressés et les polices sous-ensemblées, si bien qu'un coût
+     * présent n'y apparaîtrait pas en clair. La garantie est donc :
+     *
+     *   1. STRUCTURELLE — `sales_quote_lines` et `sales_order_lines` n'ont
+     *      AUCUNE colonne de coût (migration 097 §17), donc `CommercialLine`
+     *      n'en porte aucune, donc aucun modèle ne peut en recevoir ;
+     *   2. TYPÉE — le compilateur refuse un champ qui n'existe pas ;
+     *   3. LEXICALE — ces termes-ci, refusés jusque dans le nom d'une variable.
+     */
+    'service_variant_costs',
+    'resolve_service_cost',
+    'resolvePurchaseCost',
+    'listPurchaseCosts',
+    'unitCost',
+    'purchaseCost',
   ]
 
   it('aucun modèle documentaire ne touche au domaine du coût fournisseur', () => {

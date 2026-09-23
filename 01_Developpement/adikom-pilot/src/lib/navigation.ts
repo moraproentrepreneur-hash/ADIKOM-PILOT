@@ -24,6 +24,7 @@ import {
   ReceiptText,
   Settings,
   ShieldCheck,
+  ShoppingCart,
   Tags,
   TriangleAlert,
   Truck,
@@ -313,6 +314,40 @@ export const NAVIGATION: NavEntry[] = [
         href: '/catalogue/categories',
         icon: FolderTree,
         permission: PERMISSIONS.SERVICE_CATEGORIES_VIEW,
+        status: 'ready',
+      },
+    ],
+  },
+  /*
+   * Module 11 — ouvert par le LOT 25 (DEC-049).
+   *
+   * DEUX ENTRÉES, ET DEUX SEULEMENT. Le périmètre Direction prévoit aussi
+   * « Devis fournisseurs » et « Commandes fournisseurs » — ils relèvent du
+   * LOT 26 et NE SONT PAS AFFICHÉS : le projet a retiré toutes ses entrées
+   * « à venir » (DEC-042 §d) et n'en réintroduit pas. Une entrée inerte promet
+   * ce que l'écran ne fait pas.
+   *
+   * Le module s'intercale entre « Produits & Services », qu'il consomme, et
+   * « Banques & Caisses » : il suit l'ordre de la chaîne commerciale — un devis
+   * naît d'un service, une commande produit une facture, une facture appelle un
+   * règlement.
+   */
+  {
+    label: 'Commerce',
+    icon: ClipboardList,
+    items: [
+      {
+        label: 'Devis clients',
+        href: '/commerce/devis',
+        icon: FileText,
+        permission: PERMISSIONS.SALES_QUOTES_VIEW,
+        status: 'ready',
+      },
+      {
+        label: 'Commandes clients',
+        href: '/commerce/commandes',
+        icon: ShoppingCart,
+        permission: PERMISSIONS.SALES_ORDERS_VIEW,
         status: 'ready',
       },
     ],
