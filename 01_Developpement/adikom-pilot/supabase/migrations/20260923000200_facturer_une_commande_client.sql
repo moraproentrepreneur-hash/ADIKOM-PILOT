@@ -27,15 +27,16 @@
 -- 🟥 AUCUNE TABLE DE FACTURE PARALLÈLE. Une facture née d'une commande est une
 -- `customer_invoices` ordinaire : elle apparaît dans le module Factures clients,
 -- s'émet, se règle, entre dans la trésorerie et dans le pilotage exactement
--- comme les autres. C'est la condition posée par la consigne §17.
+-- comme les autres.
 --
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -- UNE COMMANDE, UNE FACTURE — la règle, et d'où elle vient
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 --
--- La consigne §19 interdit de trancher ce point EN SILENCE. Il n'est pas
--- tranché en silence : il est DÉDUIT de l'architecture documentée, et le
--- raisonnement est écrit ici.
+-- Ce point n'est pas tranché EN SILENCE : il est DÉDUIT de l'architecture
+-- documentée, et le raisonnement est écrit ici — le défaut d'avant le LOT 23,
+-- où une contrainte technique décidait du métier sans le dire, ne se reproduit
+-- pas.
 --
 --   1. `order_status` (Plan 02 §9.5) porte `INVOICED`, et AUCUN état partiel —
 --      pas de `PARTIALLY_INVOICED`. C'est un statut de la commande ENTIÈRE.

@@ -1643,3 +1643,85 @@ Chaque bloc \*\*disparaît entièrement\*\* sans sa capacité, et l’écran \*\
 
 
 \*\*Aucun document nouveau.\*\* La facture d’une période est une facture client : elle se télécharge et s’imprime sous les capacités documentaires existantes de la facturation, et elle \*\*nomme la période qu’elle couvre\*\*.
+
+
+
+\---
+
+
+
+\## Addendum — 23 septembre 2026 · Module 11 « Commerce » (DEC-049, LOT 25)
+
+
+
+Ce document décrivait \*\*neuf\*\* modules, puis dix. Une décision de la Direction en ajoute un onzième, et la navigation s’étend en conséquence.
+
+
+
+\*\*Commerce\*\* — code `commerce`, position \*\*11\*\*, entre \*\*Produits \& Services\*\*, qu’il consomme, et \*\*Banques \& Caisses\*\*. Il suit l’ordre de la chaîne commerciale : un devis naît d’un service, une commande produit une facture, une facture appelle un règlement.
+
+
+
+Deux entrées, et deux seulement :
+
+
+
+\- \*\*Devis clients\*\* → `/commerce/devis` — permission `commerce.sales_quotes.view`
+
+\- \*\*Commandes clients\*\* → `/commerce/commandes` — permission `commerce.sales_orders.view`
+
+
+
+\*\*Aucune entrée « Devis fournisseurs » ni « Commandes fournisseurs ».\*\* Le périmètre arrêté par la Direction les prévoit, et le \*\*LOT 26\*\* les livrera. Le projet a retiré toutes ses entrées « à venir » (DEC-042 §d) et n’en réintroduit pas : une entrée inerte promet ce que l’écran ne fait pas.
+
+
+
+\### Deux menus, deux capacités — et l’écran le dit
+
+
+
+Consulter les \*\*devis\*\* n’ouvre pas les \*\*commandes\*\*, et réciproquement (A-14, DEC-024). Chaque entrée disparaît de la barre latérale sans sa capacité — filtrage de confort, jamais protection.
+
+
+
+La conséquence se voit sur les fiches : un devis \*\*converti\*\* dont le lecteur n’a pas `commerce.sales_orders.view` annonce que la commande existe et que \*\*sa référence ne lui est pas communiquée\*\*. Il ne la tait pas (DEC-017). Symétriquement, une commande issue d’un devis invisible annonce son origine sans la nommer.
+
+
+
+\### Ce qui se lit sur une fiche, et sous quelle capacité
+
+
+
+| Élément | Capacité exigée |
+
+| --- | --- |
+
+| L’en-tête, les lignes, le total | `commerce.sales_quotes.view` / `commerce.sales_orders.view` |
+
+| Le nom du client | `parties.clients.view` |
+
+| Le choix d’une prestation à l’ajout d’une ligne | `catalog.services.view` |
+
+| Le bouton \*\*« Convertir en commande »\*\* | `commerce.sales_orders.create` |
+
+| Le bouton \*\*« Préparer la facture »\*\* | `billing.customer_invoices.create` |
+
+| La liste des factures d’une commande | `billing.customer_invoices.view` |
+
+| L’aperçu, le téléchargement, l’impression | `.download` et `.print`, séparément |
+
+
+
+\*\*Aucun coût, aucune marge n’apparaît sur ces écrans\*\*, en aucune circonstance et pour aucun profil — pas même pour qui détient `catalog.services.cost.view`. Une ligne commerciale ne porte aucune colonne de coût (DEC-049 §e).
+
+
+
+\### Aucun écran de facturation nouveau
+
+
+
+Une facture née d’une commande est une \*\*facture client ordinaire\*\*. Elle apparaît dans \*\*Facturation \& Paiement → Clients\*\*, s’y émet, s’y règle — \*\*paiement partiel compris\*\* — et y produit ses écritures de trésorerie. La fiche de la commande n’en donne que le \*\*lien\*\*.
+
+
+
+\*\*Le devis reste consultable après sa conversion\*\*, à sa propre référence `DEV-C-…`, avec les prix qui ont été remis au client.

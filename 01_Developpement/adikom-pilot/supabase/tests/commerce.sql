@@ -682,6 +682,56 @@ begin
 end $$;
 
 
+-- --- 13 bis. LES CONDITIONS D'UN ACTE ÉMIS SONT CELLES QU'IL PORTAIT --------
+--
+-- 🟥 Faille trouvée à la relecture du LOT 25, refermée par la migration 100.
+--
+-- La policy d'écriture des devis accepte `commerce.sales_orders.create` — il le
+-- faut, sans quoi la conversion échouerait au niveau de RLS. Mais rien
+-- n'empêchait ce porteur d'écrire `terms` par un `PATCH` direct, sur un devis
+-- déjà remis au client. Les conditions sont IMPRIMÉES sur la pièce : elles font
+-- partie de ce que le client a accepté.
+do $$
+declare
+  v_devis uuid := (select id from recette_obj where cle = 'devis');
+  v_n     int := 0;
+begin
+  -- Le commercial lui-même, qui détient pourtant `update`, ne réécrit pas les
+  -- conditions d'un devis émis.
+  perform pg_temp.agir_comme('commercial');
+  begin
+    update public.sales_quotes set terms = 'Conditions réécrites' where id = v_devis;
+  exception when others then v_n := v_n + 1; end;
+  perform pg_temp.redevenir_service();
+
+  -- Le lecteur, qui n'a aucune capacité d'écriture, n'annote pas davantage.
+  perform pg_temp.agir_comme('lecteur');
+  begin
+    update public.sales_quotes set notes = 'Annotation du lecteur' where id = v_devis;
+  exception when others then v_n := v_n + 1; end;
+  perform pg_temp.redevenir_service();
+
+  if v_n <> 2 then
+    raise exception
+      'Les conditions ou les observations d''un devis émis ont pu être réécrites : % refus sur 2.', v_n;
+  end if;
+
+  -- ANNOTER RESTE POSSIBLE À QUI PEUT MODIFIER : la garde exige la capacité,
+  -- elle n'interdit pas l'acte. Sans ce contrôle, le précédent passerait aussi
+  -- si toute annotation était devenue impossible.
+  perform pg_temp.agir_comme('commercial');
+  update public.sales_quotes set notes = 'Observation postérieure' where id = v_devis;
+  perform pg_temp.redevenir_service();
+
+  if (select notes from public.sales_quotes where id = v_devis) is distinct from 'Observation postérieure' then
+    raise exception 'Un porteur de `update` n''a pas pu annoter un devis émis.';
+  end if;
+
+  raise notice
+    '[OK] 13 bis. Conditions gelées, observations annotables — mais seulement par qui peut modifier.';
+end $$;
+
+
 -- --- 14. 🟥 LE PRIX HISTORIQUE NE SE RÉÉCRIT PAS -----------------------------
 --
 -- Le catalogue passe de 50 000 à 90 000 KMF, à effet immédiat. Le devis

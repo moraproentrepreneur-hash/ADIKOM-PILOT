@@ -81,6 +81,8 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-045 | Avenants, segments de location et remplacement de véhicule — LOT 22 | Une capacité, trois tables, **coût gelé par période**, A-7 non tranchée | Appliquée — **le contrat ne change plus d'identité** | 2026-09-18 |
 | DEC-046 | Réinitialisation du mot de passe — LOT 19 | Capacité indépendante, garde en base, trois refus | Appliquée — **complète le Module 08** | 2026-09-12 |
 | DEC-047 | Longue durée, prolongations et facturation périodique — LOT 23 | Une capacité, une table, **deux index disjoints**, A-7 et DEC-008 non tranchées | Appliquée — **plusieurs factures par contrat, jamais deux par période** | 2026-09-22 |
+| DEC-048 | Relevé global de location — LOT 24 | **Aucune table, aucune capacité** : un cinquième document du cycle, sans effet financier | Appliquée — **un relevé n'est pas une facture** | 2026-09-22 |
+| DEC-049 | Commerce client — devis et commandes — LOT 25 | Quatre tables, **seize capacités**, prix figé sur la ligne, **aucune facture parallèle** | Appliquée — **ouvre le Module 11** | 2026-09-23 |
 
 > **DEC-045 a été consignée le 18 septembre 2026.** Le Plan 02 lui avait assigné
 > son objet — l'avenant de location — et le LOT 22 l'a livré. La réservation
@@ -5659,6 +5661,281 @@ touchent pas un document client.
 - **Aucun export tabulaire.** Le relevé est un document, non un classeur.
   `rental.rentals.export` continue de gouverner la liste des locations, et rien
   de ce lot ne l'a touchée.
+
+---
+
+# DEC-049 — Commerce client : devis et commandes (LOT 25)
+
+| | |
+| --- | --- |
+| Date | 23 septembre 2026 |
+| Origine | Décisions de la Direction du 11/09/2026 — **A-13**, **A-14**, **A-10** · Plan 02 §7.1, §9.1–9.3, §9.5, §10.2, §13.2 · Plan 01 §15 |
+| Nature | **Quatre tables, quatre migrations, seize capacités.** Un module nouveau |
+| Portée | Module 11 · Commerce — Devis clients, Commandes clients |
+| Réemploie | Le catalogue de services (DEC-043), la chaîne de facturation du LOT 7, les règlements du LOT 8, la trésorerie du LOT 6, le registre documentaire (DEC-024), le numéroteur (DEC-023) |
+| Laisse ouvert | 🟥 **Facturation partielle d'une commande** (§g) · 🟥 **Remises commerciales** (§f) · 🟦 `commercial_line_costs` **séquencée au LOT 28** · 🟥 A-7 · 🟥 DEC-008 · 🟥 P-2 · 🟥 P-5 |
+
+## a. Ce que le lot ajoute, et ce qu'il ne touche pas
+
+Le LOT 25 pose une **couche commerciale** entre le catalogue et la facturation :
+
+```
+CATALOGUE (LOT 20) ─▶ DEVIS ─▶ COMMANDE ─▶ FACTURE (LOT 7) ─▶ RÈGLEMENT (LOT 8) ─▶ TRÉSORERIE (LOT 6)
+```
+
+**Aucune de ces briques n'est réécrite.** `create_customer_invoice`,
+`add_customer_invoice_line`, `issue_customer_invoice`, `record_customer_payment`
+et `fn_treasury_entry_source` restent celles des LOTS 6, 7 et 8 — trois d'entre
+elles reçoivent des **paramètres facultatifs** supplémentaires, et rien d'autre.
+
+## b. Deux entités, et non une à un statut près
+
+🟩 **DEC-006 reconduite.** Un devis se refuse et porte une durée de validité ;
+une commande ne se refuse pas et porte une date de livraison attendue. Les
+fondre obligerait à porter des colonnes vides la moitié du temps.
+
+**La conversion crée un acte nouveau.** `DEV-C-2026-000001` reste un devis et
+passe à « converti » ; `CDE-C-2026-000001` naît, lié. Aucun enregistrement ne
+change de nature, et le prix accepté par le client n'est jamais réécrit.
+
+## c. 🟥 Le prix est figé sur la ligne — D13, D16(b)
+
+Une ligne de catalogue **résout** le prix de vente à la date du document, puis
+en garde la **copie** — le libellé avec, faute de quoi un service renommé
+rendrait faux un devis d'hier.
+
+**La conversion ne réinterroge jamais le catalogue** : elle recopie. La
+facturation non plus. Éprouvé en production : le catalogue passe de 50 000 à
+90 000 KMF entre le devis et la facture, et les trois documents portent
+toujours 50 000.
+
+## d. 🟩 A-13 — les lignes libres
+
+Une ligne porte un service **et** sa variante, ou **aucun des deux**. La nature
+d'une ligne n'est pas une colonne : elle se lit de la présence du service — une
+colonne de plus aurait pu contredire la donnée.
+
+**Aucun service « Divers » n'est créé** pour faire entrer une ligne libre dans
+le modèle du catalogue. C'est le modèle qui l'accueille.
+
+**Garantie par une clé étrangère COMPOSITE**, et non par un déclencheur : un
+déclencheur lirait la table des variantes **à travers RLS** et conclurait
+« introuvable » pour un appelant sans `catalog.services.view`. « Une garde qui
+compte doit compter la vérité » (Plan 02 §8.3 n° 5).
+
+## e. 🟥 Aucun coût, aucune marge — le Plan 02 corrige le Plan 01
+
+Le Plan 01 §15.1 plaçait `unit_cost` sur la ligne commerciale. Le **Plan 02 §9.3
+l'en retire** : « si le prix d'achat sort de la variante pour des raisons de
+confidentialité, le coût copié doit sortir de la ligne pour la même raison —
+sinon la confidentialité est contournable par la facture. » Il le renvoie à
+`commercial_line_costs`, que le **§13.2 assigne au LOT 28**.
+
+**Le LOT 25 ne la crée donc pas**, et ses lignes ne portent aucun coût — la
+migration 097 le vérifie elle-même, et refuserait une colonne dont le nom
+contiendrait `cost`, `margin` ou `commission`.
+
+**Conséquence assumée** : `sales_quote_margin()` du Plan 01 **n'existe pas**.
+Une marge sans coût serait un mensonge ; une table de coûts anticipée serait une
+surconstruction.
+
+**La confidentialité n'est PAS prouvée par un balayage d'octets.** Le LOT 24 a
+établi qu'un tel balayage ne prouve rien — flux compressés, polices
+sous-ensemblées. Cinq barrières la portent : le schéma, le type, la source des
+modèles, RLS, et une **comparaison différentielle** — le document produit par un
+profil qui **lit réellement** le coût est identique, une fois l'horodatage du PDF
+neutralisé, à celui d'un profil qui ne le lit pas.
+
+## f. 🟥 Aucune remise — et pourquoi c'est une décision, non un oubli
+
+Le Plan 01 §15.1 esquissait un `discount_amount` par ligne. Le **Plan 02 ne le
+reprend pas**, et sa liste de capacités du LOT 25 (§10.2) n'en porte aucune —
+alors qu'il en crée une, nommément, pour le point de vente
+(`pos.sales.discount`, §10.2 LOT 28 : « consentir un rabais engage ADIKOM »).
+
+Bâtir une remise qu'**aucune capacité ne garderait** contredirait A-14 /
+DEC-024. Le moteur n'est donc pas construit.
+
+**Une ligne libre à prix choisi n'est pas une remise** : c'est une prestation
+hors catalogue, et le document ne prétend pas le contraire. Le prix d'une ligne
+de **catalogue**, lui, n'est pas saisissable — la base refuse un montant
+transmis avec une variante, précisément pour qu'une remise ne se glisse pas là
+où rien ne la garderait.
+
+🟥 **À la Direction.** Si ADIKOM accorde réellement des remises commerciales sur
+devis et commandes, il faut une capacité pour les gouverner — et donc une
+décision. La question est posée ; elle n'est pas tranchée par ce lot.
+
+## g. 🟥 Une commande, au plus une facture non annulée
+
+**La règle appliquée**, portée par un index d'unicité partiel de la même forme
+que celui des périodes facturables de location.
+
+**Elle est DÉDUITE de l'architecture documentée**, et le raisonnement est écrit
+plutôt que subi — la consigne du LOT 25 §19 interdisant de reproduire le
+problème d'avant le LOT 23, où une contrainte technique décidait en silence du
+métier :
+
+1. `order_status` (Plan 02 §9.5) porte `INVOICED` et **aucun état partiel** :
+   c'est un statut de la commande **entière** ;
+2. `create_invoice_from_sales_order(commande, date, échéance)` (Plan 01 §15.5)
+   ne prend **ni sélection de lignes, ni quantité** : sa signature ne sait pas
+   exprimer une facturation partielle ;
+3. là où le Plan a **voulu** plusieurs factures — la longue durée, A-6 —, il a
+   créé l'objet qui les porte, `rental_billing_periods`, et deux index disjoints.
+
+🟥 **À la Direction.** Si ADIKOM facture par tranches — acompte à la commande,
+solde à la livraison —, l'extension est **additive** et connue : un objet
+« tranche de commande » entre la commande et la facture, sur le modèle exact des
+périodes facturables. Rien dans ce lot ne l'empêche.
+
+## h. Annuler ne crée aucune impasse
+
+| Acte | Conséquence |
+| --- | --- |
+| Facture annulée | La commande revient à **« Confirmée »** et se refacture |
+| Commande annulée | Le devis revient à **« Accepté »** et se reconvertit |
+
+Sans ces retours, une facture annulée par erreur laisserait la commande
+« Facturée » pour toujours, tandis que l'index d'unicité, lui, se libère — et
+une seconde facture naîtrait d'une commande jamais rouverte. Les deux doivent
+bouger ensemble. **C'est la mécanique du LOT 7**, où l'annulation d'une facture
+rend la location à « À facturer ».
+
+## i. La péremption d'un devis est dérivée, jamais écrite
+
+🟩 **Décision B-7 (Plan 01 §24.2).** Aucun statut `EXPIRED` n'est créé : le
+projet n'a aucun ordonnanceur, et un statut écrit sans surveillance mentirait
+entre deux passages. La péremption se **calcule** de `valid_until` et du jour
+comorien, comme `OVERDUE` pour une facture.
+
+**Aucune durée de validité par défaut n'est proposée.** Aucune politique
+commerciale n'est écrite chez ADIKOM ; en proposer une reviendrait à la décider
+(`CLAUDE.md` §55).
+
+## j. Le client n'est pas photographié
+
+Les factures clients (LOT 7) ne recopient ni le nom, ni l'adresse du client :
+elles désignent la fiche et la lisent à l'affichage. **Le commerce client fait
+exactement pareil.** Introduire un snapshot ici, et là seulement, créerait deux
+règles pour la même question.
+
+## k. Numérotation — aucun second numéroteur
+
+`sales_quote` → `DEV-C`, `sales_order` → `CDE-C`, année, six chiffres, remise à
+zéro annuelle. Exactement la forme de `FAC-C`.
+
+**Format provisoire**, comme l'écrit le Plan 01 §15.5 : DEC-023 §3 réserve la
+convention définitive (séries `BIS-DVCL-A0001`) à une extension de `next_number`
+explicitement reportée, et son §5 exige que chaque code de type soit confirmé
+avant première émission réelle.
+
+## l. Les seize capacités — celles du Plan 02 §10.2, exactement
+
+Module `commerce`, ordre **11**. Menus `sales_quotes` (1) et `sales_orders` (2),
+huit actions chacun : `view` `create` `update` `validate` `cancel` `export`✓
+`download`✓ `print`✓.
+
+**Catalogue : 197 → 213.**
+
+| Non créée | Raison |
+| --- | --- |
+| `commerce.*.invoice` | Facturer relève de `billing.customer_invoices.create` (migration 007). Une seconde capacité donnerait **deux vérités sur le même acte** |
+| `commerce.*.convert` | Convertir un devis, c'est **créer une commande** |
+| `commerce.*.discount` · `.margin` · `.cost` | Aucune fonctionnalité correspondante (§e, §f) |
+| `commerce.purchase_*` | Le commerce fournisseur est le LOT 26 |
+
+**`validate` couvre l'émission ET la réponse du client** — acceptation comme
+refus. Enregistrer la réponse est le même geste, par la même personne, sur le
+même écran ; annuler est un acte d'ADIKOM. **Un devis refusé n'est pas un devis
+annulé.**
+
+**Étanchéité** : consulter les devis n'ouvre pas les commandes, et
+réciproquement. Une fiche de devis converti dont le lecteur n'a pas
+`commerce.sales_orders.view` **dit** que la commande existe et que sa référence
+ne lui est pas communiquée (DEC-017).
+
+## m. Ce que le lot a découvert, et corrigé
+
+### 🟥 Un défaut de PRODUIT, trouvé à la relecture des gardes
+
+Les déclencheurs de la migration 097 figeaient, hors brouillon, le client, la
+date, la validité, le numéro et la devise — **mais ni `terms`, ni `notes`**.
+
+Or la policy d'écriture de `sales_quotes` accepte `commerce.sales_orders.create`
+et `.cancel` : **il le faut**, sans quoi la conversion et son annulation
+échoueraient au niveau de RLS avant d'atteindre le déclencheur. Celui-ci
+restreignait bien ces capacités aux seuls **passages de statut** qui les
+concernent — mais **rien ne les empêchait d'écrire `terms` par un `PATCH`
+direct**.
+
+Un porteur de `commerce.sales_orders.create` **seul** — incapable de modifier,
+d'émettre ou d'annuler un devis — pouvait donc en **réécrire les conditions**,
+sur un devis déjà remis au client. Les conditions sont **imprimées sur la
+pièce** et font partie de ce que le client a accepté.
+
+Faille **étroite**, qu'aucun écran n'emprunte. **Réelle tout de même** : la base
+doit empêcher la modification silencieuse d'un acte engagé, et non compter sur
+ce que l'interface propose.
+
+🟦 **Leçon générale, à reconduire.** *Élargir une policy d'écriture pour qu'un
+acte voisin aboutisse ouvre l'écriture sur **toute la ligne**, pas sur la seule
+colonne visée.* Après un tel élargissement, chaque colonne doit tomber dans
+l'une de trois catégories : gelée hors brouillon, exigeant sa propre capacité
+dans tous les états, ou écrite par l'acte lui-même. Une colonne qui n'entre dans
+aucune des trois est une porte.
+
+**Correction — migration 100** : `terms` rejoint le gel ; `notes` exige
+`commerce.*.update` dans tous les états. Annoter reste possible — la facturation
+le permet depuis le LOT 7 — mais **annoter, c'est modifier**.
+
+### Deux défauts de la recette elle-même
+
+L'un et l'autre du genre que le LOT 24 avait appris à chercher :
+
+1. **Une empreinte d'octets n'est pas un oracle stable.** Deux rendus du même
+   PDF diffèrent toujours : le dictionnaire d'information porte une **date de
+   création** et la bande-annonce un `/ID` dérivé du moment de production. La
+   comparaison différentielle échouait pour une raison sans rapport avec ce
+   qu'elle cherchait. Ces deux champs — et eux seuls — sont désormais
+   neutralisés ; tout le reste, flux compressés compris, entre intact dans
+   l'empreinte.
+
+2. **Annuler une facture encaissée exige `billing.customer_payments.cancel`.**
+   Depuis le LOT 8, `fn_customer_invoice_no_cancel_when_paid` refuse d'annuler
+   une facture tant que ses règlements vivent. Le profil de recette ne portait
+   pas cette capacité, et cinq contrôles échouaient en cascade. **Exigence de la
+   chaîne existante, honorée — non contournée.**
+
+## n. Ce que le lot n'a PAS fait, et l'a écrit
+
+- 🟥 **Aucune table de facture commerciale parallèle.** Une facture née d'une
+  commande est une `customer_invoices` ordinaire : même numérotation, même
+  émission, mêmes règlements — **paiement partiel compris (🟩 A-10)** — même
+  trésorerie, même place dans le pilotage.
+- 🟥 **`commercial_line_costs` n'est pas créée.** La migration 097 refuserait de
+  s'appliquer si elle l'était : le Plan 02 §13.2 l'assigne au LOT 28.
+- 🟥 **Aucun produit, aucun stock, aucun entrepôt, aucun SKU fictif.** Le modèle
+  de ligne les accueillera par le même couple de colonnes nullables, sans
+  réécriture.
+- 🟥 **Aucune entrée de navigation « à venir »** pour le commerce fournisseur
+  (DEC-042 §d).
+- 🟥 **Aucune fonction `SECURITY DEFINER`** (doctrine D4).
+- 🟥 **A-7, DEC-008, P-2, P-5, Plan 02 §5.7** : intouchés. `service_variant_costs`
+  n'a été ni modifiée ni étendue.
+
+## o. Limites connues du commerce client
+
+- **Aucune facturation partielle d'une commande** (§g) — décision à prendre.
+- **Aucune remise** (§f) — décision à prendre.
+- **Aucune marge** : elle exige le coût copié, séquencé au LOT 28.
+- **Aucun document de livraison** : la prestation se constate par un statut
+  (décision B-6). La Direction refuse les étapes inutiles.
+- **La date de la commande détermine le prix des lignes saisies directement**,
+  celle du devis pour les lignes converties. Deux documents, deux dates, deux
+  prix possibles pour la même prestation — c'est la conséquence normale de
+  l'historisation, et la conversion ne les mélange jamais.
+- **Aucune taxe** (DEC-014 : régime non défini).
 
 ---
 

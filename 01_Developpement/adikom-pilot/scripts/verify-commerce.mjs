@@ -152,6 +152,10 @@ const PROFILES = {
     'billing.customer_invoices.download',
     'billing.customer_payments.view',
     'billing.customer_payments.create',
+    // Depuis le LOT 8, une facture encaissée ne s'annule pas tant que ses
+    // règlements vivent : annuler la facture suppose d'annuler d'abord ce qui
+    // la solde. La capacité est donc exigée par le SCÉNARIO, non par ce lot.
+    'billing.customer_payments.cancel',
     'treasury.accounts.view',
     'treasury.entries.view',
     'catalog.services.view',
@@ -282,6 +286,18 @@ async function mainText(page) {
  * Rend le STATUT et les OCTETS : le statut dit si la capacité a été honorée,
  * les octets servent à la comparaison DIFFÉRENTIELLE entre deux profils — la
  * seule forme de preuve documentaire qui tienne après le LOT 24.
+ *
+ * ⚠ DEUX RENDUS DU MÊME DOCUMENT NE SONT JAMAIS IDENTIQUES AU BIT PRÈS.
+ *
+ * Un PDF porte, dans son dictionnaire d'information, une DATE DE CRÉATION, et
+ * dans sa bande-annonce un IDENTIFIANT `/ID` dérivé du moment de production.
+ * Deux téléchargements séparés de quelques secondes diffèrent donc toujours —
+ * sans qu'aucun contenu ait changé. Comparer les octets bruts ferait échouer la
+ * preuve pour une raison qui n'a rien à voir avec ce qu'elle cherche.
+ *
+ * Ces deux champs — et EUX SEULS — sont donc neutralisés avant comparaison. Le
+ * reste du fichier, y compris les flux compressés, entre intact dans
+ * l'empreinte : un coût qui s'y serait glissé la ferait diverger.
  */
 async function fetchDocument(page, base, type, id, mode) {
   const url = `${base}/api/documents/${type}/${id}${mode ? `?mode=${mode}` : ''}`
@@ -290,18 +306,35 @@ async function fetchDocument(page, base, type, id, mode) {
     const response = await fetch(target, { credentials: 'include' })
     const buffer = await response.arrayBuffer()
     const bytes = new Uint8Array(buffer)
+
     let signature = ''
     for (let i = 0; i < Math.min(5, bytes.length); i += 1) {
       signature += String.fromCharCode(bytes[i])
     }
-    // Une empreinte simple suffit : deux documents identiques la partagent,
-    // deux documents différents ne la partagent pas.
-    let hash = 0
-    for (let i = 0; i < bytes.length; i += 1) {
-      hash = (hash * 31 + bytes[i]) >>> 0
-    }
-    return { status: response.status, length: bytes.length, signature, hash }
+
+    // Latin-1 : une correspondance octet ↔ caractère, sans perte ni
+    // réinterprétation d'un flux binaire en UTF-8.
+    let brut = ''
+    for (let i = 0; i < bytes.length; i += 1) brut += String.fromCharCode(bytes[i])
+
+    const normalise = brut
+      .replace(/D:\d{14}(?:[+\-Z]\d{2}'\d{2}')?/g, 'D:HORODATAGE')
+      .replace(/\/ID\s*\[[^\]]*\]/g, '/ID [NEUTRALISE]')
+
+    return { status: response.status, length: bytes.length, signature, normalise }
   }, url)
+}
+
+/** Où deux documents divergent, et ce qu'on y lit — pour diagnostiquer en un passage. */
+function divergence(a, b) {
+  const limite = Math.min(a.length, b.length)
+  for (let i = 0; i < limite; i += 1) {
+    if (a[i] !== b[i]) {
+      const extrait = (s) => JSON.stringify(s.slice(Math.max(0, i - 20), i + 40))
+      return `1er écart à l’octet ${i} : ${extrait(a)} ≠ ${extrait(b)}`
+    }
+  }
+  return `longueurs différentes : ${a.length} ≠ ${b.length}`
 }
 
 /* -------------------------------------------------------------------------- */
@@ -678,6 +711,33 @@ async function main() {
         `${total} KMF attendu ${TOTAL_ATTENDU}`
       )
 
+      /*
+       * LA MODIFICATION EST AUTORISÉE TANT QUE LE DEVIS EST EN BROUILLON.
+       *
+       * Éprouver le seul REFUS après émission ne prouverait rien : il faut
+       * savoir que l'acte est possible avant, sans quoi le devis serait
+       * simplement inécrivable et le contrôle triomphant à tort.
+       */
+      const { error: modif } = await commercial.rpc('update_sales_quote', {
+        p_quote_id: quoteId,
+        p_quote_date: dayOffset(-5),
+        p_valid_until: dayOffset(30),
+        p_notes: `${NOTE} — modifié`,
+        p_terms: 'Conditions révisées.',
+      })
+      check(!modif, 'Un devis en BROUILLON se modifie', modif?.message ?? '')
+
+      const { data: relu, error: reluError } = await commercial
+        .from('sales_quotes')
+        .select('valid_until, notes')
+        .eq('id', quoteId)
+        .maybeSingle()
+      check(
+        !reluError && relu?.valid_until === dayOffset(30),
+        'La modification a bien pris effet',
+        reluError ? `requête en erreur : ${reluError.message}` : (relu?.valid_until ?? '')
+      )
+
       // 🟥 Un prix choisi sur une ligne de catalogue serait une remise déguisée.
       const { error: remise } = await commercial.rpc('add_sales_quote_line', {
         p_quote_id: quoteId,
@@ -810,6 +870,39 @@ async function main() {
         .update({ client_id: decor.client, quote_date: dayOffset(-1) })
         .eq('id', decor.devis)
       check(Boolean(enTete), '🟥 Un PATCH direct sur l’en-tête d’un devis émis est REFUSÉ')
+
+      /*
+       * 🟥 LES CONDITIONS D'UN ACTE ÉMIS SONT CELLES QU'IL PORTAIT.
+       *
+       * Faille trouvée à la relecture, refermée par la migration 100 : `terms`
+       * est IMPRIMÉ sur la pièce remise au client et fait partie de ce qu'il a
+       * accepté. Le commercial détient pourtant `update` — et ne peut pas le
+       * réécrire une fois le devis émis.
+       */
+      const { error: conditions } = await commercial
+        .from('sales_quotes')
+        .update({ terms: 'Conditions réécrites après coup' })
+        .eq('id', decor.devis)
+      check(
+        Boolean(conditions),
+        '🟥 Les CONDITIONS d’un devis émis ne se réécrivent plus',
+        conditions ? 'refusé' : 'ACCEPTÉ'
+      )
+
+      /*
+       * ANNOTER RESTE POSSIBLE À QUI PEUT MODIFIER — sans ce contrôle, le
+       * précédent passerait aussi si toute écriture était devenue impossible,
+       * et ne prouverait rien du gel lui-même.
+       */
+      const { error: annote } = await commercial
+        .from('sales_quotes')
+        .update({ notes: `${NOTE} — observation postérieure` })
+        .eq('id', decor.devis)
+      check(
+        !annote,
+        'Les OBSERVATIONS restent annotables par qui détient `update`',
+        annote?.message ?? ''
+      )
 
       const { data: total } = await commercial.rpc('sales_quote_total', { p_quote_id: decor.devis })
       check(
@@ -1178,6 +1271,124 @@ async function main() {
 
     /* ================================================================== */
     console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('8 bis — CAS B : UNE COMMANDE CRÉÉE DIRECTEMENT\n')
+
+    {
+      /*
+       * LE CHEMIN DIRECT EST PRÉVU PAR L'ARCHITECTURE, non ajouté par commodité.
+       *
+       * Plan 01 §15.2 : `sales_quote_id uuid → sales_quotes, -- origine
+       * facultative`. Un client peut commander sans proposition préalable, et
+       * le futur PDV (LOT 28) n'aura pas davantage à détourner cette table pour
+       * exister.
+       */
+      const { data: directId, error } = await commercial.rpc('create_sales_order', {
+        p_client_id: decor.client,
+        p_order_date: dayOffset(-4),
+        p_expected_date: dayOffset(10),
+        p_notes: NOTE,
+        p_terms: null,
+      })
+      check(
+        !error && Boolean(directId),
+        '🟩 CAS B : une commande se crée SANS devis préalable',
+        error?.message ?? ''
+      )
+      decor.commandeDirecte = directId
+
+      const { data: ligne, error: ligneError } = await commercial.rpc('add_sales_order_line', {
+        p_order_id: directId,
+        p_quantity: 2,
+        p_variant_id: decor.premium,
+        p_label: null,
+        p_unit_price: null,
+      })
+      check(
+        !ligneError && Boolean(ligne),
+        'Une ligne de catalogue s’y ajoute, au prix du jour de la COMMANDE',
+        ligneError?.message ?? ''
+      )
+
+      const { data: creee, error: cError } = await commercial
+        .from('sales_orders')
+        .select('order_no, sales_quote_id, status')
+        .eq('id', directId)
+        .maybeSingle()
+
+      check(
+        !cError && creee?.sales_quote_id === null,
+        'Elle ne désigne AUCUN devis d’origine — et l’écran le distingue d’un devis illisible',
+        cError ? `requête en erreur : ${cError.message}` : (creee?.order_no ?? '')
+      )
+
+      // La modification d'un brouillon de commande, autorisée.
+      const { error: modif } = await commercial.rpc('update_sales_order', {
+        p_order_id: directId,
+        p_order_date: dayOffset(-4),
+        p_expected_date: dayOffset(14),
+        p_notes: `${NOTE} — modifiée`,
+        p_terms: null,
+      })
+      check(!modif, 'Une commande en BROUILLON se modifie', modif?.message ?? '')
+
+      const { data: total } = await commercial.rpc('sales_order_total', { p_order_id: directId })
+      check(
+        Number(total) === 2 * PRIX_PREMIUM,
+        'Son total est celui de ses lignes',
+        `${total} KMF attendu ${2 * PRIX_PREMIUM}`
+      )
+
+      // Elle se confirme, puis se fige.
+      const { error: confirme } = await commercial.rpc('set_sales_order_status', {
+        p_order_id: directId,
+        p_status: 'CONFIRMED',
+        p_reason: 'Engagement direct',
+      })
+      check(!confirme, 'Elle se confirme comme une autre', confirme?.message ?? '')
+
+      const { error: fige } = await commercial.rpc('add_sales_order_line', {
+        p_order_id: directId,
+        p_quantity: 1,
+        p_variant_id: null,
+        p_label: 'Ligne tardive',
+        p_unit_price: 1000,
+      })
+      check(Boolean(fige), '🟥 Ses lignes sont figées une fois confirmée')
+
+      // 🟩 B-6 — la livraison se CONSTATE, sans produire aucun document.
+      const { error: livre } = await commercial.rpc('set_sales_order_status', {
+        p_order_id: directId,
+        p_status: 'DELIVERED',
+        p_reason: 'Prestation réalisée',
+      })
+      check(!livre, '🟩 B-6 : la livraison se constate par un statut', livre?.message ?? '')
+
+      // Une commande LIVRÉE se facture aussi — la livraison n'est pas un passage
+      // obligé, mais elle n'empêche pas non plus la facturation.
+      const { data: facId, error: facError } = await factureur.rpc(
+        'create_invoice_from_sales_order',
+        { p_order_id: directId, p_invoice_date: dayOffset(-1), p_due_date: dayOffset(29) }
+      )
+      check(
+        !facError && Boolean(facId),
+        'Une commande LIVRÉE se facture également',
+        facError?.message ?? ''
+      )
+
+      const { data: fac, error: fError } = await factureur
+        .from('customer_invoices')
+        .select('invoice_no, sales_order_id')
+        .eq('id', facId)
+        .maybeSingle()
+      check(
+        !fError && fac?.sales_order_id === directId,
+        'Sa facture la désigne',
+        fError ? `requête en erreur : ${fError.message}` : (fac?.invoice_no ?? '')
+      )
+    }
+
+    /* ================================================================== */
+    console.log('\n──────────────────────────────────────────────────────────────')
     console.log('9 — 🟥 CONFIDENTIALITÉ DES COÛTS — LA PREUVE, AUTREMENT\n')
 
     {
@@ -1295,7 +1506,7 @@ async function main() {
           `${impression.status} · ${impression.length} octets`
         )
 
-        decor[`empreinte_${nom}`] = telechargement.hash
+        decor[`empreinte_${nom}`] = telechargement.normalise
         decor[`taille_${nom}`] = telechargement.length
       }
 
@@ -1315,12 +1526,17 @@ async function main() {
         ['commandes-clients', decor.commande, 'commande'],
       ]) {
         const privilegie = await fetchDocument(sessionAvecCout.page, base, type, id, 'download')
-        check(
+        const identique =
           privilegie.status === 200 &&
-            privilegie.hash === decor[`empreinte_${nom}`] &&
-            privilegie.length === decor[`taille_${nom}`],
+          privilegie.length === decor[`taille_${nom}`] &&
+          privilegie.normalise === decor[`empreinte_${nom}`]
+
+        check(
+          identique,
           `🟥 DIFFÉRENTIEL : le ${nom} d’un lecteur de coûts est IDENTIQUE, octet pour octet`,
-          `${privilegie.length} vs ${decor[`taille_${nom}`]} octets · écart ${privilegie.length - decor[`taille_${nom}`]}`
+          identique
+            ? `${privilegie.length} octets, horodatage neutralisé`
+            : divergence(decor[`empreinte_${nom}`], privilegie.normalise)
         )
       }
 
@@ -1413,9 +1629,6 @@ async function main() {
       )
 
       /* La facture est bien DANS le module de facturation existant. */
-      const pageFacture = sessionAvecCout.page
-      await pageFacture.goto(`${base}/commerce/commandes/${decor.commande}`, { waitUntil: 'load' })
-
       const sessionFactureur = await signIn(browser, base, accounts.factureur)
       await sessionFactureur.page.goto(`${base}/facturation/clients`, { waitUntil: 'load' })
 

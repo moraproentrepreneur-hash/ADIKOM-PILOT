@@ -318,6 +318,8 @@ Les modules définis sont :
 
 10\. Produits \& Services
 
+11\. Commerce
+
 
 
 Le module \*\*Produits \& Services\*\* (code `catalog`) a été ajouté au LOT 20 sur décision de la Direction (DEC-043, Plan 02 §7.1).
@@ -325,6 +327,18 @@ Le module \*\*Produits \& Services\*\* (code `catalog`) a été ajouté au LOT 2
 
 
 \*\*Seule la partie Services est développée.\*\* Aucune table de produit, aucune capacité `catalog.products.*`, aucune entrée de navigation « à venir ».
+
+
+
+Le module \*\*Commerce\*\* (code `commerce`) a été ajouté au LOT 25 sur décision de la Direction (DEC-049, Plan 02 §7.1).
+
+
+
+\*\*Seul le commerce CLIENT est développé\*\* — devis clients et commandes clients. Le commerce fournisseur relève du LOT 26 : aucune table `purchase_*`, aucune capacité `commerce.purchase_*`, aucune entrée de navigation « à venir ».
+
+
+
+\*\*Une commande alimente la facturation client EXISTANTE.\*\* Aucune table de facture commerciale parallèle n'est créée, et aucune fonction de facturation n'est réécrite.
 
 
 

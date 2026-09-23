@@ -2,6 +2,7 @@ import 'server-only'
 
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { reportQueryFailure } from '@/lib/server-action'
+import { documentTotal } from './constants'
 import type { OrderStatus, QuoteStatus } from './constants'
 
 /**
@@ -166,11 +167,23 @@ type RawQuote = {
   sales_quote_lines?: RawLine[]
 }
 
-function quoteTotals(rows: RawLine[] | undefined) {
-  const active = (rows ?? []).filter((row) => !row.is_archived)
+/**
+ * Total et nombre de lignes actives d'un document.
+ *
+ * 🟥 UNE SEULE IMPLÉMENTATION DU CALCUL, et c'est `documentTotal` — la même que
+ * l'écran de saisie emploie pour son aperçu, et celle que les tests unitaires
+ * éprouvent dans ses branches. Trois `reduce` recopiés auraient été trois
+ * occasions de diverger.
+ *
+ * Elle REFUSE une ligne invalide plutôt que de l'ignorer : un montant faux est
+ * pire qu'une erreur. Les contraintes de la base rendent le cas impossible —
+ * si elle levait, ce serait une corruption réelle, et il faut la voir.
+ */
+function totals(rows: RawLine[] | undefined) {
+  const lines = (rows ?? []).map(toLine)
   return {
-    total: active.reduce((sum, row) => sum + row.quantity * row.unit_price, 0),
-    lineCount: active.length,
+    total: documentTotal(lines),
+    lineCount: lines.filter((line) => !line.isArchived).length,
   }
 }
 
@@ -213,7 +226,7 @@ export async function listSalesQuotes(
     validUntil: row.valid_until,
     clientId: row.client_id,
     clientLabel: clientLabel(row.clients),
-    ...quoteTotals(row.sales_quote_lines),
+    ...totals(row.sales_quote_lines),
   }))
 }
 
@@ -267,7 +280,7 @@ export async function getSalesQuote(id: string): Promise<SalesQuoteDetail | null
     updatedAt: row.updated_at,
     orderId: order?.id ?? null,
     orderNo: order?.order_no ?? null,
-    ...quoteTotals(row.sales_quote_lines),
+    ...totals(row.sales_quote_lines),
   }
 }
 
@@ -391,22 +404,18 @@ export async function listSalesOrders(
     )
   }
 
-  return ((data ?? []) as unknown as RawOrder[]).map((row) => {
-    const active = (row.sales_order_lines ?? []).filter((line) => !line.is_archived)
-    return {
-      id: row.id,
-      orderNo: row.order_no,
-      status: row.status,
-      orderDate: row.order_date,
-      expectedDate: row.expected_date,
-      clientId: row.client_id,
-      clientLabel: clientLabel(row.clients),
-      quoteId: row.sales_quote_id,
-      quoteNo: row.sales_quotes?.quote_no ?? null,
-      total: active.reduce((sum, line) => sum + line.quantity * line.unit_price, 0),
-      lineCount: active.length,
-    }
-  })
+  return ((data ?? []) as unknown as RawOrder[]).map((row) => ({
+    id: row.id,
+    orderNo: row.order_no,
+    status: row.status,
+    orderDate: row.order_date,
+    expectedDate: row.expected_date,
+    clientId: row.client_id,
+    clientLabel: clientLabel(row.clients),
+    quoteId: row.sales_quote_id,
+    quoteNo: row.sales_quotes?.quote_no ?? null,
+    ...totals(row.sales_order_lines),
+  }))
 }
 
 export async function getSalesOrder(id: string): Promise<SalesOrderDetail | null> {
@@ -424,7 +433,6 @@ export async function getSalesOrder(id: string): Promise<SalesOrderDetail | null
   if (!data) return null
 
   const row = data as unknown as RawOrder
-  const active = (row.sales_order_lines ?? []).filter((line) => !line.is_archived)
 
   return {
     id: row.id,
@@ -446,8 +454,7 @@ export async function getSalesOrder(id: string): Promise<SalesOrderDetail | null
     cancelledAt: row.cancelled_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    total: active.reduce((sum, line) => sum + line.quantity * line.unit_price, 0),
-    lineCount: active.length,
+    ...totals(row.sales_order_lines),
   }
 }
 

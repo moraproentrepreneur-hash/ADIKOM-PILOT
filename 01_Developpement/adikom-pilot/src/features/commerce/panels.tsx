@@ -272,7 +272,7 @@ export function EditQuotePanel({
  *
  * Sur mobile, le choix de la nature reste un vrai groupe de boutons radio et le
  * choix de la prestation un vrai `select` : aucune fenêtre à cases à cocher ne
- * remplace un déroulant (consigne §43).
+ * remplace un déroulant (CLAUDE.md §35 : on réorganise, on ne rétrécit pas).
  */
 export function AddLinePanel({
   target,
