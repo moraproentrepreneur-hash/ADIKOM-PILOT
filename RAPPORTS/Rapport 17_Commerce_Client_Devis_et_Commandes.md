@@ -1032,17 +1032,22 @@ recette, non une attente (§20.5).
 | --- | --- |
 | Commit applicatif | `1d64619` — les quatre tables, les seize capacités, les écrans |
 | Commit de correction et de documentation | `0d56cb3` — migration 100, recettes enrichies, Module 11, DEC-049, Rapport 17 |
-| **SHA déployé** | **`0d56cb3`** |
 | **SHA éprouvé** | **`0d56cb3`** — la recette du LOT 25 a été rejouée contre ce déploiement |
+| **SHA déployé** | **`0d56cb3`**, puis le commit de ce rapport — **documentaire, aucun code applicatif** |
 | État Vercel | **READY** · production |
 | Catalogue | **213** capacités |
 | Périmètre de sauvegarde | **58** tables |
 | Dernière migration | **100** |
 | Résidus de recette en production | **0** |
 
-**Le SHA déployé et le SHA éprouvé sont le même.** La recette du LOT 25 a été
-exécutée une dernière fois **après** le déploiement de `0d56cb3` : 133 contrôles,
-aucun échec. Aucun commit documentaire ne reste hors du périmètre éprouvé.
+**Le dernier SHA porteur de code applicatif est celui qui a été éprouvé.** La
+recette du LOT 25 a été exécutée une dernière fois **après** le déploiement de
+`0d56cb3` : 133 contrôles, aucun échec.
+
+Le commit qui suit — celui de ce rapport — ne touche **que `RAPPORTS/`**. Vercel
+le redéploie parce qu'il observe la branche, mais il ne change **ni une ligne de
+code, ni une migration, ni une capacité** : le comportement mis en production est
+exactement celui qui a été éprouvé.
 
 ---
 
