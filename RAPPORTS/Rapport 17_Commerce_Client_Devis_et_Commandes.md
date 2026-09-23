@@ -1030,13 +1030,35 @@ recette, non une attente (§20.5).
 
 | | |
 | --- | --- |
-| Commit applicatif | `1d64619` |
-| Commit documentaire | *(ce rapport)* |
-| SHA déployé | `1d64619` |
+| Commit applicatif | `1d64619` — les quatre tables, les seize capacités, les écrans |
+| Commit de correction et de documentation | `0d56cb3` — migration 100, recettes enrichies, Module 11, DEC-049, Rapport 17 |
+| **SHA déployé** | **`0d56cb3`** |
+| **SHA éprouvé** | **`0d56cb3`** — la recette du LOT 25 a été rejouée contre ce déploiement |
 | État Vercel | **READY** · production |
 | Catalogue | **213** capacités |
 | Périmètre de sauvegarde | **58** tables |
 | Dernière migration | **100** |
+| Résidus de recette en production | **0** |
+
+**Le SHA déployé et le SHA éprouvé sont le même.** La recette du LOT 25 a été
+exécutée une dernière fois **après** le déploiement de `0d56cb3` : 133 contrôles,
+aucun échec. Aucun commit documentaire ne reste hors du périmètre éprouvé.
+
+---
+
+# 25 bis. Nombre total de contrôles en production
+
+| Famille | Contrôles |
+| --- | ---: |
+| **Recette du LOT 25** (`verify:commerce`) | **133** |
+| Recette SQL du LOT 25 (`db:verify:commerce`) | 28 |
+| Sauvegarde / réinitialisation / restauration | 65 |
+| Non-régressions — cinq lots voisins | 352 |
+| Non-régressions — reste du SaaS | 1 151 |
+| **Total** | **1 729** |
+
+**Aucun échec.** S'y ajoutent, hors production, **364 tests unitaires** sur
+18 fichiers.
 
 ---
 
@@ -1068,6 +1090,7 @@ recette, non une attente (§20.5).
 | Non-régressions séquentielles | ✅ |
 | Aucun résidu de recette | ✅ |
 | GitHub à jour, Vercel READY, SHA concordant | ✅ |
+| Rapport 17 complet, commité et poussé | ✅ |
 
 ---
 
