@@ -1403,7 +1403,7 @@ async function main() {
           p_account_id: decor.compte,
           p_amount: ACOMPTE,
           p_paid_on: dayOffset(0),
-          p_method: 'TRANSFER',
+          p_method: 'BANK_TRANSFER',
           p_external_ref: `VIR-${STAMP}`,
           p_notes: NOTE,
         }
