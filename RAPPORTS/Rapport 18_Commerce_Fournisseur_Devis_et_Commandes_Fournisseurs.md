@@ -184,8 +184,10 @@ l'offre d'un fournisseur serait faux.
 | `supplier_invoice_lines` | `quantity` | ✅ |
 | `supplier_invoice_lines` | `unit_price` | ✅ |
 
-**Aucune donnée existante n'est modifiée.** Les 225 factures fournisseurs déjà
-en base reçoivent `NULL` partout et se comportent exactement comme avant.
+**Aucune donnée existante n'est modifiée.** Les factures fournisseurs déjà en
+base reçoivent `NULL` partout et se comportent exactement comme avant — la
+migration refuse d'ailleurs de s'appliquer si l'une des cinq colonnes n'était pas
+nullable.
 
 🟥 **`amount` reste l'unique source du montant brut (D1).** Plan 01 §15.5 :
 « ajouter `quantity` et `unit_price` créerait **deux sources du même chiffre** ».
@@ -593,6 +595,264 @@ en place (3 créés, 108 déjà présents).
 - 🟥 **Aucun produit, aucun stock, aucun entrepôt, aucune réception physique.**
 - 🟥 **Aucune fonction de marge**, aucune fonction `SECURITY DEFINER`.
 - 🟥 **`service_variant_costs` n'a reçu aucune colonne.**
+
+---
+
+# 20. Tests unitaires — 28 ajoutés, 392 au total
+
+`src/features/purchasing/constants.test.ts` éprouve ce qu'aucune recette ne
+peut : **toutes les branches** d'un calcul, **tous les états** d'une table de
+transitions, et un refus pour chaque entrée invalide.
+
+| Ce qu'ils gardent | Pourquoi |
+| --- | --- |
+| 🟥 **Le vocabulaire de l'achat n'est pas celui de la vente** | Les tests comparent les deux tables de libellés et **exigent qu'elles diffèrent** sur `SENT`, `DELIVERED`, `CONFIRMED` |
+| Les codes sont pourtant **les mêmes** | Comparaison des deux ensembles de clés : un enum divergent serait un type de trop |
+| `CONVERTED` et `INVOICED` ne sont **jamais** proposés | Parcours de tous les états |
+| Chaque transition offerte porte un **libellé d'ACTE** | Un `select` sans libellé afficherait un code brut |
+| La péremption est **dérivée**, et ne concerne qu'une offre en attente | Cinq états, plus la validité absente et la limite du jour même |
+| L'arithmétique **refuse** une ligne invalide au lieu de l'ignorer | Un montant faux est pire qu'une erreur |
+| L'écart facture/commande **se tait** sur un montant illisible | Un écart calculé sur un zéro d'ignorance se lirait comme un écart réel |
+
+**19 fichiers, 392 tests, tous verts.**
+
+---
+
+# 21. Recette de production — 157 contrôles
+
+| Section | Ce qu'elle éprouve |
+| :-: | --- |
+| 1 | Le décor : fournisseur, service acheté, **coût de référence à 40 000** |
+| 2 | L'offre reçue, trois lignes dont une libre, **les deux références distinctes** |
+| 3 | 🟥 **La ligne porte 52 000, pas 40 000** — plus l'anti-vacuité dans les deux sens |
+| 4 | Cinq refus de saisie, **deux appels PostgREST directs refusés** |
+| 5 | Le cycle, le gel de la référence externe et des conditions, l'annotation gardée |
+| 6 | 🟥 **Catalogue porté à 70 000 ; l'offre reste à 52 000** |
+| 7 | La conversion, la traçabilité ligne à ligne, **et trois protections contre la double conversion** dont la concurrence |
+| 8 | La commande **directe** (cas B), le gel, **B-6** |
+| 9 | 🟥 La facture **ordinaire**, en brouillon, décomposée, `amount = q × p` ; **trois protections** contre la double facturation ; **la facture de complément reste possible** |
+| 10 | `submit` puis `validate`, règlement partiel **100 000**, **une** écriture `OUT`, solde **161 000**, statut toujours `VALIDATED` |
+| 11 | 🟥 **Photographie avant / après** : aucun règlement, aucune écriture, aucune facture nés d'un devis ou d'une commande |
+| 12 | 🟥 Confidentialité : RLS, fonction de somme, écran, **quatre refus d'export**, deux classeurs réels |
+| 13 | Documents : six PDF, **différentiel octet pour octet**, huit refus DEC-024 |
+| 14 | Les écrans, la charge utile sans coût, **la facture dans le module existant**, l'étanchéité A-14 |
+| 15 | Responsive **360 / 768 / 1440** sur trois écrans chacun |
+| 16 | L'annulation en cascade, et **le prix toujours à 52 000** après tout le parcours |
+| 17 | Audit : 120 événements, module `commerce`, garde du journal |
+| — | **Nettoyage : 0 résidu sur six familles, empreinte DEMO identique** |
+
+---
+
+# 22. Non-régressions — séquentielles, jamais en parallèle
+
+Deux recettes lancées ensemble se nettoient l'une l'autre par préfixe, et
+l'échec accuse alors l'authentification. Elles ont donc été **enchaînées une à
+une**.
+
+Deux recettes lancées ensemble se nettoient l'une l'autre par préfixe, et
+l'échec accuse alors l'authentification. Elles ont donc été **enchaînées une à
+une**, sur la production, dans l'ordre.
+
+## 22.1 Les 28 recettes SQL — toutes vertes
+
+`db:verify` · `location` · `cycle` · `catalog` · `supplier-rates` ·
+`amendments` · `billing` · `commerce` · `purchasing` · `supplier-invoices` ·
+`customer-invoices` · `customer-payments` · `treasury` · `imputations` ·
+`maintenance` · `maintenance-costs` · `incidents` · `audit` · `groups` ·
+`settings` · `transfers` · `notifications` · `analytics` · `projects` ·
+`planning` · `dashboard` · `password-reset` · `backup`
+
+## 22.2 Les 20 recettes de production — 1 639 contrôles
+
+| Recette | Contrôles | | Recette | Contrôles |
+| --- | :-: | :-: | --- | :-: |
+| `verify:catalog` | 49 | | `verify:audit` | 82 |
+| `verify:supplier-rates` | 61 | | `verify:groups` | 73 |
+| `verify:amendments` | 74 | | `verify:pilotage` | 60 |
+| `verify:billing` | 77 | | `verify:rentals` | 35 |
+| `verify:statement` | 91 | | `verify:password-reset` | 43 |
+| **`verify:commerce`** | **133** | | `verify:users` | 14 |
+| `verify:supplier-invoices` | 37 | | `verify:ajustements` | 95 |
+| `verify:customer-invoices` | 52 | | `verify:production` | 56 |
+| `verify:customer-payments` | 36 | | `verify:backup` | 50 |
+| `verify:payments` | 32 | | `verify:responsive` | **489** |
+
+🟥 **`verify:commerce` — 133 contrôles, tous verts.** C'est la preuve la plus
+directe que le commerce CLIENT est sorti du lot exactement tel qu'il y est
+entré : ni table, ni fonction, ni capacité, ni libellé touchés.
+
+🟥 **`verify:backup` a rejoué le cycle destructif complet** sur une base qui
+porte désormais **62 tables** dans `backup_scope` : sauvegarde, **suppression
+réelle de toutes les données métier**, puis restauration. Résultat — **221
+lignes restaurées**, état rétabli **table par table**, catalogue intact à
+**229 capacités**, **12 comptes sur 12 conservés**, Super Admin toujours présent
+et capable de se reconnecter. C'est la démonstration que les quatre tables
+d'achat entrent et sortent du périmètre de sauvegarde sans rien casser.
+
+## 22.3 🟥 Trois recettes ANTÉRIEURES étaient fausses, et personne ne le savait
+
+La non-régression n'a pas seulement confirmé l'existant : elle a **découvert
+trois défauts de recette** qui dormaient depuis des lots précédents.
+
+| # | Recette | Ce qui n'allait pas | Depuis |
+| :-: | --- | --- | --- |
+| 4 | `supabase/tests/rental_billing.sql` | Elle nommait `create_customer_invoice(uuid, date, date, uuid, text, uuid)` — **6 paramètres**. Le LOT 25 lui en a ajouté un septième et a **retiré** l'ancienne signature, deux surcharges rendant les appels par paramètres nommés ambigus. La recette échouait sur « function does not exist », **et non sur la doctrine D4 qu'elle vérifie** | **LOT 25** |
+| 5 | `supabase/tests/analytics.sql` | Elle comparait un indicateur **global** à une valeur **absolue** : `if s.gross_amount <> 1000000`. La démonstration du LOT 26 ajoute légitimement 171 000 KMF de facturation fournisseur — l'indicateur a donc changé, et la recette a accusé le brouillon | **LOT 26**, sur une fragilité ancienne |
+| 6 | `scripts/verify-rentals.mjs` | 🟥 **Son nettoyage déclarait au lieu de nettoyer** — voir §22.4 | **ancien**, révélé par une coupure réseau |
+
+Les trois ont été corrigées, et corrigées **dans le sens du contrôle**, jamais
+supprimées :
+
+- `rental_billing.sql` nomme désormais la signature à sept paramètres ; elle
+  éprouve de nouveau ce pour quoi elle a été écrite.
+- `analytics.sql` **mesure la variation** au lieu du total : elle relève le brut
+  avant, insère le brouillon, et exige que le brut n'ait pas bougé. Elle est
+  désormais vraie quelle que soit la taille de la démonstration.
+- `verify-rentals.mjs` **relit son propre nettoyage** et porte une garde
+  d'entrée. Elle compte désormais **35** contrôles au lieu de 34 : le contrôle
+  ajouté est celui qui manquait.
+
+> Aucune recette n'a été supprimée ni affaiblie parce qu'elle révélait un
+> défaut. Les trois disent maintenant **plus** qu'avant.
+
+## 22.4 🟥 Défaut n° 6 — un nettoyage qui ne lit pas ses erreurs n'est pas un nettoyage
+
+`verify:rentals` s'est terminée à 09 h 20 en affichant *« Sujets et comptes de
+recette supprimés. Données DEMO intactes. »* et **34 contrôles, tous réussis**.
+
+Trois comptes `recette.loc.*` étaient pourtant toujours là, **des deux côtés** —
+la table `app_users` **et** l'authentification.
+
+Son démontage s'écrivait ainsi :
+
+```js
+await admin.from('app_users').delete().eq('id', account.id)
+await admin.auth.admin.deleteUser(account.id)
+```
+
+Ces deux appels **rendent** leur erreur, ils ne la lèvent pas. Le réseau est
+tombé pendant cette boucle — dans ce passage, **toutes** les recettes suivantes
+ont échoué sur `fetch failed`. Les deux suppressions ont donc échoué, les deux
+erreurs ont été jetées, la phrase de conclusion s'est affichée quand même, et le
+script est sorti avec le code 0.
+
+**La recette a menti sans qu'aucune ligne de code ne soit fausse.**
+
+C'est la version « démontage » d'une leçon que le projet connaissait déjà pour
+la mise en place. Le blocage a d'ailleurs été révélé par la recette **voisine** :
+`verify:backup`, elle, porte une garde d'entrée et a **refusé de démarrer** sur
+le résidu laissé par son propre passage interrompu. `verify:rentals` n'en avait
+pas.
+
+**Correction — `scripts/verify-rentals.mjs` :**
+
+1. la boucle **lit** `profileError` et `authError`, nomme le compte concerné et
+   **compte un échec** ;
+2. `user_permissions` est purgé avant le profil ;
+3. un balayage final **exige** qu'aucun compte `recette.loc.%` ne subsiste ;
+4. une **garde d'entrée** refuse de démarrer sur un résidu du passage précédent.
+
+**Quatre comptes résiduels** ont été supprimés **un par un, par identifiant** —
+trois `recette.loc.*` et un `recette.sauv.*`. Aucun n'était Super Admin :
+il n'y avait pas de résidu de sécurité. Après correction, `verify:rentals`
+et `verify:backup` ont été rejouées : **35** et **50** contrôles, et le balayage
+final ne trouve **plus aucun compte** `recette.%`.
+
+## 22.5 Ce que la non-régression a coûté en temps, et pourquoi
+
+Sept recettes de production ont échoué d'affilée sur `ERR_NETWORK_IO_SUSPENDED`
+et `fetch failed` : **le poste s'est mis en veille** — la date système a sauté du
+24/09 au 29/09 entre deux passages. Ce ne sont pas des régressions, et elles ont
+été rejouées jusqu'au vert.
+
+Le rejeu a appliqué une règle stricte : **on ne réessaie que sur un symptôme
+réseau** (`fetch failed`, `ERR_NETWORK`, `ENOTFOUND`, `ECONNRESET`, `Timeout`).
+Un contrôle qui échoue n'est **jamais** réessayé — sinon un défaut intermittent
+finirait par « passer ». C'est cette règle qui a fait remonter le défaut n° 6
+au lieu de le noyer dans un troisième essai.
+
+`npm run cleanup:test-users` a été **refusé** tout du long : son balayage aurait
+emporté des comptes réels — soilih, niz, adinane, nouria, amina, yousrat — et
+les comptes DEMO. Les résidus ont été supprimés **par identifiant**.
+
+---
+
+# 23. Validation
+
+| Contrôle | Résultat |
+| --- | --- |
+| `npm run lint` | ✅ |
+| `npm run typecheck` | ✅ |
+| `npm run test` | ✅ **392 tests, 19 fichiers** |
+| `npm run build` | ✅ — **six routes nouvelles** compilées |
+| `npm run verify:capabilities` | ✅ **217 contrôles** · catalogue **229**, identique au code |
+| `npm run db:verify:purchasing` | ✅ **28 sections** |
+| `npm run db:verify:commerce` | ✅ **27 sections** — le commerce client est intact |
+| `npm run verify:purchasing` | ✅ **157 contrôles**, 0 résidu |
+| `npm run demo:seed` (×3) | ✅ 3 créés, puis **0** — idempotent |
+
+---
+
+# 24. Livraison
+
+| | |
+| --- | --- |
+| Commits | `1e50b1d` — le lot · `cf1a75f` — la correction du motif · `262e30a` — les trois recettes antérieures · le présent rapport |
+| **SHA applicatif éprouvé** | **`1e50b1d`** — c'est le code que la recette de production a exercé. `cf1a75f` ne change que des fonctions de base et de la documentation ; `262e30a` ne change que des recettes, et **aucun fichier de `src/`** |
+| **SHA déployé et vérifié** | **`262e30a`** · Vercel **READY**, relevé par l'API REST |
+| Le commit du rapport | Il suit ce relevé et **ne porte que de la documentation**. Le SHA déployé après lui est donc documentaire — ce rapport le dit plutôt que d'annoncer un chiffre qu'il ne pouvait pas avoir vérifié en l'écrivant |
+| Production | `https://adikom-pilot.vercel.app` |
+| Migrations | **104**, dernière `20260923000800` |
+| Catalogue | **229** capacités |
+| Périmètre de sauvegarde | **62** tables |
+
+---
+
+# 25. Nombre total de contrôles de production
+
+| Recette | Contrôles |
+| --- | :-: |
+| `verify:purchasing` (LOT 26) | **157** |
+| `verify:capabilities` | **217** |
+| Non-régressions (§22) | **1 639** |
+| **Total** | **2 013** |
+
+---
+
+# 26. Critères de fin
+
+| Critère | État |
+| --- | :-: |
+| Devis fournisseurs opérationnels | ✅ |
+| Commandes fournisseurs opérationnelles | ✅ |
+| Fournisseurs existants réutilisés — aucune table parallèle | ✅ |
+| Services existants réutilisés lorsque applicables | ✅ |
+| Aucun produit, aucun stock | ✅ |
+| Prix fournisseurs historiques figés | ✅ |
+| Une évolution du catalogue ne réécrit aucun acte | ✅ |
+| Devis → commande fonctionne | ✅ |
+| Le devis reste conservé | ✅ |
+| La commande conserve son origine | ✅ |
+| Commande → facture par le système **existant** | ✅ |
+| Aucune facturation fournisseur parallèle | ✅ |
+| Paiements existants réutilisés | ✅ |
+| Trésorerie existante réutilisée | ✅ |
+| Aucun mouvement de trésorerie au devis ni à la commande | ✅ |
+| Coûts protégés | ✅ |
+| Documents opérationnels | ✅ |
+| Permissions indépendantes | ✅ |
+| RLS éprouvée | ✅ |
+| Appels directs éprouvés | ✅ |
+| Conversions et facturations répétées protégées | ✅ |
+| Sauvegarde préalable effectuée | ✅ |
+| `backup_scope` mis à jour | ✅ |
+| Sauvegarde / réinitialisation / restauration validée | ✅ **50** |
+| `lint`, `typecheck`, `build`, tests unitaires | ✅ |
+| Recette LOT 26 | ✅ **157** |
+| Non-régressions séquentielles | ✅ **1 639** |
+| Nettoyage réellement vérifié, zéro résidu | ✅ |
+| GitHub à jour · Vercel READY · SHA vérifié | ✅ |
+| Rapport 18 complet, commité, poussé | ✅ |
 
 ---
 
