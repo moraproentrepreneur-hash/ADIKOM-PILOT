@@ -818,7 +818,7 @@ async function main() {
 
       const { data: devisVus, error: dvError } = await devisSeul
         .from('sales_quotes')
-        .select('id')
+        .select('id, status, status_reason')
         .eq('id', decor.devis)
       check(
         !dvError && (devisVus ?? []).length === 1,
@@ -1056,6 +1056,70 @@ async function main() {
         '🟥 Un INSERT DIRECT d’une seconde commande sur le même devis est REFUSÉ',
         forge ? 'refusé par l’index' : 'ACCEPTÉ'
       )
+    }
+
+    /* ================================================================== */
+    console.log('\n──────────────────────────────────────────────────────────────')
+    console.log('6 bis — 🟥 UN MOTIF NE FRANCHIT PAS LA FRONTIÈRE D’UN MENU\n')
+
+    /*
+     * La dette du Rapport 18 §13.2, soldée.
+     *
+     * Ce contrôle vient APRÈS la conversion, et c'est tout son intérêt : joué
+     * en section 3, le devis était encore en brouillon, son motif était vide,
+     * et « aucune référence » aurait été vrai sans rien prouver.
+     *
+     * `sales_quotes.status_reason` appartient au DEVIS : il s'ouvre par
+     * `commerce.sales_quotes.view`, seule. Le profil `devisSeul` n'a PAS
+     * `commerce.sales_orders.view` — il ne doit donc y trouver aucune référence
+     * `CDE-C-…`, sans quoi l'écran dirait vrai et faux dans la même page.
+     *
+     * On cherche la RÉFÉRENCE, jamais le mot : « Convertie en commande » est le
+     * motif attendu.
+     */
+    {
+      const devisSeul = createClient(url, anonKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      })
+      await devisSeul.auth.signInWithPassword({
+        email: accounts.devisSeul.email,
+        password: accounts.devisSeul.password,
+      })
+
+      const { data: lu, error: luErr } = await devisSeul
+        .from('sales_quotes')
+        .select('status, status_reason')
+        .eq('id', decor.devis)
+        .maybeSingle()
+
+      // ANTI-VACUITÉ : sans devis converti réellement lu, le reste ne prouve rien.
+      check(
+        !luErr && lu?.status === 'CONVERTED',
+        'Le profil lit RÉELLEMENT le devis, et il est bien CONVERTI',
+        luErr ? `requête en erreur : ${luErr.message}` : `statut ${lu?.status ?? '?'}`
+      )
+
+      const motif = lu?.status_reason ?? ''
+
+      check(
+        !/CDE-C-\d/.test(motif),
+        '🟥 Le motif du devis converti ne livre AUCUNE référence de commande',
+        `motif lu : « ${motif} »`
+      )
+      check(
+        motif.length > 0,
+        '🟥 …et il dit tout de même le FAIT : fermer la fuite ne rend pas l’écran muet',
+        `motif lu : « ${motif} »`
+      )
+
+      const { data: cmdVues } = await devisSeul.from('sales_orders').select('id')
+      check(
+        (cmdVues ?? []).length === 0,
+        'Et la commande, elle, reste invisible à ce profil (A-14)',
+        `${(cmdVues ?? []).length} ligne(s)`
+      )
+
+      await devisSeul.auth.signOut()
     }
 
     /* ================================================================== */

@@ -1337,29 +1337,83 @@ async function main() {
         .select('status')
         .eq('id', decor.commande)
         .maybeSingle()
-      check(commande?.status === 'INVOICED', 'La commande passe à « Facturée »', commande?.status ?? '')
+      check(
+        commande?.status === 'INVOICED',
+        'La commande entre en facturation',
+        commande?.status ?? ''
+      )
 
-      /* DOUBLE FACTURATION — par la fonction, puis par appel direct. */
-      const { error: seconde } = await api.comptable.rpc('create_invoice_from_purchase_order', {
-        p_order_id: decor.commande,
-        p_invoice_date: null,
-        p_due_date: null,
-        p_external_ref: null,
-      })
-      check(Boolean(seconde), '🟥 Une commande ne porte pas deux factures vivantes (fonction)')
+      /*
+       * 🟥 DEC-053 — LE SOLDE S'AJOUTE À L'ACOMPTE.
+       *
+       * Cette section éprouvait l'inverse jusqu'au 29/09/2026, et elle avait
+       * raison de le faire : la règle d'alors était « une commande, au plus une
+       * facture non annulée ». La Direction a tranché autrement. Le contrôle
+       * n'est pas supprimé — il est RETOURNÉ.
+       */
+      const { data: solde, error: eSolde } = await api.comptable.rpc(
+        'create_invoice_from_purchase_order',
+        {
+          p_order_id: decor.commande,
+          p_invoice_date: null,
+          p_due_date: null,
+          p_external_ref: `FA-SOLDE-${STAMP}`,
+        }
+      )
+      check(
+        !eSolde && Boolean(solde),
+        '🟥 DEC-053 : une SECONDE facture s’enregistre sur la même commande',
+        eSolde?.message ?? ''
+      )
+      decor.factureSolde = solde
 
-      const { error: force } = await api.comptable.from('supplier_invoices').insert({
-        invoice_no: `FAC-F-FORCE-${STAMP}`,
-        supplier_id: decor.fournisseur,
-        invoice_date: dayOffset(0),
-        purchase_order_id: decor.commande,
-      })
-      check(Boolean(force), '🟥 Ni par appel direct — l’index partiel fait autorité')
+      const { data: rattachees } = await api.comptable
+        .from('supplier_invoices')
+        .select('id, status')
+        .eq('purchase_order_id', decor.commande)
+      check(
+        (rattachees ?? []).filter((f) => f.status !== 'CANCELLED').length === 2,
+        '🟥 Les DEUX factures sont rattachées à la commande, et vivantes',
+        `${(rattachees ?? []).length} rattachée(s)`
+      )
+
+      /*
+       * 🟥 CE QUI RESTE REFUSÉ, ET CE QUI GARDE MAINTENANT.
+       *
+       * Retirer l'unicité n'ouvre pas tout : le déclencheur de cohérence
+       * demeure. C'est désormais LUI le garde-fou — il exige que la facture et
+       * sa commande partagent le FOURNISSEUR.
+       *
+       * On l'éprouve par un appel DIRECT, en contournant les fonctions : une
+       * facture rattachée à la commande mais portant un AUTRE fournisseur doit
+       * être refusée par la base elle-même.
+       */
+      const { data: autreFournisseur } = await api.comptable
+        .from('suppliers')
+        .select('id')
+        .neq('id', decor.fournisseur)
+        .limit(1)
+        .maybeSingle()
+
+      if (!autreFournisseur) {
+        check(false, '🟥 Aucun second fournisseur lisible : le contrôle de cohérence n’a pas pu être éprouvé')
+      } else {
+        const { error: force } = await api.comptable.from('supplier_invoices').insert({
+          invoice_no: `FAC-F-FORCE-${STAMP}`,
+          supplier_id: autreFournisseur.id,
+          invoice_date: dayOffset(0),
+          purchase_order_id: decor.commande,
+        })
+        check(
+          Boolean(force),
+          '🟥 Une facture rattachée à la commande d’un AUTRE fournisseur est refusée par la base',
+          force ? '' : 'acceptée — la cohérence facture/commande/fournisseur ne tient plus'
+        )
+      }
 
       /*
        * 🟥 CE QUI RESTE POSSIBLE, ET QUI COMPTE : une facture reçue POUR UN
-       * COMPLÉMENT s'enregistre toujours, sans commande d'origine. Aucune dette
-       * ne disparaît — seul le LIEN structurel est unique.
+       * COMPLÉMENT s'enregistre toujours, sans commande d'origine.
        */
       const { data: complement, error: cError } = await api.comptable.rpc(
         'create_supplier_invoice',
@@ -1796,7 +1850,22 @@ async function main() {
       })
       await page.waitForFunction(() => document.querySelector('main') !== null)
       texte = await mainText(page)
-      check(texte.includes('Facturée'), 'La fiche de la commande annonce « Facturée »')
+      /*
+       * 🟥 DEC-053 — LE STATUT NE DIT PLUS « FACTURÉE » POUR UN ACOMPTE.
+       *
+       * La commande porte deux factures couvrant son total : la SITUATION est
+       * « Facturée », mais le STATUT, lui, dit « En facturation ». Les deux
+       * coexistent sur la fiche, et c'est voulu — l'un est le cycle, l'autre le
+       * constat.
+       */
+      check(
+        texte.includes('En facturation'),
+        '🟥 Le statut de la commande dit « En facturation », non « Facturée »'
+      )
+      check(
+        texte.includes('Facturée') || texte.includes('Partiellement facturée'),
+        '🟥 La situation de facturation est affichée, dérivée des factures'
+      )
       check(texte.includes('Origine'), 'Elle nomme son origine')
 
       /* 🟥 LA FACTURE EST BIEN DANS LE MODULE DE FACTURATION EXISTANT. */
@@ -1921,6 +1990,33 @@ async function main() {
       })
       check(!annuleFacture, 'La facture s’annule', annuleFacture?.message ?? '')
 
+      /*
+       * 🟥 DEC-053 — LA COMMANDE NE REDESCEND QUE SI ELLE SE VIDE.
+       *
+       * L'acompte vient d'être annulé, mais le SOLDE vit encore. La commande
+       * doit donc rester en facturation. C'est le cas métier du brief : annuler
+       * une facture ne défait pas la facturation d'une commande qui en porte
+       * d'autres.
+       */
+      const { data: apresUne } = await api.comptable
+        .from('purchase_orders')
+        .select('status')
+        .eq('id', decor.commande)
+        .maybeSingle()
+
+      check(
+        apresUne?.status === 'INVOICED',
+        '🟥 DEC-053 : une facture annulée sur deux ne rend PAS la commande à « Passée »',
+        apresUne?.status ?? ''
+      )
+
+      // On vide maintenant la commande de sa dernière facture active.
+      const { error: annuleSolde } = await api.comptable.rpc('cancel_supplier_invoice', {
+        p_invoice_id: decor.factureSolde,
+        p_reason: 'Annulation de recette',
+      })
+      check(!annuleSolde, 'Le solde s’annule à son tour', annuleSolde?.message ?? '')
+
       const { data: commande, error: cError } = await api.comptable
         .from('purchase_orders')
         .select('status, invoiced_at')
@@ -1929,7 +2025,7 @@ async function main() {
 
       check(
         !cError && commande?.status === 'CONFIRMED' && commande?.invoiced_at === null,
-        '🟥 Facture annulée → la commande revient à « Passée » et se refacture',
+        '🟥 DERNIÈRE facture annulée → la commande revient à « Passée » et se refacture',
         cError ? `requête en erreur : ${cError.message}` : (commande?.status ?? '')
       )
 
