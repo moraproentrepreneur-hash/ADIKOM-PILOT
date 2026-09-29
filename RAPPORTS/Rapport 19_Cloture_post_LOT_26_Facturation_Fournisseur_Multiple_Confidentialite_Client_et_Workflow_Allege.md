@@ -347,7 +347,7 @@ elle, parce qu'elle est métier.
 | # | Point | Nature |
 | :-: | --- | --- |
 | 1 | **P-5** — prix d'achat par fournisseur au catalogue | 🟥 **Toujours ouvert et intact.** DEC-053 n'y touche pas |
-| 2 | **Insertion directe dans `supplier_invoices`** | 🟦 Un profil disposant de `billing.supplier_invoices.create` peut insérer par PostgREST sans passer par les fonctions, donc **sans le numéroteur**. Pré-existant au LOT 5, masqué jusqu'ici par l'index d'unicité. **À trancher**, hors périmètre |
+| 2 | **Insertion directe dans `supplier_invoices`** | ✅ **DETTE SOLDÉE**, 29/09/2026 — migration 107. Une facture fournisseur naît désormais par sa fonction, jamais par écriture directe. **Voir Rapport 20** |
 | 3 | **Échéancier contractuel fournisseur** | 🟦 Non modélisé. C'est lui qui justifierait un objet « tranche de commande » |
 | 4 | **Traçabilité ligne à ligne facture ↔ commande** | 🟦 Inchangée, conforme au Plan 02 §9.2 |
 | 5 | **Remises fournisseurs** · **DEC-051** | 🟦 Non modélisées / non implémentée |
