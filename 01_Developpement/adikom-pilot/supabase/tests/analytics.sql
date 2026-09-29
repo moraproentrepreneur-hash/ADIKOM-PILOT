@@ -789,12 +789,27 @@ end $$;
 -- --- 13. UNE FACTURE FOURNISSEUR NON VALIDÉE N'EST PAS UNE DETTE --------------------------------
 do $$
 declare
-  v_sup uuid := (select supplier from recette_stats);
-  v_new uuid;
-  s     record;
-  v_ref bigint;
+  v_sup   uuid := (select supplier from recette_stats);
+  v_new   uuid;
+  s       record;
+  v_ref   bigint;
+  v_brut0 bigint;
 begin
-  select payable_amount into v_ref
+  /*
+   * 🟥 CE CONTRÔLE MESURE UNE VARIATION, NON UN TOTAL.
+   *
+   * `billing_supplier_stats` est un indicateur GLOBAL : il compte tout ce que la
+   * base porte sur la période. Le comparer à une valeur ABSOLUE — « 1 000 000 » —
+   * revenait à affirmer que rien d'autre n'existe, et cette affirmation tombe au
+   * premier enrichissement du jeu de démonstration. C'est exactement ce qui est
+   * arrivé le 23/09/2026 : le scénario d'achat du LOT 26 a ajouté une facture
+   * fournisseur validée de 171 000 KMF, et la recette a échoué pour une raison
+   * qui n'était PAS un défaut du SaaS.
+   *
+   * Ce que la recette veut dire est : « un BROUILLON n'ajoute rien ». Elle relève
+   * donc l'indicateur AVANT, et vérifie qu'il n'a pas bougé APRÈS.
+   */
+  select payable_amount, gross_amount into v_ref, v_brut0
   from public.billing_supplier_stats((now() at time zone 'Indian/Comoro')::date - 10, (now() at time zone 'Indian/Comoro')::date);
 
   v_new := public.create_supplier_invoice(v_sup, (now() at time zone 'Indian/Comoro')::date, null, 'FRN-STATS-2', 'En saisie');
@@ -805,11 +820,13 @@ begin
     raise exception 'Une facture non validée est comptée comme dette : % contre %.',
       s.payable_amount, v_ref;
   end if;
-  if s.gross_amount <> 1000000 then
-    raise exception 'Un brouillon est compté dans le facturé fournisseur : %.', s.gross_amount;
+  if s.gross_amount <> v_brut0 then
+    raise exception
+      'Un brouillon est compté dans le facturé fournisseur : % contre % avant.',
+      s.gross_amount, v_brut0;
   end if;
 
-  raise notice '[OK] 13. Brouillon fournisseur : aucune dette, aucun facturé.';
+  raise notice '[OK] 13. Brouillon fournisseur : aucune dette, aucun facturé (variation nulle).';
 end $$;
 
 

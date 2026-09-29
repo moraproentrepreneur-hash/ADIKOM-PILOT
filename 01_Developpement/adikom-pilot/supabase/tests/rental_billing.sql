@@ -239,7 +239,21 @@ begin
     'public.set_rental_billing_plan(uuid, public.rental_type, public.rental_billing_cadence)',
     'public.cancel_rental_billing_period(uuid)',
     'public.extend_rental(uuid, timestamptz, text, bigint, public.pricing_unit, text, text)',
-    'public.create_customer_invoice(uuid, date, date, uuid, text, uuid)',
+    /*
+     * ⚠ SEPT PARAMÈTRES DEPUIS LE LOT 25, ET NON SIX.
+     *
+     * La migration 098 a ajouté `p_sales_order_id` en dernier, et RETIRÉ la
+     * signature à six — deux surcharges coexistantes rendraient tout appel par
+     * paramètres nommés ambigu. Ce contrôle nommait encore l'ancienne : il
+     * échouait donc sur « function does not exist », et non sur ce qu'il
+     * cherche. Trouvé par la non-régression du LOT 26.
+     *
+     * Le nom est écrit EN DUR parce que c'est le SEUL moyen de garantir qu'on
+     * teste bien CETTE fonction — un `proname` seul en attraperait une autre le
+     * jour où une homonyme apparaîtrait. Le prix de cette précision est qu'il
+     * faut la suivre quand la signature bouge.
+     */
+    'public.create_customer_invoice(uuid, date, date, uuid, text, uuid, uuid)',
     'public.issue_customer_invoice(uuid, text)',
     'public.cancel_customer_invoice(uuid, text)'
   ] loop

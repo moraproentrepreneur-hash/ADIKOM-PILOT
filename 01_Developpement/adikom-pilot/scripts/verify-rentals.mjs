@@ -184,6 +184,25 @@ async function main() {
 
   console.log(`\nCible : ${base}\n`)
 
+  /*
+   * ON NE DÉMARRE PAS SUR LE DÉGÂT DU PASSAGE PRÉCÉDENT.
+   *
+   * LOT 26 : un passage interrompu par le réseau a laissé trois comptes
+   * `recette.loc.*`. Sans cette garde, le passage suivant en crée trois de
+   * plus et l'empreinte DEMO ne dit rien — les résidus s'accumulent en
+   * silence.
+   */
+  const { data: residus } = await admin
+    .from('app_users')
+    .select('username')
+    .like('username', 'recette.loc.%')
+  if ((residus ?? []).length > 0) {
+    throw new Error(
+      `Comptes de recette laissés par un passage précédent : ` +
+        `${residus.map((u) => u.username).join(', ')}. Les supprimer avant de relancer.`
+    )
+  }
+
   const accounts = {}
   const fixtures = {}
   const browser = await chromium.launch()
@@ -549,10 +568,42 @@ async function main() {
     if (fixtures.categoryId)
       await admin.from('vehicle_categories').delete().eq('id', fixtures.categoryId)
 
+    /*
+     * LE NETTOYAGE LIT SES PROPRES ERREURS.
+     *
+     * LOT 26 : `.delete()` et `deleteUser()` RENDENT leur erreur, ils ne la
+     * lèvent pas. Une coupure réseau pendant cette boucle laissait donc quatre
+     * comptes derrière elle pendant que la recette annonçait « comptes de
+     * recette supprimés » et sortait avec 34 contrôles réussis.
+     *
+     * Un nettoyage qui ne vérifie pas son effet n'est pas un nettoyage : c'est
+     * une déclaration. On supprime, PUIS on relit.
+     */
     for (const account of Object.values(accounts)) {
-      await admin.from('app_users').delete().eq('id', account.id)
-      await admin.auth.admin.deleteUser(account.id)
+      await admin.from('user_permissions').delete().eq('user_id', account.id)
+      const { error: profileError } = await admin.from('app_users').delete().eq('id', account.id)
+      const { error: authError } = await admin.auth.admin.deleteUser(account.id)
+
+      if (profileError || authError) {
+        console.log(
+          `\n${RED}✖ COMPTE DE RECETTE NON SUPPRIMÉ : ${account.username ?? account.id}${RESET}` +
+            `\n  ${profileError?.message ?? ''} ${authError?.message ?? ''}` +
+            `\n  Le supprimer manuellement avant toute autre opération.`
+        )
+        failed += 1
+      }
     }
+
+    const { data: reste } = await admin
+      .from('app_users')
+      .select('username')
+      .like('username', 'recette.loc.%')
+    check(
+      (reste ?? []).length === 0,
+      'Aucun compte de recette ne subsiste',
+      (reste ?? []).map((u) => u.username).join(', ')
+    )
+
     console.log(`\n${DIM}Sujets et comptes de recette supprimés. Données DEMO intactes.${RESET}`)
   }
 
