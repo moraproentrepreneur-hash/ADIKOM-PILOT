@@ -301,6 +301,26 @@ BROUILLON · CONFIRMÉE · LIVRÉE ──annuler──▶ ANNULÉE
 | Lignes | **gelées**, retrait compris | Retirer une ligne change le total |
 | Statut, horodatages, motif | écrits par l'acte | Chacun sous la capacité de son passage |
 
+> ### 🟥 Doctrine — un motif ne franchit pas la frontière d'un menu
+>
+> **Un texte écrit PAR LE SYSTÈME sur un document du menu A ne porte pas la
+> RÉFÉRENCE d'un document du menu B.** Le fait se dit ; la référence se demande
+> à la capacité qui la garde.
+>
+> `status_reason` et `notes` appartiennent au document qui les porte, et
+> s'ouvrent avec la capacité de CE document. Y écrire « Commande
+> CDE-C-2026-000123 » livre donc la référence à qui n'a pas le droit de la voir
+> — pendant que le bloc dédié de la fiche, lui correctement gardé, affirme le
+> contraire. L'écran dirait vrai et faux dans la même page.
+>
+> On écrit donc **« Convertie en commande »**, **« Commande annulée »**,
+> **« Facture annulée »**. Le lien structurel — `sales_quote_id`,
+> `sales_order_id`, `purchase_order_id` — porte déjà la référence, sous la
+> capacité qui la garde : rien n'est perdu, seule la fuite est fermée.
+>
+> Établie par la migration 104 (fournisseur, 23/09/2026), **étendue au commerce
+> client par la migration 106** (29/09/2026).
+
 🟥 **Annoter, c'est modifier.** Une observation postérieure exige
 `commerce.sales_quotes.update` ou `commerce.sales_orders.update` **dans tous les
 états** — et non la capacité d'un voisin. La policy d'écriture admet
@@ -969,10 +989,26 @@ Le système les rend **comparables** — la fiche de la commande affiche les deu
 totaux et leur **écart** — il ne les force pas à coïncider. Les forcer
 reviendrait à **réécrire un document reçu**.
 
-## 22.3 🟦 Une commande, au plus une facture non annulée
+## 22.3 ~~🟦 Une commande, au plus une facture non annulée~~ → **DEC-053**
 
-**La règle appliquée.** Une commande fournisseur porte **au plus une facture non
-annulée**, par un index d'unicité partiel — de la même forme que côté client.
+> ### ⚠️ RÈGLE REMPLACÉE LE 29 SEPTEMBRE 2026 — **DEC-053**
+>
+> La Direction a tranché la question posée ci-dessous : **une commande
+> fournisseur peut porter PLUSIEURS factures** — un acompte puis un solde.
+> L'index d'unicité a été retiré ; le déclencheur de cohérence demeure.
+>
+> **`INVOICED` signifie désormais « en facturation »**, pas « soldée ». La
+> situation réelle — non facturée, partiellement facturée, facturée, et l'écart
+> — se **dérive** des factures et n'est persistée nulle part. Annuler une
+> facture ne rend la commande à « passée » que s'il n'en reste aucune d'active.
+>
+> Le raisonnement ci-dessous est **conservé tel qu'il a été écrit** : il explique
+> ce que l'architecture du LOT 26 imposait, et pourquoi la question avait été
+> posée plutôt que tranchée. Voir **§22.4** pour la règle en vigueur.
+
+**La règle appliquée AU LOT 26.** Une commande fournisseur portait **au plus une
+facture non annulée**, par un index d'unicité partiel — de la même forme que
+côté client.
 
 🟥 **Ce point n'est PAS tranché par symétrie avec DEC-050**, qui porte
 expressément sur la commande **client**. Il est **déduit de l'architecture**, et
@@ -1005,6 +1041,67 @@ dette ne disparaît, aucun paiement n'est empêché.**
 > Si oui, l'extension est connue et **additive**. **Aucune option n'a été choisie
 > d'office** : la règle appliquée est celle que l'architecture documentée impose
 > aujourd'hui. Voir le Rapport 18.
+>
+> ✅ **RÉPONSE DE LA DIRECTION, 29 septembre 2026 : OUI.** Voir §22.3 bis.
+
+## 22.3 bis 🟥 DEC-053 — plusieurs factures pour une commande
+
+**La règle en vigueur.** Une commande fournisseur peut être rattachée à
+**plusieurs factures fournisseurs**.
+
+```
+Commande fournisseur            1 000 000 KMF
+  ├─ facture 1 — acompte          300 000 KMF
+  └─ facture 2 — solde            700 000 KMF
+```
+
+**Ce qui a changé** : l'index d'unicité `supplier_invoices_one_per_purchase_order_idx`
+a été **retiré**, et trois fonctions ne refusent plus la seconde facture.
+
+**Ce qui n'a PAS changé** : aucune table, aucune colonne, aucune capacité, aucune
+valeur d'énumération, aucun objet « tranche de commande ». Le lien existait
+déjà — seule son unicité était contrainte. Le **déclencheur de cohérence**
+facture ↔ commande ↔ fournisseur demeure : c'est lui le garde-fou utile, et non
+le nombre de factures.
+
+### Facturation partielle ≠ paiement partiel
+
+```
+COMMANDE ─▶ une ou plusieurs FACTURES ─▶ un ou plusieurs RÈGLEMENTS ─▶ TRÉSORERIE
+```
+
+La trésorerie ne bouge **qu'au règlement**. Aucun mécanisme de paiement
+parallèle n'existe.
+
+### Le statut, et la situation
+
+`INVOICED` est conservé, **sans état partiel ajouté**, et son libellé devient
+**« En facturation »** : la commande est entrée en facturation, elle n'est pas
+nécessairement soldée.
+
+Il est conservé parce qu'il **porte une garde** — une commande `INVOICED` ne
+s'annule pas. Faire reposer cette protection sur un comptage de factures lu à
+travers RLS l'exposerait à conclure « aucune » et à laisser passer.
+
+La **situation de facturation** est **dérivée**, jamais persistée :
+
+| Situation | Dérivée de |
+| --- | --- |
+| Non facturée | aucune facture active |
+| Partiellement facturée | cumul des factures actives **<** total de la commande |
+| Facturée | cumul **≥** total de la commande |
+| Non lisible | un montant nécessaire n'est pas lisible avec les droits du lecteur |
+
+🟥 **L'écart se constate, il ne se refuse pas.** Une facture fournisseur est un
+document **reçu** : elle constate ce que le fournisseur réclame. Aucune règle
+« total des factures = montant de la commande » n'existe, et **le contenu d'une
+facture reçue n'est jamais modifié pour la faire correspondre à la commande**.
+
+### L'annulation
+
+Annuler une facture ne rend la commande à « passée » **que s'il ne reste aucune
+facture active**. Une facture annulée ne contribue à aucun montant, et **aucune
+facture historique n'est supprimée**.
 
 ## 22.4 Colonnes ajoutées — toutes nullables
 
@@ -1216,7 +1313,7 @@ d'offre dont elle est née, et une facture fournisseur cite sa commande.
 
 | # | Point | Nature |
 | :-: | --- | --- |
-| 1 | **Plusieurs factures pour une même commande** — acompte puis solde | 🟥 **Question posée à la Direction** (§22.3). La règle appliquée est celle que l'architecture impose ; rien n'est perdu entre-temps |
+| 1 | **Plusieurs factures pour une même commande** — acompte puis solde | ✅ **TRANCHÉ — DEC-053**, 29/09/2026 : **oui**, et la règle est en vigueur (§22.3 bis) |
 | 2 | **Prix d'achat par fournisseur au catalogue** — P-5 | 🟥 **Ouvert, et intact** (§19.3). Le lot fonctionne sans le trancher |
 | 3 | **Remises consenties par un fournisseur** | 🟦 Non modélisées. DEC-051 porte sur les remises **clients** ; rien n'a été validé pour l'achat (§17.3) |
 | 4 | **Traçabilité ligne à ligne de la facture** | 🟦 Plan 02 §9.2 énumère **quatre** colonnes pour `supplier_invoice_lines`, sans `source_order_line_id`. L'origine est portée par l'en-tête |
@@ -1228,3 +1325,4 @@ d'offre dont elle est née, et une facture fournisseur cite sa commande.
 
 **ADIKOM PILOT — Module 11 : Commerce**
 **LOT 25 · DEC-049 · Commerce client — LOT 26 · DEC-052 · Commerce fournisseur**
+**DEC-053 · Plusieurs factures pour une commande fournisseur (29/09/2026)**

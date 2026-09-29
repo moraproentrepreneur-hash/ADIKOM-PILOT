@@ -17,11 +17,15 @@ import {
   listPurchaseOrderLines,
 } from '@/features/purchasing/data'
 import {
+  PURCHASE_INVOICING_LABELS,
+  PURCHASE_INVOICING_TONES,
   PURCHASE_LINE_KIND_LABELS,
   PURCHASE_ORDER_STATUS_LABELS,
   PURCHASE_ORDER_STATUS_TONES,
   PURCHASE_ORDER_TRANSITIONS,
   invoiceGap,
+  purchaseInvoicedTotal,
+  purchaseInvoicingState,
   purchaseLineKind,
   purchaseOrderIsEditable,
   purchaseOrderIsInvoiceable,
@@ -101,8 +105,22 @@ export default async function PurchaseOrderPage(
     (next: PurchaseOrderStatus) => (next === 'CANCELLED' ? canCancel : canValidate)
   )
 
-  const liveInvoice = (invoices ?? []).find((invoice) => invoice.status !== 'CANCELLED') ?? null
-  const gap = liveInvoice ? invoiceGap(order.total, liveInvoice.gross) : null
+  /*
+   * DEC-053 — la commande peut porter PLUSIEURS factures.
+   *
+   * L'écart et la situation se calculent donc sur le CUMUL des factures non
+   * annulées, et non sur la première trouvée. Une facture annulée ne contribue
+   * à rien : elle reste affichée, barrée de son badge, mais sort du compte.
+   *
+   * La situation n'est persistée nulle part : elle se dérive ici, à chaque
+   * affichage, et ne peut donc pas se désynchroniser de ce qu'elle décrit.
+   */
+  const activeInvoices = (invoices ?? []).filter((invoice) => invoice.status !== 'CANCELLED')
+  const invoicedTotal = canSeeInvoices ? purchaseInvoicedTotal(invoices ?? []) : null
+  const invoicingState = canSeeInvoices
+    ? purchaseInvoicingState(order.total, invoicedTotal, activeInvoices.length)
+    : 'UNKNOWN'
+  const gap = activeInvoices.length > 0 ? invoiceGap(order.total, invoicedTotal) : null
 
   return (
     <>
@@ -297,7 +315,20 @@ export default async function PurchaseOrderPage(
             reviendrait à réécrire un document reçu. L'écart est donc montré, à
             la vue de qui contrôle.
           */}
-          <Card title="Facture fournisseur">
+          <Card title="Factures fournisseurs">
+            {canSeeInvoices && (
+              <p className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+                <Badge tone={PURCHASE_INVOICING_TONES[invoicingState]}>
+                  {PURCHASE_INVOICING_LABELS[invoicingState]}
+                </Badge>
+                {invoicedTotal !== null && activeInvoices.length > 0 && (
+                  <span className="text-muted tabular">
+                    {formatAmount(invoicedTotal)} facturé
+                    {activeInvoices.length > 1 ? ` sur ${activeInvoices.length} factures` : ''}
+                  </span>
+                )}
+              </p>
+            )}
             {!canSeeInvoices ? (
               <p className="text-sm text-muted">
                 Votre compte ne peut pas consulter les factures fournisseurs : l’état de
@@ -350,7 +381,11 @@ export default async function PurchaseOrderPage(
                 }`}
               >
                 {gap === 0 ? (
-                  <>La facture reçue correspond exactement au montant commandé.</>
+                  <>
+                    {activeInvoices.length > 1
+                      ? 'Les factures reçues couvrent exactement le montant commandé.'
+                      : 'La facture reçue correspond exactement au montant commandé.'}
+                  </>
                 ) : (
                   <>
                     Le fournisseur facture{' '}

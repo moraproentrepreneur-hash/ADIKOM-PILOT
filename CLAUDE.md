@@ -340,6 +340,8 @@ Le commerce CLIENT — devis et commandes clients — a été livré au LOT 25 (
 
 \*\*Un « devis fournisseur » est un document REÇU\*\* : ADIKOM enregistre l'offre d'un fournisseur, elle ne lui émet rien. Son prix est celui de l'offre, saisi — jamais résolu du catalogue, dont le coût de référence n'a pas de dimension fournisseur (P-5, resté ouvert).
 
+\*\*Une commande fournisseur peut porter PLUSIEURS factures\*\* — un acompte puis un solde (DEC-053). Le statut `INVOICED` signifie « en facturation », pas « soldée » : la situation réelle — non facturée, partiellement facturée, facturée, et l'écart — se DÉRIVE des factures, et n'est persistée nulle part. Une facture reçue peut légitimement s'écarter du montant commandé : l'écart se constate, il ne se refuse jamais.
+
 \*\*Produits : toujours pas.\*\* Aucune table de produit, aucun stock, aucun entrepôt, aucune réception physique de marchandise.
 
 
@@ -2063,6 +2065,240 @@ Tester notamment :
 
 
 Une fonctionnalité n'est pas terminée simplement parce que le code compile.
+
+
+
+\---
+
+
+
+\# 47 bis. Portée des tests — workflow allégé
+
+
+
+\*\*Règle permanente, validée par la Direction le 29 septembre 2026.\*\*
+
+
+
+Rejouer systématiquement TOUTES les recettes historiques d'ADIKOM PILOT à chaque évolution devient \*\*exceptionnel\*\*.
+
+
+
+La qualité se mesure à la \*\*pertinence\*\* des contrôles, pas à leur nombre.
+
+
+
+\## Workflow normal
+
+
+
+ANALYSE CIBLÉE
+
+
+
+↓
+
+
+
+CODE
+
+
+
+↓
+
+
+
+TESTS DU LOT / CORRECTIF
+
+
+
+↓
+
+
+
+TESTS DES DÉPENDANCES RÉELLEMENT TOUCHÉES
+
+
+
+↓
+
+
+
+LINT → TYPECHECK → BUILD
+
+
+
+↓
+
+
+
+COMMIT → PUSH → VERCEL
+
+
+
+↓
+
+
+
+RECETTE PRODUCTION CIBLÉE
+
+
+
+↓
+
+
+
+RAPPORT
+
+
+
+\## Déterminer le périmètre
+
+
+
+Avant de tester, réponds à quatre questions :
+
+
+
+1\. quels modules ont été modifiés ?
+
+2\. quelles fonctions partagées ont été modifiées ?
+
+3\. quelles tables, policies ou RLS ont été modifiées ?
+
+4\. quelles dépendances peuvent réellement régresser ?
+
+
+
+Puis teste CE périmètre.
+
+
+
+Une modification qui ne touche qu'un module ne justifie pas de rejouer les avenants de location, les tarifs fournisseurs, le relevé global, les mots de passe ni tout le commerce historique.
+
+
+
+\## Quand la non-régression étendue reste OBLIGATOIRE
+
+
+
+Lorsqu'une modification touche réellement une brique transversale :
+
+
+
+\- permissions et capacités partagées ;
+
+\- RLS transversale ;
+
+\- authentification ;
+
+\- sauvegarde, réinitialisation, restauration ;
+
+\- audit central ;
+
+\- facturation commune ;
+
+\- paiements ;
+
+\- trésorerie ;
+
+\- numérotation partagée ;
+
+\- fonctions communes à plusieurs modules ;
+
+\- migration réécrivant une fonction ou une policy utilisée par plusieurs lots ;
+
+\- changement structurel majeur ;
+
+\- préparation d'une version majeure.
+
+
+
+Même alors : \*\*commence par les tests ciblés\*\*, puis élargis selon le risque réel.
+
+
+
+\## Règle d'escalade
+
+
+
+Si un test ciblé révèle une régression, NE RELANCE PAS tout le SaaS. Monte d'un niveau à la fois :
+
+
+
+niveau 1 : le test directement concerné
+
+
+
+niveau 2 : le module concerné
+
+
+
+niveau 3 : les modules dépendants
+
+
+
+niveau 4 : la suite transversale
+
+
+
+niveau 5 : la non-régression complète, uniquement si elle est justifiée
+
+
+
+\## Sauvegarde
+
+
+
+Le cycle destructif SAUVEGARDE → RESET TOTAL → RESTAURATION ne se rejoue plus automatiquement.
+
+
+
+Il redevient \*\*obligatoire\*\* dès qu'une évolution change :
+
+
+
+\- `backup\_scope` ;
+
+\- `backup\_columns` ;
+
+\- le format de sauvegarde ;
+
+\- les tables sauvegardées ;
+
+\- le moteur de réinitialisation ou de restauration.
+
+
+
+Sinon, un contrôle ciblé suffit — et la sauvegarde préalable à une migration, elle, reste due dans tous les cas.
+
+
+
+\## Coupures réseau
+
+
+
+Un échec RÉSEAU peut être rejoué. Un échec FONCTIONNEL ne doit jamais être masqué par un rejeu.
+
+
+
+Les scripts de recette doivent vérifier les erreurs de leur mise en place ET de leur démontage, et vérifier réellement leur nettoyage. Une garde d'entrée s'impose lorsqu'un résidu du passage précédent peut fausser la recette.
+
+
+
+Ne transforme pas pour autant chaque script historique en chantier préventif. Corrige un script ancien seulement s'il sert le périmètre courant, ou s'il révèle effectivement un défaut.
+
+
+
+\## Rapports
+
+
+
+Les rapports restent obligatoires. Un rapport documente : ce qui a changé, pourquoi, les tests réellement pertinents, les risques, les résultats et les dettes éventuelles.
+
+
+
+Il n'a pas à produire artificiellement des milliers de contrôles pour qu'un lot soit sérieux.
 
 
 

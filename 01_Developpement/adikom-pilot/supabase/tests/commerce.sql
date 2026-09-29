@@ -1378,4 +1378,68 @@ begin
 end $$;
 
 
+-- --- 28. 🟥 UN MOTIF NE FRANCHIT PAS LA FRONTIÈRE D'UN MENU -----------------
+--
+-- La dette du Rapport 18 §13.2, soldée.
+--
+-- Le LOT 26 avait trouvé côté FOURNISSEUR qu'une fonction écrivait la référence
+-- d'un document du menu B dans le `status_reason` d'un document du menu A. La
+-- migration 104 l'a corrigé côté fournisseur et a laissé l'écart IDENTIQUE côté
+-- client — par consigne, le LOT 26 n'avait pas le droit d'y toucher.
+--
+-- CE QUE CETTE SECTION CHERCHE : la CONCATÉNATION, pas le mot.
+--
+-- Un littéral qui MENTIONNE une commande reste légitime — « Convertie en
+-- commande » en est un. Ce qui est interdit, c'est d'y coller une valeur :
+-- `'Commande ' || v_no`. Chercher le mot accuserait la correction elle-même.
+do $$
+declare
+  v_fn  text;
+  v_def text;
+begin
+  foreach v_fn in array array[
+    'public.convert_sales_quote_to_order(uuid, date, date)',
+    'public.set_sales_order_status(uuid, order_status, text)',
+    'public.cancel_customer_invoice(uuid, text)',
+    'public.create_invoice_from_sales_order(uuid, date, date)'
+  ] loop
+    v_def := pg_get_functiondef(v_fn::regprocedure);
+
+    if v_def like '%''Commande '' || %' then
+      raise exception
+        '% livre encore une référence de commande dans un texte du système.', v_fn;
+    end if;
+
+    if v_def like '%''Facture '' || %' then
+      raise exception
+        '% livre encore une référence de facture dans un texte du système.', v_fn;
+    end if;
+  end loop;
+
+  -- Le FAIT est toujours dit : fermer la fuite ne doit pas rendre l'écran muet.
+  if pg_get_functiondef('public.convert_sales_quote_to_order(uuid, date, date)'::regprocedure)
+     not like '%Convertie en commande%' then
+    raise exception 'Le devis converti ne porte plus aucun motif.';
+  end if;
+
+  if pg_get_functiondef('public.cancel_customer_invoice(uuid, text)'::regprocedure)
+     not like '%Facture annulée%' then
+    raise exception 'La commande rendue après annulation ne porte plus aucun motif.';
+  end if;
+
+  -- Et le LIEN STRUCTUREL demeure : c'est par lui que l'utilisateur AUTORISÉ
+  -- retrouve la référence, sous la capacité qui la garde.
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'sales_orders'
+      and column_name = 'sales_quote_id'
+  ) then
+    raise exception 'Le lien devis → commande a disparu avec la fuite.';
+  end if;
+
+  raise notice
+    '[OK] 28. 🟥 Le commerce CLIENT dit le fait, jamais la référence du menu voisin.';
+end $$;
+
+
 rollback;

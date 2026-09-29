@@ -12,8 +12,12 @@ import {
   PURCHASE_QUOTE_STATUS_TONES,
   PURCHASE_QUOTE_TRANSITIONS,
   PURCHASE_LINE_KIND_LABELS,
+  PURCHASE_INVOICING_LABELS,
+  PURCHASE_INVOICING_TONES,
   invoiceGap,
   purchaseDocumentTotal,
+  purchaseInvoicedTotal,
+  purchaseInvoicingState,
   purchaseLineKind,
   purchaseLineTotal,
   purchaseOrderIsEditable,
@@ -199,8 +203,21 @@ describe('vocabulaire de la commande fournisseur', () => {
     expect(purchaseOrderIsInvoiceable('CONFIRMED')).toBe(true)
     expect(purchaseOrderIsInvoiceable('DELIVERED')).toBe(true)
     expect(purchaseOrderIsInvoiceable('DRAFT')).toBe(false)
-    expect(purchaseOrderIsInvoiceable('INVOICED')).toBe(false)
     expect(purchaseOrderIsInvoiceable('CANCELLED')).toBe(false)
+  })
+
+  /**
+   * DEC-053 : l'acompte n'interdit pas le solde.
+   *
+   * C'est l'inverse de ce que le LOT 26 tenait pour vrai, et c'est pourquoi ce
+   * test le dit explicitement plutôt que de se contenter du test précédent.
+   */
+  it('facture encore une commande déjà entrée en facturation', () => {
+    expect(purchaseOrderIsInvoiceable('INVOICED')).toBe(true)
+  })
+
+  it('ne dit plus « Facturée » d’une commande qui n’a reçu qu’un acompte', () => {
+    expect(PURCHASE_ORDER_STATUS_LABELS.INVOICED).toBe('En facturation')
   })
 
   it('ne laisse modifier qu’un brouillon', () => {
@@ -300,5 +317,89 @@ describe('écart entre la commande et la facture reçue', () => {
     expect(invoiceGap(null, 240_000)).toBeNull()
     expect(invoiceGap(215_000, null)).toBeNull()
     expect(invoiceGap(null, null)).toBeNull()
+  })
+})
+
+/* ========================================================================== */
+/*  DEC-053 — la situation de facturation se DÉRIVE                            */
+/* ========================================================================== */
+
+describe('Situation de facturation d’une commande fournisseur', () => {
+  const F = (gross: number | null, status = 'VALIDATED') => ({ status, gross })
+
+  /**
+   * Le cas métier que la Direction a tranché, joué en entier :
+   *
+   *   commande  1 000 000
+   *     facture   300 000  (acompte)   → partiellement facturée
+   *     facture   700 000  (solde)     → facturée
+   */
+  it('suit l’acompte puis le solde jusqu’à la commande facturée', () => {
+    expect(purchaseInvoicingState(1_000_000, 0, 0)).toBe('NONE')
+
+    const acompte = [F(300_000)]
+    expect(purchaseInvoicedTotal(acompte)).toBe(300_000)
+    expect(purchaseInvoicingState(1_000_000, 300_000, 1)).toBe('PARTIAL')
+
+    const solde = [F(300_000), F(700_000)]
+    expect(purchaseInvoicedTotal(solde)).toBe(1_000_000)
+    expect(purchaseInvoicingState(1_000_000, 1_000_000, 2)).toBe('COMPLETE')
+  })
+
+  /**
+   * 🟥 Brief §6 — L'ANNULATION DÉFAIT LE « TOTALEMENT FACTURÉE ».
+   *
+   * La facture de 700 000 est annulée : elle ne contribue plus. La commande
+   * n'est plus facturée, elle redevient partiellement facturée. Rien n'est
+   * supprimé — la facture annulée reste, elle ne compte simplement plus.
+   */
+  it('cesse de dire « facturée » quand le solde est annulé', () => {
+    const apres = [F(300_000), F(700_000, 'CANCELLED')]
+
+    expect(purchaseInvoicedTotal(apres)).toBe(300_000)
+    expect(purchaseInvoicingState(1_000_000, 300_000, 1)).toBe('PARTIAL')
+  })
+
+  it('revient à « non facturée » quand toutes les factures sont annulées', () => {
+    const toutes = [F(300_000, 'CANCELLED'), F(700_000, 'CANCELLED')]
+
+    expect(purchaseInvoicedTotal(toutes)).toBe(0)
+    expect(purchaseInvoicingState(1_000_000, 0, 0)).toBe('NONE')
+  })
+
+  /**
+   * 🟥 Brief §3 — L'ÉCART NE FAIT PAS ÉCHOUER LE CALCUL.
+   *
+   * Une facture reçue constate ce que le fournisseur réclame : elle peut
+   * dépasser la commande. La situation reste « facturée », et l'écart se dit.
+   */
+  it('accepte qu’un fournisseur facture plus que la commande', () => {
+    expect(purchaseInvoicingState(1_000_000, 1_150_000, 2)).toBe('COMPLETE')
+    expect(invoiceGap(1_000_000, 1_150_000)).toBe(150_000)
+  })
+
+  /**
+   * DEC-017 : dire ce qu'on ne peut pas lire, plutôt que de se taire ou
+   * d'inventer. Un montant illisible ne vaut pas zéro.
+   */
+  it('refuse de conclure sur un montant illisible', () => {
+    expect(purchaseInvoicedTotal([F(300_000), F(null)])).toBeNull()
+    expect(purchaseInvoicingState(1_000_000, null, 2)).toBe('UNKNOWN')
+    expect(purchaseInvoicingState(null, 300_000, 1)).toBe('UNKNOWN')
+  })
+
+  /**
+   * Une facture annulée illisible ne doit PAS empêcher de conclure : elle ne
+   * compte pas, donc son montant n'a pas à être lu.
+   */
+  it('ignore le montant illisible d’une facture annulée', () => {
+    expect(purchaseInvoicedTotal([F(300_000), F(null, 'CANCELLED')])).toBe(300_000)
+  })
+
+  it('n’a jamais besoin d’un état persisté pour se prononcer', () => {
+    for (const état of ['NONE', 'PARTIAL', 'COMPLETE', 'UNKNOWN'] as const) {
+      expect(PURCHASE_INVOICING_LABELS[état]).toBeTruthy()
+      expect(PURCHASE_INVOICING_TONES[état]).toBeTruthy()
+    }
   })
 })

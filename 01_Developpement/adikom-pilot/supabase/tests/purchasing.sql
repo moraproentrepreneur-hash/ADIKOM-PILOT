@@ -1146,39 +1146,80 @@ begin
 end $$;
 
 
--- --- 19. UNE COMMANDE NE PORTE PAS DEUX FACTURES VIVANTES -------------------
+-- --- 19. 🟥 DEC-053 — UNE COMMANDE PORTE PLUSIEURS FACTURES -----------------
+--
+-- Cette section disait l'inverse jusqu'à DEC-053, et le LOT 26 avait raison de
+-- l'écrire : la règle d'alors était « une commande, au plus une facture non
+-- annulée ». La Direction a tranché autrement. La section n'est donc pas
+-- supprimée — elle est RETOURNÉE, et elle éprouve maintenant que le second
+-- enregistrement RÉUSSIT, puis que les gardes qui subsistent tiennent toujours.
 do $$
 declare
-  v_order uuid := (select id from recette_obj where cle = 'commande');
-  v_sup   uuid := (select id from recette_obj where cle = 'fournisseur');
-  v_n     int := 0;
+  v_order   uuid := (select id from recette_obj where cle = 'commande');
+  v_sup     uuid := (select id from recette_obj where cle = 'fournisseur');
+  v_autre   uuid;
+  v_solde   uuid;
+  v_n       int := 0;
+  v_actives int;
 begin
   perform pg_temp.agir_comme('comptable');
 
-  -- Par la fonction.
-  begin perform public.create_invoice_from_purchase_order(v_order, null, null, null);
+  -- ---------------------------------------------------------------- l'acompte
+  -- La commande est déjà « en facturation » (section 18). Le solde doit passer.
+  v_solde := public.create_invoice_from_purchase_order(v_order, null, null, 'FA-SOLDE-001');
+
+  if v_solde is null then
+    raise exception 'DEC-053 : le solde n''a pas pu être enregistré sur une commande déjà facturée.';
+  end if;
+
+  -- Les DEUX factures pointent la même commande, et les deux sont vivantes.
+  select count(*) into v_actives
+  from public.supplier_invoices
+  where purchase_order_id = v_order and status <> 'CANCELLED';
+
+  if v_actives <> 2 then
+    raise exception
+      'DEC-053 : la commande porte % facture(s) active(s) au lieu de 2.', v_actives;
+  end if;
+
+  -- `create_supplier_invoice` ne refuse plus non plus.
+  if public.create_supplier_invoice(
+       v_sup, (now() at time zone 'Indian/Comoro')::date, null, 'FA-TIERS-001', null, v_order
+     ) is null then
+    raise exception 'DEC-053 : `create_supplier_invoice` refuse encore une facture de plus.';
+  end if;
+
+  -- ------------------------------------------- ce qui reste REFUSÉ, et compte
+  --
+  -- Retirer l'unicité n'ouvre pas tout. Le déclencheur de cohérence demeure :
+  -- c'est LUI le garde-fou utile, pas le nombre de factures.
+
+  -- Un fournisseur qui n'est pas celui de la commande.
+  select id into v_autre from public.suppliers where id <> v_sup limit 1;
+  if v_autre is not null then
+    begin
+      perform public.create_supplier_invoice(
+        v_autre, (now() at time zone 'Indian/Comoro')::date, null, null, null, v_order);
+    exception when others then v_n := v_n + 1; end;
+  else
+    v_n := v_n + 1;  -- pas de second fournisseur lisible : le cas ne se pose pas
+  end if;
+
+  -- Une commande en BROUILLON ne se facture pas.
+  begin
+    perform public.create_invoice_from_purchase_order(
+      (select id from recette_obj where cle = 'commande_brouillon'), null, null, null);
   exception when others then v_n := v_n + 1; end;
 
-  -- Par `create_supplier_invoice`, qui contrôle aussi.
-  begin
-    perform public.create_supplier_invoice(
-      v_sup, (now() at time zone 'Indian/Comoro')::date, null, null, null, v_order);
-  exception when others then v_n := v_n + 1; end;
+  if v_n <> 2 then
+    raise exception
+      'Les gardes qui subsistent ne tiennent plus : % refus sur 2.', v_n;
+  end if;
 
   perform pg_temp.redevenir_service();
 
-  -- Par un INSERT direct : c'est l'INDEX qui fait autorité.
-  begin
-    insert into public.supplier_invoices (invoice_no, supplier_id, invoice_date, purchase_order_id)
-    values ('FAC-F-FORCE-001', v_sup, (now() at time zone 'Indian/Comoro')::date, v_order);
-    exception when others then v_n := v_n + 1;
-  end;
-
-  if v_n <> 3 then
-    raise exception 'Une commande a pu porter deux factures vivantes : % refus sur 3.', v_n;
-  end if;
-
-  raise notice '[OK] 19. Une seule facture par commande — par les fonctions ET par l''index.';
+  raise notice
+    '[OK] 19. 🟥 DEC-053 : acompte + solde + complément sur la MÊME commande, et la cohérence tient.';
 end $$;
 
 
@@ -1220,23 +1261,57 @@ begin
 end $$;
 
 
--- --- 21. ANNULER LA FACTURE REND LA COMMANDE À « PASSÉE » -------------------
+-- --- 21. 🟥 DEC-053 — LA COMMANDE NE REDESCEND QUE SI ELLE SE VIDE ----------
+--
+-- Brief §6, joué en entier. Avant DEC-053 il n'y avait qu'une facture, et son
+-- annulation rendait forcément la commande à « passée ». Avec plusieurs, annuler
+-- l'acompte ne doit RIEN changer tant que le solde vit.
+--
+-- La section 19 a laissé TROIS factures actives sur cette commande. On les
+-- annule une à une, et on exige que la commande tienne jusqu'à la dernière.
 do $$
 declare
   v_invoice uuid := (select id from recette_obj where cle = 'facture');
   v_order   uuid := (select id from recette_obj where cle = 'commande');
   v_new     uuid;
+  v_autre   uuid;
+  v_restant int;
 begin
   perform pg_temp.agir_comme('comptable');
 
   perform public.cancel_supplier_invoice(v_invoice, 'Facture erronée');
 
+  -- 🟥 LA COMMANDE NE BOUGE PAS : d'autres factures la couvrent encore.
+  if (select status from public.purchase_orders where id = v_order) <> 'INVOICED' then
+    raise exception
+      'DEC-053 : annuler UNE facture a rendu la commande à « passée » alors que d''autres vivent encore.';
+  end if;
+
+  -- Une facture annulée ne contribue plus au facturé actif.
+  select count(*) into v_restant
+  from public.supplier_invoices
+  where purchase_order_id = v_order and status <> 'CANCELLED';
+
+  if v_restant <> 2 then
+    raise exception
+      'DEC-053 : % facture(s) active(s) après une annulation, au lieu de 2.', v_restant;
+  end if;
+
+  -- On vide la commande de ses factures restantes.
+  for v_autre in
+    select id from public.supplier_invoices
+    where purchase_order_id = v_order and status <> 'CANCELLED'
+  loop
+    perform public.cancel_supplier_invoice(v_autre, 'Facture erronée');
+  end loop;
+
+  -- 🟥 LA DERNIÈRE ANNULATION, ELLE, REND LA COMMANDE À « PASSÉE ».
   if (select status from public.purchase_orders where id = v_order) <> 'CONFIRMED' then
     raise exception
       'La commande n''est pas revenue à « passée » : elle serait facturée sans facture vivante.';
   end if;
 
-  -- Et elle se refacture : l'index partiel s'est bien libéré.
+  -- Et elle se refacture : aucune impasse, comme avant DEC-053.
   v_new := public.create_invoice_from_purchase_order(v_order, null, null, 'FA-RECETTE-9013');
   insert into recette_obj values ('facture2', v_new);
 
@@ -1247,7 +1322,7 @@ begin
   end if;
 
   raise notice
-    '[OK] 21. Facture annulée → commande « passée », refacturable. Aucune impasse.';
+    '[OK] 21. 🟥 DEC-053 : la commande tient tant qu''une facture vit, et redescend à la dernière.';
 end $$;
 
 
@@ -1467,7 +1542,6 @@ begin
     'customer_invoices_one_per_period_idx',
     'customer_invoices_one_per_order_idx',
     'sales_orders_one_per_quote_idx',
-    'supplier_invoices_one_per_purchase_order_idx',
     'purchase_orders_one_per_quote_idx'
   ] loop
     if not exists (
@@ -1476,6 +1550,25 @@ begin
       raise exception 'L''index d''unicité « % » a disparu.', v_index;
     end if;
   end loop;
+
+  /*
+   * 🟥 DEC-053 — `supplier_invoices_one_per_purchase_order_idx` a QUITTÉ cette
+   * liste, et son absence est désormais EXIGÉE.
+   *
+   * Le retirer de la liste sans vérifier sa disparition laisserait le test muet
+   * si l'index revenait : la recette ne dirait plus rien d'un retour en arrière
+   * silencieux. Une règle abandonnée se surveille dans l'autre sens.
+   *
+   * L'unicité du commerce CLIENT, elle, reste dans la liste ci-dessus :
+   * DEC-053 ne porte que sur le fournisseur.
+   */
+  if exists (
+    select 1 from pg_indexes
+    where schemaname = 'public' and indexname = 'supplier_invoices_one_per_purchase_order_idx'
+  ) then
+    raise exception
+      'L''index d''unicité facture/commande fournisseur est revenu : DEC-053 l''a retiré.';
+  end if;
 
   -- Le refus de DÉCLARER une facture payée — acquis du LOT 6.
   select pg_get_functiondef('public.fn_supplier_invoice_transition()'::regprocedure) into v_def;

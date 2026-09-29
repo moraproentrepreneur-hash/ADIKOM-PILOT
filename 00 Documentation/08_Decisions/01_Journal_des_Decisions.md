@@ -86,6 +86,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-050 | Facturation d'une commande client | Décision Direction — **clôt la question laissée ouverte par DEC-049 §g** | Validée — **confirme la règle appliquée au LOT 25** | 2026-09-23 |
 | DEC-051 | Remises commerciales — montant fixe en KMF | Décision Direction — **clôt la question laissée ouverte par DEC-049 §f** | Validée — **implémentation différée** | 2026-09-23 |
 | DEC-052 | Commerce fournisseur — devis et commandes — LOT 26 | Quatre tables, **seize capacités dont deux lectures sensibles**, prix de l'offre figé, **P-5 intact** | Appliquée — **complète le Module 11** | 2026-09-23 |
+| DEC-053 | Plusieurs factures pour une commande fournisseur | Décision Direction — **clôt la question laissée ouverte par DEC-052 §g**. Aucune table, aucune capacité : une contrainte retirée | Appliquée — **acompte puis solde sur la même commande** | 2026-09-29 |
 
 > **DEC-045 a été consignée le 18 septembre 2026.** Le Plan 02 lui avait assigné
 > son objet — l'avenant de location — et le LOT 22 l'a livré. La réservation
@@ -6390,6 +6391,164 @@ il ne les force pas. Les forcer reviendrait à **réécrire un document reçu**.
 - **Convention définitive des références** : `DEV-F` / `CDE-F` restent
   provisoires, comme `FAC-F` (DEC-023 §5).
 
+
+---
+
+# DEC-053 — Plusieurs factures pour une commande fournisseur
+
+| | |
+| --- | --- |
+| Date | 29 septembre 2026 |
+| Origine | **Décision de la Direction**, en réponse à la question posée par DEC-052 §g et au Rapport 18 §12 |
+| Nature | **Aucune table, aucune colonne, aucune capacité.** Une contrainte d'unicité retirée, trois fonctions assouplies |
+| Portée | Module 11 · Commerce — Commandes fournisseurs · Module 07 · Facturation fournisseur |
+| Réemploie | La facturation fournisseur du LOT 5, les règlements du LOT 6, la trésorerie du LOT 6 — **inchangés** |
+| Laisse ouvert | 🟥 **P-5**, toujours intact · 🟦 remises fournisseurs · 🟥 A-7 · 🟥 DEC-008 · 🟥 P-2 |
+
+## a. La question, et la réponse
+
+Le LOT 26 avait appliqué la règle **« une commande fournisseur, au plus une
+facture non annulée »**, et le Rapport 18 §12 avait pris soin de dire que cette
+règle **n'était pas une décision métier** : elle était déduite de cinq faits
+d'architecture, et la question a été **posée à la Direction plutôt que
+tranchée** — avec deux options, et aucune choisie.
+
+La Direction répond :
+
+> **UNE COMMANDE FOURNISSEUR PEUT ÊTRE RATTACHÉE À PLUSIEURS FACTURES
+> FOURNISSEURS.**
+
+Le cas métier est l'acompte :
+
+```
+Commande fournisseur            1 000 000 KMF
+  ├─ facture 1 — acompte          300 000 KMF
+  └─ facture 2 — solde            700 000 KMF
+```
+
+La règle du LOT 26 est donc **abandonnée comme doctrine cible**. Elle n'était
+pas fausse au moment où elle a été écrite : elle décrivait ce que
+l'architecture d'alors permettait.
+
+## b. Facturation partielle ≠ paiement partiel
+
+La décision porte sur la **facturation**, jamais sur le paiement. La chaîne
+reste à trois étages, et chacun garde le sien :
+
+```
+COMMANDE FOURNISSEUR
+   └─▶ une ou plusieurs FACTURES        ← DEC-053 agit ICI, et nulle part ailleurs
+          └─▶ un ou plusieurs RÈGLEMENTS ← LOT 6, inchangé
+                 └─▶ TRÉSORERIE          ← ne bouge qu'au règlement
+```
+
+Une facture de 700 000 peut recevoir un règlement de 200 000 puis un de 500 000 :
+c'est le mécanisme existant, et **aucun système de paiement parallèle n'est
+créé**.
+
+## c. 🟥 L'écart commande / facture se constate, il ne se refuse pas
+
+Le Rapport 18 §10.2 avait établi qu'une facture fournisseur est un **document
+REÇU** : elle constate ce que le fournisseur **réclame**. Son montant n'a donc
+aucune obligation de correspondre au montant théorique de la commande.
+
+**Aucune règle « total des factures = montant de la commande » n'est écrite**, et
+la migration le vérifie explicitement. Le système doit pouvoir montrer l'écart,
+jamais l'interdire, et **ne modifie jamais le contenu d'une facture reçue pour
+la faire correspondre à la commande**.
+
+## d. L'architecture retenue — minimale
+
+Le lien **existait déjà** : `supplier_invoices.purchase_order_id`. Seule son
+**unicité** était contrainte. DEC-053 **retire une contrainte** ; elle n'ajoute
+pas une structure.
+
+| | |
+| --- | --- |
+| Index unique partiel `supplier_invoices_one_per_purchase_order_idx` | **Supprimé** |
+| Index de lecture `supplier_invoices_purchase_order_idx` | Conservé |
+| Déclencheur de cohérence facture ↔ commande ↔ fournisseur | **Conservé** — c'est lui le garde-fou utile, pas le nombre de factures |
+| Table de tranches, façon `rental_billing_periods` | 🟥 **Non créée** |
+| Valeur ajoutée à l'enum `order_status` | 🟥 **Aucune** |
+| Capacité nouvelle | 🟥 **Aucune** — le catalogue reste à 229 |
+| Colonne, table, périmètre de sauvegarde | 🟥 **Aucun changement** — 62 tables |
+
+**Pourquoi aucun objet « tranche de commande ».** La décision métier est
+« plusieurs factures peuvent appartenir à une commande ». Elle n'impose pas à
+elle seule un objet intermédiaire, et rien dans le cas de l'acompte ne l'exige :
+chaque facture porte déjà ses lignes, son montant, son échéance et son cycle.
+Un objet de tranches devra être créé le jour où une contrainte réelle
+l'imposera — par exemple un échéancier contractuel opposable — et **pas avant**.
+
+## e. Le cycle de la commande — un statut qui ne ment plus
+
+`order_status` porte `INVOICED` et **aucun état partiel**. Aucune valeur n'est
+ajoutée : la Direction demande de privilégier un **état dérivé** plutôt que de
+multiplier les statuts persistés.
+
+`INVOICED` **reste écrit**, mais change de sens, et l'écran le dit :
+
+| | Avant DEC-053 | Après |
+| --- | --- | --- |
+| Libellé | « Facturée » | **« En facturation »** |
+| Signification | La facture est enregistrée | **Au moins une facture est enregistrée ; d'autres peuvent suivre** |
+
+**Pourquoi le conserver plutôt que de le dériver entièrement.** `INVOICED` porte
+une **garde** : tant qu'une commande est `INVOICED`, elle ne s'annule pas. Faire
+reposer cette protection sur un comptage de factures lu **à travers RLS**
+l'exposerait à conclure « aucune facture » et à laisser passer. Un marqueur porté
+par la commande elle-même est une garde plus sûre qu'une somme.
+
+La **situation de facturation** — non facturée, partiellement facturée,
+totalement facturée, et l'écart — est **dérivée à l'affichage** à partir des
+factures de la commande. Elle n'est persistée nulle part, donc **elle ne peut pas
+se désynchroniser**.
+
+| Situation | Dérivée de |
+| --- | --- |
+| Non facturée | aucune facture active |
+| Partiellement facturée | cumul des factures actives **<** total de la commande |
+| Facturée | cumul **≥** total de la commande |
+| Non lisible | un montant nécessaire au calcul n'est pas lisible avec les droits du lecteur |
+
+Le dernier cas n'est pas un état métier : c'est le **refus de conclure**
+(DEC-017). Affirmer « non facturée » sur un total qu'on n'a pas pu lire serait
+énoncer un fait faux à partir d'une absence de droit.
+
+## f. L'annulation
+
+Annuler **une** facture ne défait plus la facturation d'une commande qui en
+porte d'autres :
+
+```
+commande 1 000 000 — acompte 300 000 + solde 700 000  → facturée
+   annulation du solde                                 → partiellement facturée
+   annulation de l'acompte aussi                       → non facturée, « passée »
+```
+
+`cancel_supplier_invoice` ne rend la commande à « passée » **que si plus aucune
+facture active ne la couvre**. Une facture annulée **ne contribue à aucun
+montant**, et **aucune facture historique n'est supprimée** (doctrine D6).
+
+## g. Numérotation et documents — rien de nouveau
+
+Chaque facture reste une facture fournisseur **ordinaire** : numérotation
+`FAC-F`, référence externe du fournisseur, document reçu, cycle, règlements et
+audit existants.
+
+🟥 **Aucune facture spéciale « acompte », aucune série `FAC-A`, aucun moteur
+documentaire parallèle.** Le caractère d'acompte ou de solde est une information
+métier qui se consigne dans les observations existantes ; aucune typologie n'est
+inventée.
+
+## h. Ce que la décision NE tranche pas
+
+- **P-5** — le prix d'achat par fournisseur au catalogue : toujours **ouvert et
+  intact**. DEC-053 n'y touche pas.
+- Un **échéancier contractuel** opposable au fournisseur : non modélisé.
+- La **traçabilité ligne à ligne** entre une facture et les lignes de la
+  commande : inchangée, conforme au Plan 02 §9.2.
+- Les **remises fournisseurs** : toujours non modélisées.
 ---
 
 **ADIKOM PILOT — Journal des décisions**

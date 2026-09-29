@@ -136,7 +136,15 @@ export const PURCHASE_ORDER_STATUS_LABELS: Record<PurchaseOrderStatus, string> =
   DRAFT: 'Brouillon',
   CONFIRMED: 'Passée',
   DELIVERED: 'Réceptionnée',
-  INVOICED: 'Facturée',
+  /*
+   * DEC-053 — « En facturation », et non « Facturée ».
+   *
+   * Une commande peut porter plusieurs factures : un acompte puis un solde. Le
+   * statut dit que la commande est ENTRÉE en facturation, pas qu'elle est
+   * soldée. Ce qu'elle a réellement reçu se lit dans la situation de
+   * facturation, qui se DÉRIVE de ses factures — voir `purchaseInvoicingState`.
+   */
+  INVOICED: 'En facturation',
   CANCELLED: 'Annulée',
 }
 
@@ -153,7 +161,8 @@ export const PURCHASE_ORDER_STATUS_HELP: Record<PurchaseOrderStatus, string> = {
   CONFIRMED: 'La commande est transmise au fournisseur. Les lignes sont figées, la facture peut être enregistrée.',
   DELIVERED:
     'La prestation est constatée reçue. Aucun bon de réception n’est produit : c’est un statut, pas un document (décision B-6).',
-  INVOICED: 'Une facture fournisseur a été enregistrée à partir de cette commande.',
+  INVOICED:
+    'Au moins une facture fournisseur a été enregistrée à partir de cette commande. D’autres peuvent suivre — un acompte puis un solde.',
   CANCELLED: 'La commande a été annulée. Son devis d’origine redevient « retenu ».',
 }
 
@@ -182,15 +191,85 @@ export function purchaseOrderIsEditable(status: PurchaseOrderStatus): boolean {
 }
 
 /**
- * Une commande passée ou réceptionnée peut porter sa facture.
+ * Une commande passée, réceptionnée ou déjà en facturation peut porter une
+ * facture de plus.
  *
- * 🟦 UNE COMMANDE, AU PLUS UNE FACTURE NON ANNULÉE. `INVOICED` en est donc
- * exclu, et l'index partiel `supplier_invoices_one_per_purchase_order_idx` fait
- * autorité quoi qu'affiche l'écran. Une facture reçue pour un complément
- * s'enregistre, elle, sans commande d'origine : rien n'est perdu.
+ * 🟥 DEC-053 — UNE COMMANDE PEUT PORTER PLUSIEURS FACTURES. `INVOICED` est donc
+ * INCLUS : l'acompte n'interdit pas le solde. L'index d'unicité qui l'interdisait
+ * a été retiré, et c'est `create_invoice_from_purchase_order` qui fait autorité
+ * quoi qu'affiche l'écran.
+ *
+ * Un brouillon et une commande annulée restent refusés.
  */
 export function purchaseOrderIsInvoiceable(status: PurchaseOrderStatus): boolean {
-  return status === 'CONFIRMED' || status === 'DELIVERED'
+  return status === 'CONFIRMED' || status === 'DELIVERED' || status === 'INVOICED'
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Situation de facturation — DÉRIVÉE, jamais persistée                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Où en est une commande de sa facturation.
+ *
+ * `UNKNOWN` n'est pas un état métier : c'est le refus de conclure. Il paraît dès
+ * qu'un montant nécessaire au calcul n'est pas lisible avec les droits du
+ * lecteur. Conclure « non facturée » sur un total qu'on n'a pas pu lire serait
+ * affirmer un fait faux à partir d'une absence de droit.
+ */
+export type PurchaseInvoicingState = 'NONE' | 'PARTIAL' | 'COMPLETE' | 'UNKNOWN'
+
+export const PURCHASE_INVOICING_LABELS: Record<PurchaseInvoicingState, string> = {
+  NONE: 'Non facturée',
+  PARTIAL: 'Partiellement facturée',
+  COMPLETE: 'Facturée',
+  UNKNOWN: 'Facturation non lisible avec vos droits',
+}
+
+export const PURCHASE_INVOICING_TONES: Record<PurchaseInvoicingState, BadgeTone> = {
+  NONE: 'neutral',
+  PARTIAL: 'warning',
+  COMPLETE: 'success',
+  UNKNOWN: 'neutral',
+}
+
+/**
+ * La situation de facturation d'une commande, DÉRIVÉE de ses factures.
+ *
+ * 🟥 ELLE NE REFUSE RIEN, ET NE CORRIGE RIEN.
+ *
+ * Une facture fournisseur est un document REÇU : elle constate ce que le
+ * fournisseur RÉCLAME. Son montant n'a aucune obligation de correspondre au
+ * total théorique de la commande (Rapport 18 §10.2). Cette fonction CONSTATE —
+ * elle ne compare jamais pour rejeter. L'écart, s'il existe, se montre
+ * (`invoiceGap`), il ne se sanctionne pas.
+ *
+ * `orderTotal` est le total des lignes actives de la commande ; `invoiced` la
+ * somme des factures NON ANNULÉES. Une facture annulée ne contribue à rien.
+ */
+export function purchaseInvoicingState(
+  orderTotal: number | null,
+  invoiced: number | null,
+  activeInvoiceCount: number
+): PurchaseInvoicingState {
+  if (activeInvoiceCount === 0) return 'NONE'
+  if (orderTotal === null || invoiced === null) return 'UNKNOWN'
+  return invoiced >= orderTotal ? 'COMPLETE' : 'PARTIAL'
+}
+
+/**
+ * Le cumul facturé d'une commande : les factures ANNULÉES n'y entrent pas.
+ *
+ * Rend `null` dès qu'une facture active porte un montant illisible — un cumul
+ * calculé en ignorant ce qu'on n'a pas pu lire vaudrait moins que la vérité, et
+ * ferait passer une commande soldée pour partiellement facturée.
+ */
+export function purchaseInvoicedTotal(
+  invoices: { status: string; gross: number | null }[]
+): number | null {
+  const actives = invoices.filter((i) => i.status !== 'CANCELLED')
+  if (actives.some((i) => i.gross === null)) return null
+  return actives.reduce((sum, i) => sum + (i.gross ?? 0), 0)
 }
 
 /* -------------------------------------------------------------------------- */

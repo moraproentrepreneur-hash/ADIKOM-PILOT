@@ -397,6 +397,18 @@ d'attribution ce que cette attribution engage.
 
 # 12. 🟦 Une commande, au plus une facture — la règle, et la question posée
 
+> ### ⚠️ RÉPONDU LE 29 SEPTEMBRE 2026 — VOIR **DEC-053**
+>
+> La Direction a tranché la question posée ci-dessous : **une commande
+> fournisseur peut être rattachée à PLUSIEURS factures fournisseurs** — un
+> acompte puis un solde. La règle décrite dans cette section **n'est donc plus
+> la doctrine cible**.
+>
+> Cette section est **conservée telle qu'elle a été écrite** : elle dit ce que
+> l'architecture permettait au LOT 26, et pourquoi la question a été posée
+> plutôt que tranchée. Voir **DEC-053** au Journal des décisions et le
+> **Rapport 19** pour ce qui a effectivement changé.
+
 🟥 **Ce point n'a PAS été tranché par symétrie avec DEC-050**, qui porte
 expressément sur la commande **client**. Il est **déduit de l'architecture
 documentée** :
@@ -571,10 +583,10 @@ en place (3 créés, 108 déjà présents).
 
 | # | Point | Nature |
 | :-: | --- | --- |
-| 1 | **Plusieurs factures pour une même commande** | 🟥 **Question posée** (§12). Rien n'est bloqué |
+| 1 | **Plusieurs factures pour une même commande** | ✅ **TRANCHÉ — DEC-053**, 29/09/2026 : **oui**. Voir Rapport 19 |
 | 2 | **P-5** — prix d'achat par fournisseur au catalogue | 🟥 **Ouvert et intact**. Le lot fonctionne sans |
 | 3 | **Remises consenties par un fournisseur** | 🟦 Non modélisées. DEC-051 porte sur les remises **clients** |
-| 4 | **Motifs du commerce CLIENT** | 🟦 **Dette nommée** (§13.2) : le même écart y subsiste, non corrigé par consigne |
+| 4 | **Motifs du commerce CLIENT** | ✅ **DETTE SOLDÉE**, 29/09/2026 — migration 106, cinq écritures corrigées. Voir Rapport 19 |
 | 5 | **Traçabilité ligne à ligne de la facture** | 🟦 Conforme au Plan 02 §9.2 ; une ligne ajoutée après coup n'est pas distinguable |
 | 6 | **Référence externe d'une commande directe** | 🟦 Non prévue ; consignable en observations |
 | 7 | **Convention définitive des références** | 🟦 DEC-023 §5 — `DEV-F` / `CDE-F` provisoires |
