@@ -331,8 +331,9 @@ elle, parce qu'elle est métier.
 | Commits | `3151565` — DEC-053 et la dette client · `c6bdca5` — les recettes |
 | **SHA applicatif éprouvé** | **`3151565`** — c'est le code que les recettes de production ont exercé |
 | **SHA déployé et vérifié** | **`3151565`** · Vercel **READY**, relevé par l'API REST |
-| `c6bdca5` | **Aucun déploiement Vercel n'a été créé pour lui.** Il ne touche que `scripts/verify-*.mjs`, qui ne font pas partie du bundle livré — la production ne change pas. Ce rapport le dit plutôt que d'annoncer un SHA déployé qu'il n'a pas relevé |
-| GitHub | `main` = `origin/main` = `c6bdca5` |
+| `c6bdca5` | **Aucun déploiement Vercel n'a été créé pour lui**, bien qu'un commit purement documentaire en ait reçu un juste après : son webhook a donc simplement été manqué. Sans conséquence — il ne touche que `scripts/verify-*.mjs`, absents du bundle livré. Ce rapport le note plutôt que d'annoncer un SHA déployé qu'il n'aurait pas relevé |
+| Après le rapport | Le commit du présent rapport a été déployé et relevé **READY**, et il embarque l'arbre complet, `c6bdca5` compris. La production sert **200** |
+| GitHub | `main` = `origin/main` |
 | Production | `https://adikom-pilot.vercel.app` |
 | Migrations | 104 → **106** |
 | Catalogue | **229** → **229** |
