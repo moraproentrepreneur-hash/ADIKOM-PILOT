@@ -1395,6 +1395,37 @@ async function main() {
         .limit(1)
         .maybeSingle()
 
+      /*
+       * 🟥 LA DETTE DU RAPPORT 19 §13.2, SOLDÉE.
+       *
+       * Une facture PARFAITEMENT FORMÉE — bon fournisseur, bonne commande, tout
+       * en règle — insérée directement. Elle passait : `invoice_no` était alors
+       * choisi à la main, et le numéroteur contourné. Elle est désormais refusée
+       * par la garde de création, et pour CETTE raison-là.
+       */
+      const forgeNo = `FAC-F-FORGE-DIRECT-${STAMP}`
+      const { error: forgeDroit } = await api.comptable.from('supplier_invoices').insert({
+        invoice_no: forgeNo,
+        supplier_id: decor.fournisseur,
+        invoice_date: dayOffset(0),
+        purchase_order_id: decor.commande,
+      })
+      check(
+        Boolean(forgeDroit),
+        '🟥 Une facture pourtant VALIDE insérée directement est refusée — le numéroteur ne se contourne pas',
+        forgeDroit?.message ?? 'acceptée !'
+      )
+
+      const { data: forgee } = await admin
+        .from('supplier_invoices')
+        .select('id')
+        .eq('invoice_no', forgeNo)
+      check(
+        (forgee ?? []).length === 0,
+        '🟥 …et aucune ligne forgée n’existe en base',
+        `${(forgee ?? []).length} ligne(s)`
+      )
+
       if (!autreFournisseur) {
         check(false, '🟥 Aucun second fournisseur lisible : le contrôle de cohérence n’a pas pu être éprouvé')
       } else {

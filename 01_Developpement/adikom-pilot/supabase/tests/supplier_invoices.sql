@@ -441,6 +441,80 @@ begin
 end $$;
 
 
+-- --- 8 bis. 🟥 UNE FACTURE NAÎT PAR SA FONCTION --------------------------------------------
+--
+-- La dette du Rapport 19 §13.2, soldée.
+--
+-- La section 8 éprouve qu'une facture ne naît pas dans le MAUVAIS ÉTAT. Elle ne
+-- dit rien d'une facture parfaitement formée, en brouillon, insérée
+-- directement : celle-là passait, et son `invoice_no` était choisi à la main —
+-- le numéroteur était contourné.
+--
+-- Le contrôle ci-dessous est donc CELUI QUE LA SECTION 8 NE FAIT PAS.
+do $$
+declare
+  v_sa     uuid := (select supplier_a from recette_fac);
+  v_avant  bigint;
+  v_apres  bigint;
+  v_id     uuid;
+begin
+  -- ---------------------------------------------------- l'écriture directe est refusée
+  begin
+    insert into public.supplier_invoices (invoice_no, supplier_id, invoice_date)
+    values ('FAC-F-FORGE-DIRECT', v_sa, current_date);
+    raise exception 'ÉCHEC : une facture parfaitement formée est née par écriture directe.';
+  exception when insufficient_privilege then null;
+  end;
+
+  if (select count(*) from public.supplier_invoices where invoice_no = 'FAC-F-FORGE-DIRECT') > 0 then
+    raise exception 'Une facture forgée a été enregistrée malgré le refus.';
+  end if;
+
+  -- ---------------------------------------------------- la fonction, elle, passe
+  --
+  -- ANTI-VACUITÉ : sans ce contrôle, le précédent pourrait « réussir » parce que
+  -- plus AUCUNE création n'est possible — ce qui serait un défaut, pas une garde.
+  select current_value into v_avant from public.numbering_rules
+  where entity_key = 'supplier_invoice';
+
+  v_id := public.create_supplier_invoice(v_sa, current_date, null, null,
+                                         'Recette — naissance par la fonction');
+
+  if v_id is null then
+    raise exception 'La fonction de création ne rend plus d''identifiant.';
+  end if;
+
+  select current_value into v_apres from public.numbering_rules
+  where entity_key = 'supplier_invoice';
+
+  if v_apres <> v_avant + 1 then
+    raise exception
+      'Le compteur est passé de % à % : la création normale ne consomme plus un numéro.',
+      v_avant, v_apres;
+  end if;
+
+  if (select invoice_no from public.supplier_invoices where id = v_id) !~ '^FAC-F-[0-9]{4}-[0-9]{6}$' then
+    raise exception 'Le numéro produit ne suit pas le format FAC-F.';
+  end if;
+
+  -- ---------------------------------------------------- le drapeau ne survit pas
+  --
+  -- `set_config(..., true)` est local à la TRANSACTION, pas à la fonction. Si
+  -- `create_supplier_invoice` le laissait ouvert, l'écriture directe ci-dessous
+  -- passerait — dans la même transaction que la création qui l'a ouvert.
+  begin
+    insert into public.supplier_invoices (invoice_no, supplier_id, invoice_date)
+    values ('FAC-F-FORGE-APRES', v_sa, current_date);
+    raise exception
+      'ÉCHEC : le drapeau de création a survécu à la fonction qui l''avait ouvert.';
+  exception when insufficient_privilege then null;
+  end;
+
+  raise notice
+    '[OK] 8 bis. 🟥 Une facture naît par sa fonction ; l''écriture directe est refusée, avant comme après.';
+end $$;
+
+
 -- --- 9. LE MONTANT BRUT EST LA SOMME DES LIGNES -------------------------------------------
 do $$
 declare
