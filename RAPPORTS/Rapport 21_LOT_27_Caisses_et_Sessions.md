@@ -1,20 +1,60 @@
 # Rapport 21 — LOT 27 · Caisses et sessions de caisse
 
-**⚠ PROVISOIRE — rédigé par Claude Code Cloud, à valider et compléter en local**
+**🟩 DÉFINITIF — validé en local et en production le 8 octobre 2026.** Le corps du rapport
+(§0 à §12) est celui du Cloud, conservé pour l'historique ; la section **V** fait foi.
 
 | | |
 | --- | --- |
 | Date | 8 octobre 2026 |
-| Nature | **Lot fonctionnel** — module 12 `pos`, partie caisses et sessions |
-| Étape de la méthode | **Cloud** (1ʳᵉ étape de Cloud → GitHub → Local → Supabase → GitHub → Vercel) |
-| Point de départ | `main` · `32d0fcb` · 107 migrations · 229 capacités · 62 tables sauvegardées · 401 tests |
-| Point d'arrivée (branche) | 111 migrations · **238** capacités · **65** tables sauvegardées · **426** tests |
-| Branche réelle | **`claude/funny-dirac-l3upkm`** — la plateforme impose le préfixe `claude/` ; aucune branche `lot-27-caisses-sessions` n'a été créée |
-| DEC | **DEC-054 — brouillon « provisoire — à valider en local »** consigné au journal |
-| Migrations appliquées sur Supabase | 🟥 **Aucune** |
-| Déploiement Vercel | 🟥 **Aucun** — `vercel.json` / `vercel.ts` ni créés ni modifiés |
+| Nature | **Lot fonctionnel** — module 12 `pos`, caisses et sessions |
+| Point de départ | `main` · `32d0fcb` · 107 migrations · 229 capacités · 62 tables sauvegardées |
+| Point d'arrivée | **111** migrations · **238** capacités · **65** tables sauvegardées · 426 tests |
+| SHA fusionné et déployé | **`18d00b0`** (avance rapide de `main`) — Vercel `READY`, production |
+| DEC | **DEC-054 définitive** |
 
 ---
+
+# V. Validation locale et production — ce qui fait foi
+
+## V.1 Récupération
+
+Push Cloud refusé (403) : branche récupérée du bundle vérifié (`09d9ab6`, 6 commits sur
+`32d0fcb`), publiée sous `lot-27-caisses-sessions`. Aucun secret, aucun `.env*`, aucun
+`vercel.json`/`vercel.ts`. Preview Vercel `CANCELED` à chaque push de branche (O-1 tenue).
+
+## V.2 Corrections locales (aucune migration corrective)
+
+| Commit | Correction |
+| --- | --- |
+| `91aea08` | `pos_sessions.sql` §17 : « aucune session ouverte » limité aux caisses de la recette (échouait dès qu'une vraie session existe — fragilité signalée par le Cloud) |
+| `18d00b0` | `verify-pos-sessions.mjs` : attendre la fiche rendue, pas l'URL |
+| *(commit de ce rapport)* | `verify-pos-sessions.mjs` : lire la page après disparition du squelette `loading.tsx` — contre la production, les contrôles d'**absence** passaient à vide sur le squelette |
+
+Aucune correction ne change un compteur, un nom ou une signature : **aucun impact sur le LOT 28**.
+
+## V.3 Tests réellement exécutés
+
+| Contrôle | Résultat |
+| --- | --- |
+| lint · typecheck (après `next typegen`) · Vitest · build | ✅ · ✅ · **426/426** · ✅ |
+| Sauvegarde préalable `adikom-pilot-avant-lot-27-2026-10-08T09-13-24.json` | ✅ 62 tables, 221 lignes, relue et comparée |
+| `db:status` → exactement 108–111 ; `db:push` | ✅ contrôles intégrés compris |
+| `db:verify` : pos-sessions · catalog · treasury · transfers · audit · settings · purchasing · commerce | ✅ 23 · 19 · 19 · 20 · 17 · 15 · 29 · 29 |
+| `db:verify:backup` · **cycle réel** `verify:backup` (sauvegarde → réinitialisation → restauration) | ✅ 15 · **50/50**, 65 tables, 221 lignes restaurées |
+| `verify:capabilities` | ✅ 217/217 |
+| `verify:pos-sessions` local · `verify:responsive` local | ✅ 23/23 · 519/519 (Caisses, Sessions 360/768/1440) |
+| Production `18d00b0` : `verify:production` · `verify:pos-sessions` | ✅ 56/56 · **23/23**, aucun résidu |
+
+Non rejouées (§47 bis, non touchées) : location, avenants, facturation, règlements,
+imputations, catalogue, projets.
+
+## V.4 Dettes
+
+Aucune bloquante. Q-1 à Q-6 restent les choix restrictifs du Cloud (§11), à revoir sur
+décision. La section de navigation « Ventes au comptoir » est traitée au LOT 28.
+
+---
+
 
 # 0. 🟥 À lire d'abord — la branche n'a PAS pu être poussée
 
@@ -314,4 +354,4 @@ règlements, imputations, catalogue, projets.
 
 ---
 
-**LOT 27 CLOUD — PROVISOIRE · AUCUNE MIGRATION APPLIQUÉE · AUCUN DÉPLOIEMENT**
+**LOT 27 — VALIDÉ ET DÉPLOYÉ À `18d00b0`.**

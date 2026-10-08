@@ -6554,10 +6554,11 @@ inventée.
 
 # DEC-054 — Point de vente : caisses et sessions de caisse (LOT 27)
 
-> 🟧 **PROVISOIRE — À VALIDER EN LOCAL.** Brouillon rédigé par Claude Code Cloud le
-> 8 octobre 2026. Les décisions de la Direction qu'il consigne (§a) sont **validées** ;
-> la mise en œuvre, elle, n'est **ni appliquée sur Supabase ni recettée** en conditions
-> réelles. Le texte définitif sera arrêté par la reprise locale (Rapport 21 définitif).
+> 🟩 **DÉFINITIVE — 8 octobre 2026.** Rédigée par Claude Code Cloud, validée en local :
+> migrations 108 à 111 appliquées sur Supabase, recettes SQL (RLS réelle), cycle
+> sauvegarde → réinitialisation → restauration réel (65 tables), recettes navigateur et
+> responsive, déploiement de production `18d00b0` recetté. Les choix Q-1 à Q-6 (§f)
+> restent en vigueur tels qu'écrits, faute de décision contraire. Détail : Rapport 21.
 
 **Date des décisions :** 8 octobre 2026 · **Lot :** 27 · **Module :** 12 `pos`
 **Références :** Plan 02 §7.5, §9.1, §9.4, §10.2, §10.3, §11.4, §12, §13.2, §18.2 ·

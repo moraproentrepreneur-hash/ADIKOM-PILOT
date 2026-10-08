@@ -139,7 +139,18 @@ async function signIn(browser, base, account) {
   return { context, page }
 }
 
-const text = async (page) => (await page.locator('main').innerText()).replace(/\s+/g, ' ')
+/**
+ * Le texte de la page RENDUE. `load` survient pendant que le squelette de
+ * `loading.tsx` est encore affiché (flagrant contre la production) : lu à ce
+ * moment, un contrôle positif échoue et un contrôle d'ABSENCE passe à vide.
+ */
+const text = async (page) => {
+  await page
+    .locator('[role="status"][aria-label="Chargement…"]')
+    .first()
+    .waitFor({ state: 'detached', timeout: 30000 })
+  return (await page.locator('main').innerText()).replace(/\s+/g, ' ')
+}
 
 /**
  * Ouvre une session par l'écran et rend son identifiant.
@@ -273,7 +284,12 @@ async function main() {
 
     const a = await signIn(browser, base, accounts.caissierA)
     const sessionA = await openByScreen(a.page, base, register1, 50000)
-    check(/ouverte à votre nom/.test(await text(a.page)), 'Le caissier A ouvre sa session')
+    // L'URL change avant que la fiche soit rendue : attendre l'ÉTAT, pas l'adresse.
+    const openedNotice = await a.page
+      .locator('main', { hasText: 'ouverte à votre nom' })
+      .waitFor({ timeout: 15000 })
+      .then(() => true, () => false)
+    check(openedNotice, 'Le caissier A ouvre sa session')
 
     await a.page.goto(`${base}/pdv/caisses`, { waitUntil: 'load' })
     check(/Votre session SES-/.test(await text(a.page)), 'Le bandeau rappelle la session ouverte')
