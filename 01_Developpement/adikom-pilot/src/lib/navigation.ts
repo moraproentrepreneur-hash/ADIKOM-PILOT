@@ -6,9 +6,11 @@ import {
   CalendarCheck,
   CalendarClock,
   CalendarDays,
+  Calculator,
   CarFront,
   CheckSquare,
   ClipboardList,
+  Clock,
   ConciergeBell,
   FileText,
   FolderKanban,
@@ -25,6 +27,7 @@ import {
   Settings,
   ShieldCheck,
   ShoppingCart,
+  Store,
   Tags,
   TriangleAlert,
   Truck,
@@ -365,6 +368,35 @@ export const NAVIGATION: NavEntry[] = [
         href: '/commerce/commandes-fournisseurs',
         icon: ShoppingCart,
         permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
+        status: 'ready',
+      },
+    ],
+  },
+  /*
+   * Module 12 — ouvert par le LOT 27 (Plan 02 §7.5, Module 12).
+   *
+   * DEUX ENTRÉES, ET PAS UNE DE PLUS : les caisses et les sessions. Les VENTES
+   * arrivent au LOT 28 ; aucune entrée « à venir » ne les annonce (DEC-042 §d).
+   *
+   * Le module précède « Banques & Caisses » : une caisse S'ADOSSE à un compte de
+   * ce module-là, elle n'en est pas un — une seule trésorerie (Plan 02 §20.1).
+   */
+  {
+    label: 'Point de vente',
+    icon: Store,
+    items: [
+      {
+        label: 'Caisses',
+        href: '/pdv/caisses',
+        icon: Calculator,
+        permission: PERMISSIONS.POS_REGISTERS_VIEW,
+        status: 'ready',
+      },
+      {
+        label: 'Sessions de caisse',
+        href: '/pdv/sessions',
+        icon: Clock,
+        permission: PERMISSIONS.POS_SESSIONS_VIEW,
         status: 'ready',
       },
     ],

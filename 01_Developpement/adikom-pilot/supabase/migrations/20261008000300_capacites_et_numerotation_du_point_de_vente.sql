@@ -28,7 +28,29 @@
 
 
 -- =============================================================================
--- 1. LES NEUF CAPACITÉS
+-- 1. NUMÉROTATION — CAI ET SES, AUCUN SECOND NUMÉROTEUR
+--
+-- Plan 01 §16.1 et §16.9 : `CAI-000001`, `SES-2026-000001`.
+--
+-- La caisse ne porte PAS d'année : c'est un équipement durable, non un acte
+-- daté — comme un compte financier (`COMP-000001`). La session en porte une, et
+-- repart à 1 chaque exercice comorien, comme toute pièce datée.
+--
+-- ⚠ PLACÉE AVANT LES CAPACITÉS, ET C'EST DÉLIBÉRÉ : le contrôle de parité TS/SQL
+-- lit les tuples qui suivent la liste de colonnes du catalogue ; des règles écrites après
+-- seraient lues comme des capacités (même ordre qu'à la migration 101).
+-- =============================================================================
+
+insert into public.numbering_rules
+  (entity_key, label, prefix, include_year, padding, separator, reset_yearly, current_value)
+values
+  ('pos_register', 'Caisse',             'CAI', false, 6, '-', false, 0),
+  ('pos_session',  'Session de caisse',  'SES', true,  6, '-', true,  0)
+on conflict (entity_key) do nothing;
+
+
+-- =============================================================================
+-- 2. LES NEUF CAPACITÉS
 --
 -- La liste de colonnes ouvre par `(code, module_code` : c'est la forme que le
 -- contrôle de parité TS/SQL (`permissions.test.ts`) reconnaît.
@@ -98,24 +120,6 @@ on conflict (code) do update set
   menu_order    = excluded.menu_order,
   submenu_order = excluded.submenu_order,
   action_order  = excluded.action_order;
-
-
--- =============================================================================
--- 2. NUMÉROTATION — CAI ET SES, AUCUN SECOND NUMÉROTEUR
---
--- Plan 01 §16.1 et §16.9 : `CAI-000001`, `SES-2026-000001`.
---
--- La caisse ne porte PAS d'année : c'est un équipement durable, non un acte
--- daté — comme un compte financier (`COMP-000001`). La session en porte une, et
--- repart à 1 chaque exercice comorien, comme toute pièce datée.
--- =============================================================================
-
-insert into public.numbering_rules
-  (entity_key, label, prefix, include_year, padding, separator, reset_yearly, current_value)
-values
-  ('pos_register', 'Caisse',             'CAI', false, 6, '-', false, 0),
-  ('pos_session',  'Session de caisse',  'SES', true,  6, '-', true,  0)
-on conflict (entity_key) do nothing;
 
 
 -- =============================================================================

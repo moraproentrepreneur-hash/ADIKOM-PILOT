@@ -111,6 +111,7 @@ export const MODULE_LABELS: Record<string, string> = {
   parties: 'Tiers',
   rental: 'Gestion de location',
   catalog: 'Produits & Services',
+  pos: 'Point de vente',
   billing: 'Facturation & Paiement',
   treasury: 'Banques & Caisses',
   projects: 'Projets & Planification',
@@ -122,6 +123,7 @@ export const MODULE_ORDER: readonly string[] = [
   'parties',
   'rental',
   'catalog',
+  'pos',
   'billing',
   'treasury',
   'projects',
@@ -180,6 +182,11 @@ export const ENTITY_LABELS: Record<string, string> = {
   service_variants: 'Variante de service',
   service_variant_prices: 'Prix de vente d’un service',
   service_variant_costs: 'Prix d’achat d’un service',
+
+  // Point de vente
+  pos_registers: 'Caisse',
+  pos_sessions: 'Session de caisse',
+  pos_session_amounts: 'Montants d’une session de caisse',
 
   // Facturation & Paiement
   customer_invoices: 'Facture client',
@@ -263,6 +270,11 @@ export const ENTITIES_BY_MODULE: Record<string, readonly string[]> = {
     'service_variant_prices',
     'service_variant_costs',
   ],
+  /*
+   * Les montants figurent au filtre ; leur DÉTAIL reste fermé à qui n'a pas
+   * `pos.sessions.amounts.view` (`audit_detail_permission`, migration 108).
+   */
+  pos: ['pos_registers', 'pos_sessions', 'pos_session_amounts'],
   billing: [
     'customer_invoices',
     'customer_invoice_lines',
@@ -378,6 +390,21 @@ const FIELD_LABELS: Record<string, string> = {
   deactivated_at: 'Retirée le',
   deactivated_by: 'Retirée par',
   deactivation_reason: 'Motif du retrait',
+  // Point de vente — LOT 27
+  register_no: 'Numéro de caisse',
+  register_id: 'Caisse',
+  session_no: 'Numéro de session',
+  session_id: 'Session',
+  cashier_id: 'Caissier',
+  location: 'Lieu',
+  opened_at: 'Ouverte le',
+  closed_at: 'Close le',
+  closed_by: 'Close par',
+  closing_note: 'Observation de clôture',
+  opening_float: 'Fond de caisse',
+  counted_amount: 'Montant compté',
+  expected_amount: 'Montant théorique constaté',
+  variance: 'Écart constaté',
 }
 
 export function fieldLabel(field: string): string {

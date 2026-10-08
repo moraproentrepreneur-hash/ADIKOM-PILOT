@@ -488,6 +488,35 @@ export const PERMISSIONS = {
   PURCHASE_ORDERS_DOWNLOAD: 'commerce.purchase_orders.download',
   PURCHASE_ORDERS_PRINT: 'commerce.purchase_orders.print',
 
+  /* --- Point de vente — LOT 27 : caisses et sessions -----------------------
+   *
+   * Module `pos`, ordre 12 (Plan 02 §10.2, décision C-27 — les neuf, telles
+   * quelles). Les VENTES (`pos.sales.*`) relèvent du LOT 28.
+   *
+   * 🟥 `POS_SESSION_AMOUNTS_VIEW` EST LA CAPACITÉ LA PLUS IMPORTANTE DU LOT :
+   * `pos.sessions.view` répond à « qui était en caisse » SANS « combien il y
+   * avait dedans ». Les montants vivent dans une table sœur (T-1), dont la
+   * lecture est PAR LIGNE : cette capacité OU être le caissier de la ligne
+   * (B-13). Un caissier voit donc les siens sans elle, jamais ceux d'un autre.
+   *
+   * `close` est un VALIDATE : clôturer, c'est constater un montant compté.
+   * Clôturer la session d'un AUTRE exige en plus `amounts.view` (Module 12 §11,
+   * Q-2) — la base le vérifie.
+   *
+   * AUCUNE capacité d'écart (soustraction de deux montants déjà gouvernés), de
+   * document ni d'impression : rien de tel n'existe (Plan 02 §10.3).
+   */
+  POS_REGISTERS_VIEW: 'pos.registers.view',
+  POS_REGISTERS_CREATE: 'pos.registers.create',
+  POS_REGISTERS_UPDATE: 'pos.registers.update',
+  POS_REGISTERS_ARCHIVE: 'pos.registers.archive',
+
+  POS_SESSIONS_VIEW: 'pos.sessions.view',
+  POS_SESSIONS_OPEN: 'pos.sessions.open',
+  POS_SESSIONS_CLOSE: 'pos.sessions.close',
+  POS_SESSIONS_EXPORT: 'pos.sessions.export',
+  POS_SESSION_AMOUNTS_VIEW: 'pos.sessions.amounts.view',
+
   // --- Paramètres ------------------------------------------------------------
   SETTINGS_COMPANY_VIEW: 'settings.company.view',
   SETTINGS_COMPANY_UPDATE: 'settings.company.update',

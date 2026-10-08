@@ -70,6 +70,8 @@ import {
   type PurchaseOrderStatus,
   type PurchaseQuoteStatus,
 } from '@/features/purchasing/constants'
+import { listSessions, loadVariances } from '@/features/pos/data'
+import { SESSION_STATUS_LABELS, parseSessionWindow } from '@/features/pos/constants'
 import { EXPORT_LIMIT, listAuditEventsForExport } from '@/features/audit/data'
 import {
   ACTION_LABELS as AUDIT_ACTION_LABELS,
@@ -1022,6 +1024,93 @@ export const EXPORTS: Record<string, ExportDefinition> = {
         truncated
           ? `Les ${EXPORT_LIMIT.toLocaleString('fr-FR')} événements les plus récents — affinez les filtres pour couvrir le reste`
           : 'Événements, sans la situation avant / après'
+      )
+    },
+  },
+
+  /*
+   * Sessions de caisse — LOT 27 (Module 12).
+   *
+   * 🟥 LES MONTANTS NE SORTENT QU'AVEC `pos.sessions.amounts.view` (Module 12
+   * §11, Q-5). La règle de l'écran — « un caissier voit les siens » — ne se
+   * transpose pas à un fichier qui circule : sans la capacité, les colonnes de
+   * montants N'EXISTENT PAS, plutôt que d'être pleines pour certaines lignes et
+   * vides pour d'autres, ce qui se lirait « pas de fond de caisse ».
+   *
+   * L'écart est celui que la base DÉRIVE (D1), jamais recalculé ici.
+   */
+  'sessions-caisse': {
+    title: 'Sessions de caisse',
+    viewPermission: PERMISSIONS.POS_SESSIONS_VIEW,
+    permission: PERMISSIONS.POS_SESSIONS_EXPORT,
+    entityType: 'pos_sessions',
+    moduleCode: 'pos',
+    async build(filters) {
+      const window = parseSessionWindow({
+        day: filters.jour ?? '',
+        from: filters.de ?? '',
+        to: filters.a ?? '',
+      })
+      const { sessions } =
+        window.kind === 'invalid'
+          ? { sessions: [] }
+          : await listSessions({
+              window,
+              registerId: filters.caisse,
+              cashierId: filters.caissier,
+              status: filters.statut,
+            })
+
+      const mayReadAmounts = await can(PERMISSIONS.POS_SESSION_AMOUNTS_VIEW)
+      const variances = mayReadAmounts ? await loadVariances(sessions) : new Map<string, number | null>()
+
+      type Row = (typeof sessions)[number]
+
+      return dataset(
+        sessions,
+        [
+          { header: 'Session', width: 20, value: (r) => r.sessionNo },
+          { header: 'Caisse', width: 28, value: (r) => r.registerLabel },
+          { header: 'Caissier', width: 28, value: (r) => r.cashierLabel },
+          { header: 'Ouverture', width: 18, format: 'datetime', value: (r) => toExcelDate(r.openedAt) },
+          {
+            header: 'Clôture',
+            width: 18,
+            format: 'datetime',
+            value: (r) => (r.closedAt ? toExcelDate(r.closedAt) : null),
+          },
+          { header: 'Statut', width: 12, value: (r) => SESSION_STATUS_LABELS[r.status] },
+          { header: 'Close par', width: 24, value: (r) => r.closedByLabel },
+          { header: 'Observation', width: 32, value: (r) => r.closingNote },
+          ...(mayReadAmounts
+            ? ([
+                {
+                  header: 'Fond de caisse',
+                  width: 16,
+                  format: 'amount' as const,
+                  value: (r: Row) => r.amounts?.openingFloat ?? null,
+                },
+                {
+                  header: 'Montant compté',
+                  width: 16,
+                  format: 'amount' as const,
+                  value: (r: Row) => r.amounts?.countedAmount ?? null,
+                },
+                {
+                  header: 'Écart',
+                  width: 14,
+                  format: 'amount' as const,
+                  value: (r: Row) => variances.get(r.id) ?? null,
+                },
+              ])
+            : []),
+        ],
+        [
+          window.kind === 'window' ? `En caisse ${window.label}` : null,
+          mayReadAmounts ? 'avec montants' : 'sans montants',
+        ]
+          .filter(Boolean)
+          .join(' — ')
       )
     },
   },
