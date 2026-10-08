@@ -6621,10 +6621,9 @@ après P-4, D-1, D-2, B-10, B-11, C-2 et C-28.
 
 # DEC-055 — Point de vente : ventes et encaissement (LOT 28) — décisions de la Direction
 
-> 🟩 **DÉCISIONS VALIDÉES PAR LA DIRECTION LE 8 OCTOBRE 2026.** 🟧 **Mise en œuvre à venir**
-> (LOT 28, développé dans Claude Code Cloud sur le LOT 27 provisoire). Aucune colonne, aucune
-> fonction, aucune capacité n'existe à cette date. Le LOT 28 complète cette entrée de sa mise
-> en œuvre ; la reprise locale l'arrête définitivement (Rapport 22).
+> 🟩 **DÉFINITIVE — 8 octobre 2026.** Décisions de la Direction (§a, et §d pour Q-10 et Q-13),
+> mises en œuvre par le LOT 28 (Cloud), complétées et validées en local : migrations 112 à 122
+> appliquées sur Supabase, recettes SQL et navigateur, cycle de sauvegarde réel. Détail : Rapport 22.
 
 **Date des décisions :** 8 octobre 2026 · **Lot :** 28 · **Module :** 12 `pos`
 **Références :** Plan 02 §3.4, §3.5, §7.5, §9.2, §10.2, §16.2 · DEC-024 · DEC-051 · DEC-054 ·
@@ -6659,10 +6658,16 @@ Les indicateurs « encaissé clients » (Σ `customer_payments`) comptent le rè
 vente **facturée**, daté du jour de la vente ; une vente **non facturée** n'y figure pas. Tout
 futur indicateur PDV devra exclure les règlements adossés.
 
-## Mise en œuvre — provisoire
+## d. Décisions complémentaires de la Direction — 8 octobre 2026
 
-> 🟧 **PROVISOIRE — À VALIDER EN LOCAL.** Rédigée par Claude Code Cloud le 8 octobre 2026, sur
-> le LOT 27 provisoire. Rien n'est appliqué sur Supabase. Détail : Rapport 22 (provisoire).
+| Réf. | Décision | Mise en œuvre (migrations 121, 122) |
+| :-: | --- | --- |
+| **Q-10** | Une vente **anonyme** peut être facturée plus tard : un **client enregistré** lui est rattaché **au moment de la demande de facture** — une seule fois, contrôlé, audité ; aucun montant historique modifié ; aucune seconde écriture de trésorerie ; facture par la chaîne existante ; aucun double rattachement. | `invoice_pos_sale(vente, échéance, client)` : rattachement dans la transaction de la facture, sous drapeau `adikom.pos_client_attach` ; la garde de la vente n'admet que NULL → client, sur vente validée ; policy d'UPDATE ouverte à `billing.customer_invoices.create` pour une vente encore anonyme ; journal `UPDATE` avant/après. **Aucune capacité nouvelle** : rattacher relève de qui facture. |
+| **Q-13** | Les coûts d'achat restent **strictement confidentiels** pour les caissiers. Un utilisateur **autorisé** peut **valoriser ultérieurement** les coûts manquants ; coûts historiques conservés et traçables ; prix de vente intacts ; marges calculées sur les coûts **effectivement enregistrés**, jamais fictives. | `value_pos_sale_costs(vente?)` : exige `catalog.services.cost.update` **et** `.cost.view` ; copie le coût **en vigueur le jour de la vente** aux lignes **sans** coût, n'en remplace jamais un ; une ligne sans coût ce jour-là reste « inconnue ». **Aucun `SECURITY DEFINER`**, **aucune capacité nouvelle** ; lecture des coûts toujours réservée à `.cost.view`. |
+
+Catalogue **246** et sauvegarde **69** inchangés par ces deux décisions.
+
+## Mise en œuvre
 
 | Décision | Mise en œuvre |
 | :-: | --- |
@@ -6675,10 +6680,11 @@ futur indicateur PDV devra exclure les règlements adossés.
 | **D-2** | Migration isolée **114** ; formulaires de règlement clients et fournisseurs étendus |
 | **B-10** | `cancel_pos_sale` motivée, possible session close ; garde en base : refus si facture non annulée ; la facture d'une vente ne s'annule pas (Q-11) |
 | **B-11** | Aucune fonction, aucune capacité de remboursement |
-| **C-28** | Migration **119** : 8 capacités, catalogue **246** (provisoire) ; numérotation `VTE` |
+| **C-28** | Migration **119** : 8 capacités, catalogue **246** ; numérotation `VTE` |
 
-Choix techniques en l'absence de décision, **à confirmer** : Q-7 à Q-15 (Module 12 §21,
-Rapport 22 §11), et la section de navigation provisoire « Ventes au comptoir ».
+Choix techniques retenus en l'absence de décision, en vigueur jusqu'à décision contraire : Q-7
+à Q-9, Q-11, Q-12, Q-14, Q-15 (Module 12 §21, Rapport 22 §11). Navigation : une seule section
+« Point de vente » (caisse, ventes, sessions, caisses).
 
 ---
 
