@@ -320,6 +320,8 @@ Les modules définis sont :
 
 11\. Commerce
 
+12\. Point de vente
+
 
 
 Le module \*\*Produits \& Services\*\* (code `catalog`) a été ajouté au LOT 20 sur décision de la Direction (DEC-043, Plan 02 §7.1).
@@ -347,6 +349,18 @@ Le commerce CLIENT — devis et commandes clients — a été livré au LOT 25 (
 
 
 \*\*Une commande alimente la facturation client EXISTANTE.\*\* Aucune table de facture commerciale parallèle n'est créée, et aucune fonction de facturation n'est réécrite.
+
+
+
+Le module \*\*Point de vente\*\* (code `pos`, ordre 12) a été ajouté au LOT 27 (Plan 02 §7.5, §10.2 · décisions B-8, B-9, B-13, C-27, T-1 du 8 octobre 2026 · DEC-054 provisoire). Référence : `00 Documentation/03_Modules/12_Point_de_Vente.md`.
+
+Le LOT 27 livre les \*\*caisses\*\* et les \*\*sessions de caisse\*\*. Les \*\*ventes au comptoir\*\* relèvent du LOT 28 : aucune entrée « à venir » n'est affichée.
+
+\*\*Une caisse n'est pas un compte : elle en utilise un\*\* — un compte financier `CASH` actif. Une seule trésorerie : aucun solde n'est porté par une caisse.
+
+\*\*Une seule session ouverte par caisse ET par utilisateur\*\*, garanties en base (B-8). \*\*Aucun seuil d'écart, aucune écriture d'ajustement\*\* : la clôture constate l'écart, l'affiche et l'audite (B-9). Montant théorique et écart sont \*\*dérivés\*\*, jamais stockés (D1).
+
+\*\*Les montants de session vivent dans une table sœur\*\* (`pos_session_amounts`, T-1) : `pos.sessions.view` n'ouvre pas les montants ; un caissier voit les siens, jamais ceux d'un autre sans `pos.sessions.amounts.view` (B-13) — premier objet du SaaS dont la lecture dépend de la personne inscrite sur la ligne.
 
 
 
