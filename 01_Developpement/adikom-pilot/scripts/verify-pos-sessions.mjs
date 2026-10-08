@@ -273,7 +273,12 @@ async function main() {
 
     const a = await signIn(browser, base, accounts.caissierA)
     const sessionA = await openByScreen(a.page, base, register1, 50000)
-    check(/ouverte à votre nom/.test(await text(a.page)), 'Le caissier A ouvre sa session')
+    // L'URL change avant que la fiche soit rendue : attendre l'ÉTAT, pas l'adresse.
+    const openedNotice = await a.page
+      .locator('main', { hasText: 'ouverte à votre nom' })
+      .waitFor({ timeout: 15000 })
+      .then(() => true, () => false)
+    check(openedNotice, 'Le caissier A ouvre sa session')
 
     await a.page.goto(`${base}/pdv/caisses`, { waitUntil: 'load' })
     check(/Votre session SES-/.test(await text(a.page)), 'Le bandeau rappelle la session ouverte')
