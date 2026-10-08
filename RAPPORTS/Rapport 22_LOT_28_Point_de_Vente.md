@@ -1,22 +1,84 @@
 # Rapport 22 — LOT 28 · Point de vente : ventes et encaissement
 
-**⚠ PROVISOIRE — rédigé par Claude Code Cloud, à valider et compléter en local**
+**🟩 DÉFINITIF — validé en local et sur Supabase le 8 octobre 2026.** Le corps du rapport
+(§0 à §12) est celui du Cloud, conservé pour l'historique ; la section **V** fait foi. Les
+résultats obtenus dans le Cloud sur PostgreSQL 16 **jetable** n'y comptent pas comme validation.
 
 | | |
 | --- | --- |
 | Date | 8 octobre 2026 |
-| Nature | **Lot fonctionnel** — module 12 `pos`, partie ventes et encaissement · **seul lot touchant la trésorerie** |
-| Étape de la méthode | **Cloud** (Cloud LOT 27 → **Cloud LOT 28** → Local LOT 27 → Local LOT 28 → GitHub → Vercel) |
-| Base | `origin/lot-28-point-de-vente` @ **`a0b907c`** = LOT 27 provisoire **`09d9ab6`** + documents de préparation + DEC-055 |
-| Point de départ | 111 migrations · 238 capacités · 65 tables sauvegardées · 426 tests — **provisoires** (LOT 27 non validé) |
-| Point d'arrivée (branche) | **120** migrations · **246** capacités · **69** tables sauvegardées · **454** tests |
-| Branche réelle | **`claude/happy-lovelace-iniyzo`** — la plateforme impose le préfixe `claude/` ; repositionnée sur `a0b907c` (avance rapide depuis son état distant `32d0fcb`) |
-| SHA final | voir §0 et le message de livraison (le commit de ce rapport est le dernier) |
-| DEC | **DEC-055** complétée d'une section « Mise en œuvre — provisoire » (§a à §c inchangés) |
-| Migrations appliquées sur Supabase | 🟥 **Aucune** |
-| Déploiement Vercel | 🟥 **Aucun** — `vercel.json` / `vercel.ts` ni créés ni modifiés |
+| Nature | **Lot fonctionnel** — module 12 `pos`, ventes et encaissement · lot touchant la trésorerie |
+| Point de départ | `main` · `00f2d3c` (LOT 27 validé) · 111 migrations · 238 capacités · 65 tables |
+| Point d'arrivée | **122** migrations · **246** capacités · **69** tables sauvegardées · 454 tests |
+| Branche | `lot-28-recuperation-cloud` — 9 commits Cloud (`f9535c6`…`0f650cb`) **intacts**, fusion de `main` (`ebfbea1`), compléments locaux |
+| DEC | **DEC-055 définitive**, §d : décisions **Q-10** et **Q-13** |
 
 ---
+
+# V. Validation locale — ce qui fait foi
+
+## V.1 Récupération
+
+Push Cloud refusé (403) : bundle vérifié (`a0b907c` → `0f650cb`), récupéré sans modifier un
+SHA, publié sous `lot-28-recuperation-cloud`. Aucun secret, aucun `.env*`, aucun `vercel.*`.
+Chaque push de branche : Preview Vercel `CANCELED` (O-1 tenue).
+
+## V.2 Ce que le local a ajouté
+
+| Commit | Contenu |
+| --- | --- |
+| `ebfbea1` | fusion de `main` (LOT 27 validé) — sans conflit, sans rebase |
+| `5116106` | **Q-10** (migration **121** `20261009001000_facturer_une_vente_anonyme`) · **Q-13** (migration **122** `20261009001100_valoriser_les_couts_manquants`) · écrans (client à la facture, carte « Coûts et marge ») · **navigation fusionnée** : une section « Point de vente » (Caisse, Ventes, Sessions de caisse, Caisses) |
+| `7799bdd` | `pos_sales.sql` **§21 (Q-10)** et **§22 (Q-13)** ; `verify-pos-sales.mjs` lit la page après le squelette de chargement (défaut démontré au LOT 27) |
+| `ae9e5eb` | DEC-055 définitive, rapport de reprise |
+
+**Q-10** — `invoice_pos_sale(vente, échéance, client)` : une vente **anonyme** reçoit son client
+au moment de la facture, **une seule fois**, dans la même transaction (drapeau
+`adikom.pos_client_attach`) ; la garde de la vente (reprise de 116) n'admet que NULL → client,
+sur vente validée ; policy d'UPDATE (reprise de 116) ouverte à qui facture, pour une vente
+encore anonyme ; journal `UPDATE` avant/après ; aucun montant ni écriture de trésorerie.
+
+**Q-13** — `value_pos_sale_costs(vente?)` : exige `catalog.services.cost.update` **et**
+`.cost.view` ; copie le coût **en vigueur le jour de la vente** aux lignes **sans** coût,
+n'en remplace jamais un ; une ligne sans coût ce jour-là reste « inconnue » (aucune marge
+fictive). Policy d'insertion des coûts (reprise de 116) ouverte à `.cost.update`, lecture
+**inchangée** (`.cost.view` seule). **Aucun `SECURITY DEFINER`, aucune capacité, aucune table.**
+
+## V.3 Base — migrations réellement appliquées
+
+Sauvegarde préalable `SAUVEGARDES_ADIKOM/adikom-pilot-avant-lot-28-2026-10-08T10-01-30.json`
+(65 tables, 221 lignes, relue et comparée). `db:status` → exactement **112 à 122** ; `db:push`
+→ les 11 appliquées, contrôles intégrés compris. `db:status` ensuite : *up to date*.
+
+## V.4 Tests réellement exécutés (Supabase réel)
+
+| Contrôle | Résultat |
+| --- | --- |
+| lint · typecheck · Vitest (dont parité TS ↔ SQL) · build | ✅ · ✅ · **454/454** · ✅ |
+| `db:verify:pos-sales` — 60 000 dus / 100 000 donnés → **40 000 de monnaie, 60 000 en trésorerie** ; facture sur demande **sans mouvement** ; mixte réparti par compte ; règlement adossé fictif ou en double refusé ; annulation B-10 sans effacement ; P-4 ; D-1 ; **Q-10** ; **Q-13** | ✅ **27/27** |
+| `db:verify` : customer-invoices 21 · customer-payments 19 · treasury 19 · transfers 20 · supplier-invoices 22 · commerce 29 · purchasing 29 · catalog 19 · pos-sessions 23 · audit 17 · backup 15 · billing 20 · dashboard 15 · analytics 15 | ✅ 14/14 |
+| **Cycle réel** sauvegarde → réinitialisation → restauration (`verify:backup`, **69** tables) | ✅ 50/50, 221 lignes restaurées |
+| `verify:capabilities` | ✅ 217/217 (deux interruptions **réseau** — 502, puis lecture vide — rejouées, démontage vérifié) |
+| `verify:pos-sales` · `verify:customer-payments` · `verify:supplier-invoices` · `verify:payments` · `verify:responsive` (local) | ✅ 22/22 · 36/36 · 37/37 · 32/32 · 539/539 |
+| Production — voir V.6 | |
+
+Non rejoués (§47 bis, non touchés) : location, avenants, imputations, projets, planning,
+notifications. Résidus : chaque recette a démonté ses sujets (« aucun résidu », « Données DEMO
+intactes »).
+
+## V.5 Dettes
+
+- Choix restrictifs Q-7 à Q-9, Q-11, Q-12, Q-14, Q-15 en vigueur jusqu'à décision contraire (§11).
+- Pas d'avoirs : une vente facturée ne s'annule pas (B-10) — décision existante.
+- Futur indicateur PDV : exclure les règlements adossés (DEC-055 §c).
+- `analytics.sql` §10 suppose qu'aucune facture n'est datée du jour : vert aujourd'hui, fragile.
+
+## V.6 Production
+
+*(complétée après déploiement)*
+
+---
+
 
 # 0. 🟥 À lire d'abord — la branche n'a PAS pu être poussée
 
@@ -293,4 +355,4 @@ Après fusion de `main` (LOT 27 validé) dans la branche, recalage éventuel des
 
 ---
 
-**LOT 28 CLOUD — PROVISOIRE · AUCUNE MIGRATION APPLIQUÉE · AUCUN DÉPLOIEMENT**
+**LOT 28 — VALIDÉ.** (SHA déployé : V.6)
