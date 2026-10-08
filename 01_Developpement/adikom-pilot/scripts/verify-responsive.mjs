@@ -107,6 +107,10 @@ const ROUTES = [
   ['/commerce/devis-fournisseurs/nouveau', 'Nouveau devis fournisseur'],
   ['/commerce/commandes-fournisseurs', 'Commandes fournisseurs'],
   ['/commerce/commandes-fournisseurs/nouvelle', 'Nouvelle commande fournisseur'],
+  // Point de vente — LOT 27 : caisses et sessions. Les fiches se résolvent plus bas.
+  ['/pdv/caisses', 'Caisses'],
+  ['/pdv/caisses/nouvelle', 'Nouvelle caisse'],
+  ['/pdv/sessions', 'Sessions de caisse'],
   ['/tresorerie/comptes', 'Comptes'],
   ['/tresorerie/ecritures', 'Écritures'],
   ['/tresorerie/virements', 'Virements'],
@@ -409,6 +413,9 @@ async function main() {
       ['sales_quotes', '/commerce/devis', 'Devis client · fiche'],
       ['purchase_quotes', '/commerce/devis-fournisseurs', 'Devis fournisseur · fiche'],
       ['purchase_orders', '/commerce/commandes-fournisseurs', 'Commande fournisseur · fiche'],
+      // LOT 27 : la fiche d'une session porte les montants gardés et la clôture.
+      ['pos_registers', '/pdv/caisses', 'Caisse · fiche'],
+      ['pos_sessions', '/pdv/sessions', 'Session de caisse · fiche'],
     ]) {
       const { data } = await admin.from(table).select('id').limit(1)
 
