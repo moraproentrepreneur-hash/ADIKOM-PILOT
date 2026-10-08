@@ -87,7 +87,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-051 | Remises commerciales — montant fixe en KMF | Décision Direction — **clôt la question laissée ouverte par DEC-049 §f** | Validée — **implémentation différée** | 2026-09-23 |
 | DEC-052 | Commerce fournisseur — devis et commandes — LOT 26 | Quatre tables, **seize capacités dont deux lectures sensibles**, prix de l'offre figé, **P-5 intact** | Appliquée — **complète le Module 11** | 2026-09-23 |
 | DEC-053 | Plusieurs factures pour une commande fournisseur | Décision Direction — **clôt la question laissée ouverte par DEC-052 §g**. Aucune table, aucune capacité : une contrainte retirée | Appliquée — **acompte puis solde sur la même commande** | 2026-09-29 |
-| DEC-055 | Point de vente : ventes et encaissement — LOT 28 | Décisions Direction C-2, T-2, D-3, P-4, D-1, D-2, B-10, B-11, C-28, S-1. **Un encaissement, une seule écriture** ; facture sur demande par **règlement adossé** | Validée — **mise en œuvre à venir (LOT 28)** | 2026-10-08 |
+| DEC-055 | Point de vente : ventes et encaissement — LOT 28 | Décisions Direction C-2, T-2, D-3, P-4, D-1, D-2, B-10, B-11, C-28, S-1. **Un encaissement, une seule écriture** ; facture sur demande par **règlement adossé** | Validée — **mise en œuvre provisoire (Cloud), à valider en local** | 2026-10-08 |
 
 > **DEC-045 a été consignée le 18 septembre 2026.** Le Plan 02 lui avait assigné
 > son objet — l'avenant de location — et le LOT 22 l'a livré. La réservation
@@ -6657,6 +6657,27 @@ après P-4, D-1, D-2, B-10, B-11, C-2 et C-28.
 Les indicateurs « encaissé clients » (Σ `customer_payments`) comptent le règlement adossé d'une
 vente **facturée**, daté du jour de la vente ; une vente **non facturée** n'y figure pas. Tout
 futur indicateur PDV devra exclure les règlements adossés.
+
+## Mise en œuvre — provisoire
+
+> 🟧 **PROVISOIRE — À VALIDER EN LOCAL.** Rédigée par Claude Code Cloud le 8 octobre 2026, sur
+> le LOT 27 provisoire. Rien n'est appliqué sur Supabase. Détail : Rapport 22 (provisoire).
+
+| Décision | Mise en œuvre |
+| :-: | --- |
+| **S-1** | Migrations **112** et **113**, premières de la branche, commits distincts : gardes `zzz_…_born_by_function` sur `customer_invoices` et `customer_payments` ; `create_customer_invoice` et `record_customer_payment` reprises de leur dernière version, deux `set_config` ajoutés |
+| **C-2** | `customer_invoices.pos_sale_id` (posé par `invoice_pos_sale` seule) ; `customer_payments.pos_payment_id` = **règlement adossé**, né par sa fonction, **sans écriture** ; `fn_treasury_entry_source` refuse toute écriture sur un règlement adossé ; un règlement adossé ne s'annule pas seul |
+| **T-2** | `treasury_entries.pos_payment_id` (5ᵉ origine), index unique ; écriture `POS_SALE`, `IN`, **montant encaissé** ; source, immuabilité, cohérence et policies révisées ensemble |
+| **D-3** | Espèces → compte de la caisse, imposé par la garde ; autres modes → compte **`BANK`** actif (choix restrictif Q-7) ; mode et compte dans le journal, l'écriture, la fiche, le reçu, l'export |
+| **P-4** | Contrôle différé en base : non soldée ⇒ client **et** facture émise ; `pos.sales.credit` exigée dans la fonction |
+| **D-1** | Remises fixes ligne et globale, bornées par contrainte et contrôle différé ; `pos.sales.discount` exigée dans la fonction ; lignes `DISCOUNT` libellées sur la facture |
+| **D-2** | Migration isolée **114** ; formulaires de règlement clients et fournisseurs étendus |
+| **B-10** | `cancel_pos_sale` motivée, possible session close ; garde en base : refus si facture non annulée ; la facture d'une vente ne s'annule pas (Q-11) |
+| **B-11** | Aucune fonction, aucune capacité de remboursement |
+| **C-28** | Migration **119** : 8 capacités, catalogue **246** (provisoire) ; numérotation `VTE` |
+
+Choix techniques en l'absence de décision, **à confirmer** : Q-7 à Q-15 (Module 12 §21,
+Rapport 22 §11), et la section de navigation provisoire « Ventes au comptoir ».
 
 ---
 
