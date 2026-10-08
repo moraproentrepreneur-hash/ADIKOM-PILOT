@@ -242,13 +242,22 @@ begin
       'Une colonne de coût ou de marge figure sur une ligne commerciale : %', v_fautes;
   end if;
 
-  if exists (
-    select 1 from pg_tables where schemaname = 'public' and tablename = 'commercial_line_costs'
+  /*
+   * LOT 28 : `commercial_line_costs` existe désormais (DEC-049 §e, Plan 02
+   * §9.3). Le coût copié vit LÀ, jamais sur la ligne — et sa lecture est la
+   * sienne : `catalog.services.cost.view`, et elle seule.
+   */
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'commercial_line_costs'
+      and policyname = 'commercial_line_costs_select'
+      and qual like '%catalog.services.cost.view%'
+      and qual not like '%pos.sales.view%'
   ) then
-    raise exception '`commercial_line_costs` anticipe le LOT 28 (Plan 02 §13.2).';
+    raise exception '`commercial_line_costs` n''est pas gardée par catalog.services.cost.view seule (DEC-049 §e).';
   end if;
 
-  raise notice '[OK] 4. Aucune colonne de coût ni de marge — la table des coûts reste au LOT 28.';
+  raise notice '[OK] 4. Aucune colonne de coût ni de marge sur une ligne — le coût copié vit dans sa table, gardée (LOT 28).';
 end $$;
 
 
