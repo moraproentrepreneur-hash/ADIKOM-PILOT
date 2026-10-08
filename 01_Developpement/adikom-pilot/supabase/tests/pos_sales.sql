@@ -1299,6 +1299,268 @@ begin
 end $$;
 
 
+-- --- 21. Q-10 — FACTURER UNE VENTE ANONYME : UN CLIENT, UNE FOIS -----------------
+-- Décor (service) : un second client, et un valoriste des coûts pour le §22.
+do $$
+declare
+  v_id uuid;
+begin
+  insert into public.clients (client_no, type, legal_name, phone, status)
+  values (public.next_number('client'), 'COMPANY', 'RECETTE VTE AUTRE SARL', '+269 300 00 02', 'ACTIVE')
+  returning id into v_id;
+  insert into recette_vte values ('client2', v_id);
+
+  v_id := gen_random_uuid();
+  insert into auth.users (id, instance_id, aud, role, email, created_at, updated_at)
+  values (v_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+          'recette.vte.valoriste@adikom.test', now(), now());
+  insert into public.app_users (id, first_name, last_name, username, email, status, is_super_admin)
+  values (v_id, 'Recette', 'Vente valoriste', 'recette.vte.valoriste', 'recette.vte.valoriste@adikom.test', 'ACTIVE', false);
+  insert into public.user_permissions (user_id, permission_id, effect)
+  select v_id, p.id, 'ALLOW' from public.permissions p
+  where p.code in ('pos.sales.view', 'catalog.services.cost.view', 'catalog.services.cost.update');
+  insert into recette_vte values ('valoriste', v_id);
+end $$;
+
+set local role authenticated;
+
+do $$
+declare
+  v_sale uuid;
+  v_ok   int := 0;
+begin
+  -- Une vente ANONYME, soldée, par un caissier qui ne lit pas les coûts.
+  perform pg_temp.agir_comme('caissier');
+  insert into recette_vte values ('session_q10', public.open_pos_session(pg_temp.id_de('caisse'), 0));
+  perform pg_temp.valider();
+  v_sale := public.record_pos_sale(pg_temp.id_de('session_q10'),
+    jsonb_build_array(jsonb_build_object('variant_id', pg_temp.id_de('guide'), 'quantity', 1)),
+    jsonb_build_array(jsonb_build_object('method', 'CASH', 'tendered', 25000)));
+  perform pg_temp.valider();
+  insert into recette_vte values ('vente_anonyme', v_sale);
+
+  -- Sans client choisi : refusée, comme avant Q-10.
+  perform pg_temp.agir_comme('facturier');
+  begin
+    perform public.invoice_pos_sale(v_sale);
+    raise exception 'ÉCHEC : une vente anonyme a été facturée sans client.';
+  exception when check_violation then v_ok := v_ok + 1;
+  end;
+
+  -- Le caissier, qui ne facture pas, ne rattache pas non plus.
+  perform pg_temp.agir_comme('caissier');
+  begin
+    perform public.invoice_pos_sale(v_sale, null, pg_temp.id_de('client'));
+    raise exception 'ÉCHEC : un caissier a rattaché un client en facturant.';
+  exception when insufficient_privilege then v_ok := v_ok + 1;
+  end;
+
+  -- 🟥 Écriture directe du client, même par qui facture : refusée.
+  perform pg_temp.agir_comme('facturier');
+  begin
+    update public.pos_sales set client_id = pg_temp.id_de('client') where id = v_sale;
+    raise exception 'ÉCHEC : le client d''une vente a été écrit directement.';
+  exception when check_violation or insufficient_privilege then v_ok := v_ok + 1;
+  end;
+
+  if v_ok <> 3 then raise exception 'Refus attendus : 3, obtenus %.', v_ok; end if;
+  if (select client_id from public.pos_sales where id = v_sale) is not null then
+    raise exception 'Un refus a laissé un client sur la vente.';
+  end if;
+end $$;
+
+reset role;
+do $$ begin perform pg_temp.redevenir_service(); end $$;
+
+do $$
+declare
+  v_sale uuid := pg_temp.id_de('vente_anonyme');
+  v_ok   boolean := false;
+begin
+  -- 🟥 Le drapeau de la vente SEUL ne suffit pas : la garde exige celui du rattachement.
+  perform set_config('adikom.pos_sale', 'on', true);
+  begin
+    update public.pos_sales set client_id = pg_temp.id_de('client') where id = v_sale;
+    raise exception 'ÉCHEC : le client a été rattaché hors de invoice_pos_sale.';
+  exception when check_violation then v_ok := true;
+  end;
+  perform set_config('adikom.pos_sale', 'off', true);
+  if not v_ok then raise exception 'Rattachement hors fonction non refusé.'; end if;
+
+  -- Mesures AVANT : solde de la caisse et écritures de la vente.
+  create temporary table q10_mesure on commit drop as
+    select pg_temp.mouvements(pg_temp.id_de('cash')) as solde,
+           (select count(*) from public.treasury_entries e join public.pos_payments p on p.id = e.pos_payment_id
+             where p.pos_sale_id = v_sale) as ecritures,
+           (select count(*) from public.treasury_entries) as toutes;
+end $$;
+
+set local role authenticated;
+
+do $$
+declare
+  v_sale uuid := pg_temp.id_de('vente_anonyme');
+  v_inv  uuid;
+  v_ok   boolean := false;
+begin
+  perform pg_temp.agir_comme('facturier');
+  v_inv := public.invoice_pos_sale(v_sale, null, pg_temp.id_de('client'));
+  perform pg_temp.valider();
+
+  if (select client_id from public.pos_sales where id = v_sale) <> pg_temp.id_de('client')
+     or (select client_id from public.customer_invoices where id = v_inv) <> pg_temp.id_de('client')
+     or (select pos_sale_id from public.customer_invoices where id = v_inv) <> v_sale
+     or (select status from public.customer_invoices where id = v_inv) <> 'ISSUED' then
+    raise exception 'Q-10 : la facture n''est pas émise au client rattaché, liée à la vente.';
+  end if;
+  if public.pos_sale_total(v_sale) <> 25000 or public.pos_sale_paid(v_sale) <> 25000
+     or public.customer_invoice_total(v_inv) <> 25000 or public.customer_invoice_paid(v_inv) <> 25000 then
+    raise exception 'Q-10 : les montants ont bougé (vente % / %, facture % / %).',
+      public.pos_sale_total(v_sale), public.pos_sale_paid(v_sale),
+      public.customer_invoice_total(v_inv), public.customer_invoice_paid(v_inv);
+  end if;
+
+  -- Une fois : ni seconde facture, ni autre client.
+  begin
+    perform public.invoice_pos_sale(v_sale, null, pg_temp.id_de('client2'));
+    raise exception 'ÉCHEC : une vente rattachée a été refacturée à un autre client.';
+  exception when unique_violation or check_violation then v_ok := true;
+  end;
+  if not v_ok then raise exception 'Second rattachement non refusé.'; end if;
+end $$;
+
+reset role;
+do $$ begin perform pg_temp.redevenir_service(); end $$;
+
+do $$
+declare
+  v_sale uuid := pg_temp.id_de('vente_anonyme');
+  m      record;
+  v_ok   boolean := false;
+begin
+  select * into m from q10_mesure;
+  -- 🟥 C-2 : aucune écriture de plus, solde inchangé.
+  if pg_temp.mouvements(pg_temp.id_de('cash')) <> m.solde
+     or (select count(*) from public.treasury_entries) <> m.toutes
+     or (select count(*) from public.treasury_entries e join public.pos_payments p on p.id = e.pos_payment_id
+          where p.pos_sale_id = v_sale) <> 1 then
+    raise exception '🟥 Q-10 : la facture d''une vente anonyme a mouvementé la trésorerie.';
+  end if;
+
+  -- Le client rattaché ne se remplace pas, même sous les deux drapeaux.
+  perform set_config('adikom.pos_sale', 'on', true);
+  perform set_config('adikom.pos_client_attach', 'on', true);
+  begin
+    update public.pos_sales set client_id = pg_temp.id_de('client2') where id = v_sale;
+    raise exception 'ÉCHEC : le client rattaché a été remplacé.';
+  exception when check_violation then v_ok := true;
+  end;
+  perform set_config('adikom.pos_client_attach', 'off', true);
+  perform set_config('adikom.pos_sale', 'off', true);
+  if not v_ok then raise exception 'Remplacement du client non refusé.'; end if;
+
+  -- Journalisé : avant sans client, après avec.
+  if not exists (select 1 from public.audit_log
+                 where entity_type = 'pos_sales' and entity_id = v_sale::text and action = 'UPDATE'
+                   and (before_data ->> 'client_id') is null
+                   and (after_data ->> 'client_id') = pg_temp.id_de('client')::text) then
+    raise exception 'Q-10 : le rattachement du client n''est pas journalisé.';
+  end if;
+
+  raise notice '[OK] 21. Q-10 : vente anonyme facturée au client choisi, une fois ; refus sans client, au caissier, en écriture directe, hors drapeau, en remplacement ; montants et trésorerie inchangés ; journalisé.';
+end $$;
+
+
+-- --- 22. Q-13 — VALORISER APRÈS COUP, AU COÛT DU JOUR DE LA VENTE -------------------
+do $$
+begin
+  -- Un nouveau coût, en vigueur DEMAIN : il ne doit jamais valoriser la vente d'aujourd'hui.
+  perform public.set_service_cost(pg_temp.id_de('guide'), 99000,
+    (now() at time zone 'Indian/Comoro')::date + 1, 'Hausse de demain');
+end $$;
+
+set local role authenticated;
+
+do $$
+declare
+  v_sale uuid := pg_temp.id_de('vente_anonyme');
+  v_line uuid := (select id from public.pos_sale_lines where pos_sale_id = pg_temp.id_de('vente_anonyme'));
+  v_ok   int := 0;
+  v_n    int;
+begin
+  -- Anti-vacuité : la vente du caissier n'a aucun coût copié.
+  perform pg_temp.agir_comme('valoriste');
+  if exists (select 1 from public.commercial_line_costs where pos_sale_line_id = v_line) then
+    raise exception 'La vente du caissier porte déjà un coût : la recette ne prouverait rien.';
+  end if;
+
+  -- Sans les deux capacités de coût : refusé.
+  perform pg_temp.agir_comme('facturier');
+  begin
+    perform public.value_pos_sale_costs(v_sale);
+    raise exception 'ÉCHEC : un facturier a valorisé des coûts.';
+  exception when insufficient_privilege then v_ok := v_ok + 1;
+  end;
+  perform pg_temp.agir_comme('responsable');   -- lit les coûts, ne les gère pas
+  begin
+    perform public.value_pos_sale_costs(v_sale);
+    raise exception 'ÉCHEC : cost.view seule a valorisé des coûts.';
+  exception when insufficient_privilege then v_ok := v_ok + 1;
+  end;
+
+  -- Écriture directe d'un coût par le valoriste : refusée.
+  perform pg_temp.agir_comme('valoriste');
+  begin
+    insert into public.commercial_line_costs (pos_sale_line_id, unit_cost) values (v_line, 1);
+    raise exception 'ÉCHEC : un coût a été écrit directement.';
+  exception when insufficient_privilege then v_ok := v_ok + 1;
+  end;
+
+  -- Une vente annulée ne se valorise pas.
+  begin
+    perform public.value_pos_sale_costs(pg_temp.id_de('vente_mixte'));
+    raise exception 'ÉCHEC : une vente annulée a été valorisée.';
+  exception when check_violation then v_ok := v_ok + 1;
+  end;
+  if v_ok <> 4 then raise exception 'Refus attendus : 4, obtenus %.', v_ok; end if;
+
+  -- 🟥 La valorisation : le coût du JOUR DE LA VENTE (15 000), jamais 99 000.
+  v_n := public.value_pos_sale_costs(v_sale);
+  perform pg_temp.valider();
+  if v_n <> 1 then raise exception 'Q-13 : % ligne(s) valorisée(s), attendu 1.', v_n; end if;
+  if (select unit_cost from public.commercial_line_costs where pos_sale_line_id = v_line) <> 15000
+     or (select created_by from public.commercial_line_costs where pos_sale_line_id = v_line) <> pg_temp.id_de('valoriste') then
+    raise exception 'Q-13 : coût valorisé faux ou sans auteur.';
+  end if;
+
+  -- Une seconde fois : rien, aucun coût n'est remplacé.
+  if public.value_pos_sale_costs(v_sale) <> 0 then
+    raise exception 'Q-13 : un coût copié a été valorisé deux fois.';
+  end if;
+
+  -- Le prix de vente n'a pas bougé.
+  if public.pos_sale_total(v_sale) <> 25000
+     or (select unit_price from public.pos_sale_lines where id = v_line) <> 25000 then
+    raise exception 'Q-13 : la valorisation a touché le prix de vente.';
+  end if;
+
+  -- 🟥 Le caissier et le lecteur des ventes ne lisent toujours AUCUN coût.
+  perform pg_temp.agir_comme('caissier');
+  if exists (select 1 from public.commercial_line_costs) then
+    raise exception '🟥 Le caissier lit un coût.';
+  end if;
+  perform pg_temp.agir_comme('lecteur');
+  if exists (select 1 from public.commercial_line_costs) then
+    raise exception '🟥 pos.sales.view lit un coût.';
+  end if;
+
+  raise notice '[OK] 22. Q-13 : valorisé au coût du jour de la vente (15 000, pas 99 000), une fois, avec son auteur ; refus sans les deux capacités, en écriture directe, sur vente annulée ; prix intact ; caissier et lecteur ne lisent aucun coût.';
+end $$;
+
+reset role;
+do $$ begin perform pg_temp.redevenir_service(); end $$;
+
+
 -- --- 20. SAUVEGARDE — les quatre tables, dans l'ordre -------------------------------
 do $$
 declare

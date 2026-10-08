@@ -136,7 +136,18 @@ async function signIn(browser, base, account) {
   return { context, page }
 }
 
-const text = async (page) => (await page.locator('main').innerText()).replace(/\s+/g, ' ')
+/**
+ * Le texte de la page RENDUE : `load` survient pendant que le squelette de
+ * `loading.tsx` est encore affiché — lu à ce moment, un contrôle d'ABSENCE
+ * passe à vide (constaté contre la production au LOT 27).
+ */
+const text = async (page) => {
+  await page
+    .locator('[role="status"][aria-label="Chargement…"]')
+    .first()
+    .waitFor({ state: 'detached', timeout: 30000 })
+  return (await page.locator('main').innerText()).replace(/\s+/g, ' ')
+}
 
 /** Choix dans un champ déroulant, rejoué jusqu'à ce qu'il prenne (hydratation). */
 async function choose(page, selector, value) {
