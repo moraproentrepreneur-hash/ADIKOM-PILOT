@@ -12,6 +12,51 @@
 
 ---
 
+# 0. 🟦 Organisation révisée — 8 octobre 2026
+
+**Décision de la Direction :** terminer les **développements** des LOT 27 et 28 dans le Cloud
+**avant** de commencer les validations Supabase et les mises en production locales.
+
+```
+Cloud LOT 27  →  Cloud LOT 28  →  Local LOT 27  →  Local LOT 28  →  GitHub  →  Vercel
+```
+
+Cette organisation **remplace** les règles « le LOT 28 ne part que du `main` fusionné » (§5,
+§6.0, §6.3, §9). Le reste du document demeure.
+
+| Règle | Détail |
+| --- | --- |
+| Le LOT 28 part du **code provisoire** du LOT 27 | branche `lot-28-point-de-vente`, créée sur `09d9ab6` (dernier commit du LOT 27 récupéré) |
+| Deux branches **distinctes** | `lot-27-caisses-sessions` et `lot-28-point-de-vente` ne se fusionnent **ni entre elles, ni dans `main`** pendant le développement Cloud |
+| **Aucune migration Supabase** | ni pour le LOT 27, ni pour le LOT 28, tant que les validations locales n'ont pas commencé |
+| **Aucun secret de production** dans le Cloud | ni URL de connexion, ni clé de service, ni jeton Vercel ; `next build` avec des valeurs **factices** seulement |
+| La validation locale du LOT 27 peut **modifier** le LOT 27 | corrections en migrations **nouvelles**, bloc réservé `20261008000500`–`20261008009900` ; impacts consignés au Rapport 21, section « Impact sur le LOT 28 » |
+| La branche LOT 28 **s'adapte ensuite** | au début de la validation locale du LOT 28, par **fusion** de `main` dans la branche (aucune réécriture d'historique publié sans autorisation) — prompt 04 §0 bis |
+| Le LOT 28 commence à `20261009000100` | toutes ses migrations sont postérieures aux corrections possibles du LOT 27 |
+| **La production reste inchangée** | jusqu'à la validation locale du LOT 27 : `main` ne reçoit ni code, ni migration ; les pushes de branche ne produisent que des déploiements Vercel `CANCELED` (O-1) |
+| Tests | `CLAUDE.md` §47 bis inchangé : ciblé par défaut ; non-régression étendue au LOT 28 (trésorerie, paiements, facturation commune, sauvegarde) |
+
+## 0.1 Récupération du LOT 27 — 8 octobre 2026
+
+Le push Cloud du LOT 27 a échoué (**403** : l'application Claude n'a pas l'accès en écriture au
+dépôt). Le travail a été transmis par **bundle Git** et patch de secours, conservés **hors du
+dépôt** dans `RAPPORTS/LOT 27 - Recuperation Cloud/` — exclus localement par `.git/info/exclude`,
+**jamais publiés** (dépôt public).
+
+| Contrôle | Résultat |
+| --- | --- |
+| `git bundle verify` | ✅ valide · prérequis `32d0fcb` présent · ref `claude/funny-dirac-l3upkm` → `09d9ab6` |
+| Import | ✅ `git fetch <bundle> claude/funny-dirac-l3upkm:lot-27-caisses-sessions` — **patch non réappliqué** |
+| Commits | ✅ 6 commits `70d25fd` → `09d9ab6` sur `32d0fcb` ; `main` inchangé |
+| Migrations | ✅ 4 nouvelles (`20261008000100` à `0400`) → 111 ; **aucune** migration ancienne modifiée |
+| Catalogue / sauvegarde | ✅ assertions de la 110 (**238**) et de la 111 (**65**) — **provisoires** |
+| Secrets | ✅ aucune clé, JWT, jeton ni URL de connexion dans le diff ; aucun `.env*` ajouté |
+| Vercel | ✅ aucun `vercel.json` / `vercel.ts` |
+| `SECURITY DEFINER` | ✅ aucune dans les migrations du lot |
+| Point d'attention | le LOT 27 ajoute l'index unique `financial_accounts (id, kind)` : `db:verify:treasury` est **dû** en local |
+
+---
+
 # 1. État de référence — vérifié le 8 octobre 2026
 
 | Élément | Attendu | Constaté | Comment |
@@ -205,24 +250,25 @@ commune**, **numérotation**, **capacités**, **sauvegarde**. Recettes à rejoue
 
 # 5. Séquence de développement
 
+> 🟦 **Séquence révisée le 8 octobre 2026 (§0).** Le schéma ci-dessous remplace le précédent.
+
 ```
 PRÉALABLES     ✅ O-1 appliquée le 08/10/2026  ·  ✅ décisions LOT 27 validées le 08/10/2026
    │
-LOT 27 CLOUD   doc module 12 → migrations (types+tables+RLS, fonctions, capacités+numérotation,
-   │           backup_scope) → TS (permissions, navigation, écrans, export) → tests Vitest
-   │           → recettes SQL et Playwright ÉCRITES (non exécutées) → lint/typecheck/build
-   │           → push branche → rapport provisoire
-LOT 27 LOCAL   relecture → sauvegarde → db:status → db:push → recettes → corrections
-   │           → fusion main → Vercel → recette production ciblée → Rapport 21 · DEC-054
+LOT 27 CLOUD   ✅ développé · push 403 · récupéré par bundle → lot-27-caisses-sessions @ 09d9ab6
    │
-   ▼   ⛔ le LOT 28 ne part QUE de main APRÈS fusion du LOT 27
-PRÉALABLES     P-4 rendu · décisions LOT 28 rendues · (option) correctif « née par sa fonction »
-   │           sur customer_invoices / customer_payments
-LOT 28 CLOUD   analyse C-2 → ARRÊT pour validation → migrations isolées d'enum → tables
-   │           → 5ᵉ origine de trésorerie → fonctions → capacités → backup_scope → écran caisse,
-   │           historique, reçu → tests → push → rapport provisoire
-LOT 28 LOCAL   idem LOT 27 + non-régression trésorerie/paiements/facturation
-               + cycle de sauvegarde destructif → Rapport 22 · DEC-055
+PRÉALABLES     décisions LOT 28 rendues (06_Decisions_LOT_28_Propositions.md) — C-2 EN PREMIER
+   │           · accès en écriture GitHub rétabli pour le Cloud · branches publiées sur autorisation
+LOT 28 CLOUD   depuis lot-28-point-de-vente (= LOT 27 provisoire + docs) : S-1 (si retenue)
+   │           → doc module 12 → enums isolés → tables → 5ᵉ origine → fonctions → capacités
+   │           → backup_scope → écrans → tests → push branche → Rapport 22 provisoire
+   │
+   ▼   production inchangée jusqu'ici · aucune migration appliquée · aucune fusion
+LOT 27 LOCAL   relecture → sauvegarde → db:status → db:push → recettes → corrections (bloc
+   │           20261008000500–009900) → fusion main → Vercel → Rapport 21 (+ « Impact sur le LOT 28 »)
+LOT 28 LOCAL   fusion de main dans la branche → recalage → relecture → sauvegarde → db:push
+               → recettes + non-régression trésorerie/paiements/facturation + cycle de
+               sauvegarde destructif → fusion main → Vercel → Rapport 22 · DEC-055
 ```
 
 ---
@@ -248,7 +294,10 @@ LOT 28 LOCAL   idem LOT 27 + non-régression trésorerie/paiements/facturation
 **Le Cloud ne fait jamais** : fusion sur `main`, application d'une migration, manipulation de
 données de production, déclenchement volontaire d'un déploiement Vercel.
 
-**Le LOT 28 ne commence qu'après validation complète et déploiement du LOT 27.**
+~~**Le LOT 28 ne commence qu'après validation complète et déploiement du LOT 27.**~~
+🟦 **Révisé le 8 octobre 2026 (§0)** : le **développement** Cloud du LOT 28 part du LOT 27
+provisoire ; sa **validation locale** et sa **livraison** suivent la validation et le déploiement
+du LOT 27.
 
 Workflow de test : `CLAUDE.md` §47 bis — ciblé par défaut, non-régression étendue seulement
 quand une brique transversale est réellement touchée.
@@ -309,7 +358,9 @@ donnée réelle ni d'extrait de sauvegarde.
 | Gel de `main` | tant qu'une branche Cloud est ouverte, `main` ne reçoit **aucune migration**. Correctif urgent → la branche Cloud est rebasée par le local avant validation |
 | Horodatage des migrations | strictement **après** `20260929000300`, dans l'ordre d'application voulu ; les extensions d'enum seules dans leur migration |
 | Migration appliquée = migration figée | une correction après `db:push` est une **nouvelle** migration, jamais une réécriture |
-| Le LOT 28 part du `main` fusionné | jamais de la branche LOT 27, jamais avant la fusion |
+| ~~Le LOT 28 part du `main` fusionné~~ | 🟦 **révisé (§0)** : le LOT 28 part de `lot-28-point-de-vente` (LOT 27 provisoire `09d9ab6`) ; il est adapté au `main` validé par **fusion**, au début de sa validation locale |
+| Bloc réservé | `20261008000500`–`20261008009900` aux corrections locales du LOT 27 ; le LOT 28 commence à `20261009000100` |
+| Fichiers de récupération | `.bundle` et `.patch` **jamais** commités ni poussés (dépôt public) |
 
 ## 6.4 Procédure de reprise locale (résumé — détail dans les prompts 02 et 04)
 
@@ -398,6 +449,11 @@ selon arbitrage ; et poser la garde dès la naissance sur toutes les tables `pos
 
 Les points 🟧 ont une recommandation écrite : une confirmation d'un mot suffit.
 
+> 🟦 **8 octobre 2026** : propositions détaillées, conséquences techniques et une question
+> nouvelle (**D-3**, compte des paiements non-espèces ; **T-2**, granularité de la 5ᵉ origine) dans
+> **`06_Decisions_LOT_28_Propositions.md`**. C-2 y est analysée sur le code réel : recommandation
+> **A — règlement adossé sans écriture**.
+
 ---
 
 # 9. Ordre exact des prochaines opérations
@@ -409,11 +465,18 @@ Les points 🟧 ont une recommandation écrite : une confirmation d'un mot suffi
    (`05_O-1_Securisation_Vercel.md` §5, étape 5).
 4. Lancement Cloud du LOT 27 avec `01_Prompt_Cloud_LOT_27.md` — décisions déjà intégrées.
    Au premier push de la branche, constater le déploiement `CANCELED` (§5, étape 4).
-5. Reprise locale avec `02_Prompt_Local_Validation_LOT_27.md` → fusion → Rapport 21, DEC-054.
-6. Décisions du §8.2 rendues ; correctif S-1 si retenu.
-7. Lancement Cloud du LOT 28 avec `03_Prompt_Cloud_LOT_28.md`, **uniquement** depuis le `main`
-   contenant le LOT 27 validé.
-8. Reprise locale avec `04_Prompt_Local_Validation_LOT_28.md` → Rapport 22, DEC-055.
+> 🟦 **Ordre révisé le 8 octobre 2026 (§0)** — les étapes 5 à 8 d'origine sont remplacées :
+
+5. ✅ LOT 27 développé dans le Cloud ; push refusé (403) ; récupéré par bundle → branche locale
+   `lot-27-caisses-sessions` @ `09d9ab6` ; branche `lot-28-point-de-vente` créée au même point.
+6. Décisions du §8.2 rendues (`06_Decisions_LOT_28_Propositions.md`) — **C-2 avant tout schéma**.
+7. **Sur autorisation** : publication de `lot-27-caisses-sessions` puis de `lot-28-point-de-vente`
+   (déploiements Vercel attendus : `CANCELED`). Accès en écriture GitHub rétabli pour le Cloud.
+8. Lancement Cloud du LOT 28 avec `03_Prompt_Cloud_LOT_28.md`, depuis `lot-28-point-de-vente`.
+9. Reprise locale du LOT 27 avec `02_Prompt_Local_Validation_LOT_27.md` → fusion → Rapport 21
+   (section « Impact sur le LOT 28 »), DEC-054.
+10. Reprise locale du LOT 28 avec `04_Prompt_Local_Validation_LOT_28.md` (§0 bis : fusion de
+    `main` dans la branche) → Rapport 22, DEC-055.
 
 ---
 
