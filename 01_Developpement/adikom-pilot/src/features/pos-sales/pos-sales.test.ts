@@ -173,19 +173,20 @@ describe('D-2 — Mvola, Holo, Wakati partout', () => {
 })
 
 describe('navigation des ventes', () => {
-  const section = NAVIGATION.filter(isSection).find((entry) => entry.label === 'Ventes au comptoir')
+  const section = NAVIGATION.filter(isSection).find((entry) => entry.label === 'Point de vente')
 
-  it('porte la caisse et l’historique, chacun sous SA capacité', () => {
-    expect(section?.items.map((item) => [item.href, item.permission])).toEqual([
+  it('ouvre la section Point de vente par la caisse et l’historique, chacun sous SA capacité', () => {
+    expect(section?.items.slice(0, 2).map((item) => [item.href, item.permission])).toEqual([
       ['/pdv/caisse', PERMISSIONS.POS_SALES_CREATE],
       ['/pdv/ventes', PERMISSIONS.POS_SALES_VIEW],
     ])
+    expect(NAVIGATION.filter(isSection).some((entry) => entry.label === 'Ventes au comptoir')).toBe(false)
     expect(section?.items.every((item) => item.status === 'ready')).toBe(true)
   })
 
   it('montre l’historique à qui ne peut que consulter', () => {
     const visible = filterNavigation(NAVIGATION, new Set([PERMISSIONS.POS_SALES_VIEW]), false)
-    const sales = visible.filter(isSection).find((entry) => entry.label === 'Ventes au comptoir')
+    const sales = visible.filter(isSection).find((entry) => entry.label === 'Point de vente')
     expect(sales?.items.map((item) => item.href)).toEqual(['/pdv/ventes'])
   })
 })

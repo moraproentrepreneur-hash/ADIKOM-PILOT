@@ -14,7 +14,8 @@ import { formatAmount } from '@/lib/money'
 import { ENTRY_STATUS_LABELS, PAYMENT_METHOD_LABELS } from '@/features/treasury/constants'
 import { SALE_STATUS_LABELS, SALE_STATUS_TONES } from '@/features/pos-sales/constants'
 import { getSale } from '@/features/pos-sales/data'
-import { CancelSalePanel, InvoiceSalePanel } from '@/features/pos-sales/panels'
+import { CancelSalePanel, InvoiceSalePanel, ValueCostsPanel } from '@/features/pos-sales/panels'
+import { listClientOptions } from '@/features/clients/data'
 
 export const metadata: Metadata = { title: 'Vente au comptoir' }
 
@@ -32,10 +33,11 @@ export default async function SaleDetailPage(props: PageProps<'/pdv/ventes/[id]'
   const { id } = await props.params
   const searchParams = await props.searchParams
 
-  const [canSeeEntries, canSeeInvoices, canSeeCosts, canDownload, canPrint, canCancel, invoicing] = await Promise.all([
+  const [canSeeEntries, canSeeInvoices, canSeeCosts, canUpdateCosts, canDownload, canPrint, canCancel, invoicing] = await Promise.all([
     can(PERMISSIONS.ENTRIES_VIEW),
     can(PERMISSIONS.CUSTOMER_INVOICES_VIEW),
     can(PERMISSIONS.SERVICES_COST_VIEW),
+    can(PERMISSIONS.SERVICES_COST_UPDATE),
     can(PERMISSIONS.POS_SALES_DOWNLOAD),
     can(PERMISSIONS.POS_SALES_PRINT),
     can(PERMISSIONS.POS_SALES_CANCEL),
@@ -54,6 +56,14 @@ export default async function SaleDetailPage(props: PageProps<'/pdv/ventes/[id]'
   if (!sale) notFound()
 
   const remaining = Math.max(sale.net - sale.paid, 0)
+
+  // Q-10 : une vente anonyme reçoit son client à sa facturation.
+  const anonymousInvoicing = canInvoice && !sale.clientId && sale.status === 'VALIDATED' && sale.net > 0
+  const clientOptions = anonymousInvoicing ? await listClientOptions() : null
+
+  // Q-13 : lignes sans coût copié, valorisables par qui gère les coûts.
+  const missingCosts = sale.lines.filter((line) => line.unitCost === null).length
+  const canValueCosts = (user.isSuperAdmin || (canSeeCosts && canUpdateCosts)) && sale.status === 'VALIDATED' && missingCosts > 0
   const invoiced = sale.invoice !== undefined && sale.invoice !== null
 
   return (
@@ -256,14 +266,10 @@ export default async function SaleDetailPage(props: PageProps<'/pdv/ventes/[id]'
               </dl>
             ) : sale.status !== 'VALIDATED' ? (
               <p className="text-sm text-muted">Une vente annulée ne se facture pas.</p>
-            ) : !sale.clientId ? (
-              <p className="text-sm text-muted">
-                Vente sans client : une facture se rattache à un client enregistré. Elle ne se facture pas.
-              </p>
             ) : sale.net <= 0 ? (
               <p className="text-sm text-muted">Le net de cette vente est nul : il n’y a rien à facturer.</p>
             ) : canInvoice ? (
-              <InvoiceSalePanel saleId={sale.id} />
+              <InvoiceSalePanel saleId={sale.id} clients={sale.clientId ? undefined : clientOptions} />
             ) : (
               <Denied
                 missing={[
@@ -274,6 +280,12 @@ export default async function SaleDetailPage(props: PageProps<'/pdv/ventes/[id]'
               />
             )}
           </Card>
+
+          {canValueCosts && (
+            <Card title="Coûts et marge" description="Valorisation ultérieure, au coût du jour de la vente.">
+              <ValueCostsPanel saleId={sale.id} missing={missingCosts} />
+            </Card>
+          )}
 
           {sale.status === 'VALIDATED' && canCancel && (
             <Card title="Annuler la vente" description="Motif obligatoire.">

@@ -135,16 +135,17 @@ describe('durée d’une session', () => {
 describe('navigation du point de vente', () => {
   const section = NAVIGATION.filter(isSection).find((entry) => entry.label === 'Point de vente')
 
-  it('porte deux entrées, chacune sous SA lecture', () => {
+  it('porte, après la fusion du LOT 28, ventes, sessions et caisses — chacune sous SA lecture', () => {
     expect(section?.items.map((item) => [item.href, item.permission])).toEqual([
-      ['/pdv/caisses', PERMISSIONS.POS_REGISTERS_VIEW],
+      ['/pdv/caisse', PERMISSIONS.POS_SALES_CREATE],
+      ['/pdv/ventes', PERMISSIONS.POS_SALES_VIEW],
       ['/pdv/sessions', PERMISSIONS.POS_SESSIONS_VIEW],
+      ['/pdv/caisses', PERMISSIONS.POS_REGISTERS_VIEW],
     ])
   })
 
-  it('n’annonce aucune vente « à venir » (DEC-042 §d)', () => {
+  it('n’annonce aucune entrée « à venir » (DEC-042 §d)', () => {
     expect(section?.items.every((item) => item.status === 'ready')).toBe(true)
-    expect(section?.items.some((item) => /vente/i.test(item.label))).toBe(false)
   })
 
   it('montre les sessions à qui ne peut que les consulter', () => {

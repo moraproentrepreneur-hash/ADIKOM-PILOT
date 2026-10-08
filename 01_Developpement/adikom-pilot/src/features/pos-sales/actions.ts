@@ -30,6 +30,10 @@ import { COUNTER_METHODS } from './constants'
 export type PosSaleFormState = FormState
 
 const ERROR_PATTERNS: readonly [RegExp, string][] = [
+  [/n'a pas de client\. Choisissez/i, 'Choisissez le client enregistré à qui facturer cette vente.'],
+  [/a déjà son client/i, 'Cette vente a déjà son client : il ne se remplace pas.'],
+  [/le client d'une vente ne se change pas/i, 'Le client d’une vente ne se change pas ; une vente anonyme le reçoit une seule fois, à sa facturation.'],
+  [/valoriser le coût des ventes|lire les coûts déjà copiés/i, 'Valoriser les coûts relève de capacités que vous n’avez pas.'],
   [/session de caisse est close|exige une session ouverte|Session de caisse introuvable/i, 'Aucune session ouverte : ouvrez une session de caisse pour encaisser.'],
   [/sa propre session/i, 'On n’encaisse que sur sa propre session de caisse.'],
   [/il manque (\d+) KMF/i, 'Le montant encaissé ne couvre pas le net à payer. Complétez le paiement, ou validez une vente non soldée.'],
@@ -171,16 +175,56 @@ export async function invoiceSaleAction(
       const due = readText(formData, 'dueDate')
       if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return { fieldErrors: { dueDate: 'Date invalide.' } }
 
+      // Q-10 : une vente anonyme reçoit son client ici, une seule fois — la base
+      // le rattache dans la transaction de la facture, et refuse tout autre cas.
+      const clientId = readText(formData, 'clientId')
+      if (formData.has('clientId') && !clientId) {
+        return { fieldErrors: { clientId: 'Choisissez le client à qui facturer cette vente.' } }
+      }
+
       const supabase = await createSupabaseServerClient()
       const { error } = await supabase.rpc('invoice_pos_sale', {
         p_sale_id: saleId,
         p_due_date: due || null,
+        p_client_id: clientId || null,
       })
       if (error) throw new Error(error.message)
 
       revalidatePath(`/pdv/ventes/${saleId}`)
       revalidatePath('/facturation/clients')
       redirect(`/pdv/ventes/${saleId}?facturee=1`)
+    },
+    ERROR_PATTERNS
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Valoriser les coûts manquants (Q-13)                                       */
+/* -------------------------------------------------------------------------- */
+
+export async function valueSaleCostsAction(
+  prevState: PosSaleFormState,
+  formData: FormData
+): Promise<PosSaleFormState> {
+  return guarded(
+    'pdv:vente:couts',
+    async () => {
+      await requirePermission(PERMISSIONS.SERVICES_COST_VIEW)
+      await requirePermission(PERMISSIONS.SERVICES_COST_UPDATE)
+      await requirePermission(PERMISSIONS.POS_SALES_VIEW)
+
+      const saleId = readText(formData, 'saleId')
+      if (!saleId) return { error: 'Vente introuvable.' }
+
+      const supabase = await createSupabaseServerClient()
+      const { data, error } = await supabase.rpc('value_pos_sale_costs', { p_sale_id: saleId })
+      if (error) throw new Error(error.message)
+
+      revalidatePath(`/pdv/ventes/${saleId}`)
+      const count = typeof data === 'number' ? data : 0
+      return count > 0
+        ? { success: `${count} ligne(s) valorisée(s) au coût en vigueur le jour de la vente.` }
+        : { error: 'Aucun coût n’était en vigueur le jour de la vente pour les lignes restantes : leur marge reste inconnue.' }
     },
     ERROR_PATTERNS
   )
