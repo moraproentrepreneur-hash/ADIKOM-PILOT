@@ -4,12 +4,9 @@
 > Local LOT 28 → GitHub → Vercel. Le LOT 28 se développe **avant** la validation Supabase du
 > LOT 27, sur le code **provisoire** de celui-ci.
 >
-> ⛔ **Ne pas lancer** tant que :
-> 1. la branche `lot-28-point-de-vente` n'est **pas publiée** sur GitHub, et l'application Claude
->    n'a pas l'**accès en écriture** au dépôt (le LOT 27 a échoué en 403) ;
-> 2. **C-2 et T-2** ne sont pas validées, ainsi que **D-3, P-4, D-1** (voir
->    `06_Decisions_LOT_28_Propositions.md`) ;
-> 3. le bloc « Décisions rendues » ci-dessous n'est pas complété.
+> 🟩 **Décisions validées par la Direction le 8 octobre 2026 — DEC-055.**
+> ✅ Branches `lot-27-caisses-sessions` et `lot-28-point-de-vente` publiées sur GitHub.
+> Si ton push est refusé (403), **continue de développer** : voir « Push refusé » plus bas.
 
 ---
 
@@ -38,26 +35,45 @@ d'une migration, accès à une donnée de production, déploiement Vercel volont
 - Si la plateforme impose un préfixe (`claude/…`), crée ta branche **depuis**
   `lot-28-point-de-vente` et nomme la branche réelle au rapport.
 
-## Décisions rendues (à compléter avant lancement)
+## Décisions rendues — 🟩 validées le 8 octobre 2026 (DEC-055)
 
-- **C-2** — origine unique d'un encaissement PDV : `[option A — règlement adossé / autre]`
-- **T-2** — 5ᵉ origine : `[treasury_entries.pos_payment_id / pos_sale_id]`
-- **D-3** — compte des paiements non-espèces : `[compte BANK actif choisi / autre]`
-- **P-4** — vente non soldée sans client : `[REFUSÉE / ACCEPTÉE]`
-- **D-1** — remise PDV selon DEC-051, reportée en lignes `DISCOUNT` sur la facture : `[…]`
-- **D-2** — Mvola, Holo, Wakati aussi pour les règlements clients et fournisseurs : `[OUI / NON]`
-- **B-10** — annulation d'une vente d'une session close : `[…]` · vente facturée : `[refusée / …]`
-- **B-11** — remboursement : `[hors périmètre / …]`
-- **C-28** — capacités : `[les 8 du Plan 02 §10.2 → 246 / liste amendée]`
-- **S-1** — garde « née par sa fonction » sur `customer_invoices` / `customer_payments` :
-  `[OUI, en tête de branche / NON]`
+- **C-2** — **un seul enregistrement effectif en trésorerie par encaissement.** La facture
+  demandée après une vente encaissée est soldée par un **règlement adossé**, **sans** seconde
+  écriture. Le mécanisme est protégé en base contre :
+  - les **paiements fictifs** : un règlement adossé ne naît que par sa fonction, pour un paiement
+    PDV réel, `VALIDATED`, d'une vente `VALIDATED`, du **même** montant, compte et mode ;
+  - les **doubles rattachements** : un paiement PDV n'a qu'**une** écriture et qu'**un** règlement
+    adossé non annulé ; une vente n'a qu'**une** facture non annulée ; facture et paiement
+    appartiennent à la **même** vente ; aucune écriture `CUSTOMER_PAYMENT` sur un règlement adossé ;
+  - les **incohérences d'annulation** : un règlement adossé ne s'annule pas seul
+    (`cancel_customer_payment` refuse) ; une vente facturée ne s'annule pas (B-10) ; annuler une
+    vente annule ses écritures, jamais celles d'une autre.
 
-Si un seul de C-2, T-2, D-3, P-4, D-1 est vide : **arrête-toi** et dis-le.
+  **Toute modification structurante non couverte par ces décisions** (nouvelle table hors liste,
+  réécriture d'une fonction de facturation ou de trésorerie au-delà de la 5ᵉ origine, nouveau type
+  de compte, nouvelle capacité) : **arrête-toi** et soumets-la au rapport, sans l'implémenter.
+- **T-2** — **une écriture de trésorerie par paiement réel** (`treasury_entries.pos_payment_id`),
+  jamais une écriture globale par vente ; un paiement mixte est réparti entre les comptes concernés.
+- **D-3** — espèces → le compte `CASH` **actif** de la caisse (imposé en base) ; chèque, Mvola,
+  Holo, Wakati → un compte financier **actif sélectionné**. Le **mode de paiement** et
+  l'**identité du compte** restent visibles dans le journal d'audit, les écritures, la fiche de
+  vente, le reçu et les exports.
+- **P-4** — une vente **non soldée** exige un **client enregistré**.
+- **D-1** — remises **fixes en KMF** selon DEC-051 (ligne et globale, sans plafond, sous
+  `pos.sales.discount`), gardes DEC-051 §d en base : aucun montant négatif. Sur la facture, chaque
+  remise devient une ligne `DISCOUNT` libellée.
+- **D-2** — `MVOLA`, `HOLO`, `WAKATI` aussi dans les **règlements clients et fournisseurs** existants.
+- **B-10** — annulation **motivée** possible après la clôture de la session ; **interdite si la
+  vente est facturée**, tant que les avoirs ne sont pas gérés.
+- **B-11** — remboursement au comptoir **hors périmètre**.
+- **C-28** — les **8 capacités** du Plan 02 §10.2 : catalogue **prévisionnel 238 → 246**.
+- **S-1** — garde « née par sa fonction » sur `customer_invoices` et `customer_payments`,
+  **en amont** de leur intégration au PDV : **premières migrations** de ta branche, commits distincts.
 
 ## À lire d'abord
 
 `CLAUDE.md` · `RAPPORTS/Preparation LOT 27-28/00_Preparation_Cloud_Local_LOT_27_28.md` (§0, §4,
-§6, §7) · **`06_Decisions_LOT_28_Propositions.md`** · Rapport 21 **provisoire** · module
+§6, §7) · **`06_Decisions_LOT_28_Propositions.md`** · **DEC-055** (journal des décisions) · Rapport 21 **provisoire** · module
 `12_Point_de_Vente.md` · Plan 02 §3.4, §3.5, §7.5, §9.1–9.5, §10.2, §12, §13, §16.2, §18.2
 (LOT 28) · Plan 01 §16.2–16.8, §16.14–16.15, §21 · DEC-051 · migrations de trésorerie
 (`20260906000100`, **dernière version de `fn_treasury_entry_source` : `20260908000200`**) et de
@@ -66,13 +82,13 @@ règlements clients (`20260902000100`, `20260902000200`) · `AGENTS.md`.
 ## Horodatage des migrations — bloc réservé
 
 - `20261008000500` à `20261008009900` : **réservé aux corrections locales du LOT 27**. N'y écris rien.
-- Le LOT 28 commence à **`20261009000100`**, dans l'ordre : S-1 (si retenue) → extensions d'enum
+- Le LOT 28 commence à **`20261009000100`**, dans l'ordre : S-1 → extensions d'enum
   (chacune **seule** dans sa migration) → tables → 5ᵉ origine → fonctions → capacités et
   numérotation → `backup_scope`.
 
 ## Développement
 
-1. **S-1** (si retenue) : garde « née par sa fonction » sur `customer_invoices` et
+1. **S-1** : garde « née par sa fonction » sur `customer_invoices` et
    `customer_payments` (motif du Rapport 20 : drapeau transactionnel + déclencheur `zzz_` en
    dernier), commits **distincts**, recettes négatives d'`INSERT` direct.
 2. **Doc module 12** complétée (ventes) **avant** le code.
@@ -116,15 +132,19 @@ modifié ; aucun secret, aucune `.env*`, aucune donnée réelle (dépôt **publi
 `verify:*`, **ni** `demo:*`, **ni** `backup:*` ; aucune correction hors périmètre ; commits
 réguliers poussés sur ta branche.
 
-Si le push échoue (403) : ne t'arrête pas de développer ; à la fin, produis un **bundle Git**
-(`git bundle create … <base>..HEAD`) vérifié, **hors du dépôt**, et dis-le au rapport.
+**Push refusé (403).** Ne t'arrête pas de développer. Conserve tes commits, retente le push à
+chaque étape, et à la fin produis un **bundle Git** **hors du dépôt** :
+`git bundle create lot-28.bundle origin/lot-28-point-de-vente..HEAD`,
+puis `git bundle verify`. Nomme au rapport la branche, le sha final et la base requise. Ne commite
+jamais le bundle.
 
 ## Livraison
 
 `npm ci` · `lint` · `typecheck` · `test` · `build` verts. Rapport provisoire
 `RAPPORTS/Rapport 22_LOT_28_Point_de_Vente_PROVISOIRE.md` : branche réelle, sha, base (`09d9ab6`
 + docs), écarts au Plan, questions ouvertes avec l'option la plus restrictive retenue, et la
-**non-régression étendue** due en local (trésorerie, paiements, facturation, sauvegarde). Brouillon
-**DEC-055** marqué provisoire. Push de la branche, puis arrêt.
+**non-régression étendue** due en local (trésorerie, paiements, facturation, sauvegarde).
+**DEC-055** : **complète** l'entrée existante (décisions déjà
+validées) d'une section « Mise en œuvre — provisoire », sans modifier ses §a à §c. Push de la branche, puis arrêt.
 
 Termine par : **« LOT 28 CLOUD — BRANCHE `<nom>` POUSSÉE À `<sha>`, SUR LE LOT 27 PROVISOIRE. EN ATTENTE DE VALIDATION LOCALE DU LOT 27 PUIS DU LOT 28. »**

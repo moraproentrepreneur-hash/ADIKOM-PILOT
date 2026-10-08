@@ -1,11 +1,11 @@
-# Décisions du LOT 28 — propositions à valider
+# Décisions du LOT 28 — 🟩 validées par la Direction le 8 octobre 2026
 
 **Point de vente : ventes et encaissement**
 
 | | |
 | --- | --- |
 | Date | 8 octobre 2026 |
-| Nature | **Propositions.** Aucune décision n'est prise par ce document. Aucun code, aucune migration |
+| Nature | Propositions du 8 octobre 2026, **toutes validées par la Direction le 8 octobre 2026** — consignées sous **DEC-055** (journal des décisions). Aucun code, aucune migration |
 | Base de lecture | branche `lot-28-point-de-vente` = LOT 27 provisoire `09d9ab6` (non validé sur Supabase) |
 | Normatif | `CLAUDE.md` §16, §19 bis, §47 bis, §57, §58 · Plan 02 §3.4, §3.5, §7.5, §9.2, §10.2, §16.2 · DEC-024 · DEC-051 |
 | Code relu | `fn_treasury_entry_source` (dernière version : `20260908000200`) · `treasury_entries_single_origin` (`20260906000100`) · `record_customer_payment`, `customer_invoice_paid`, `fn_customer_invoice_no_cancel_when_paid` (`20260902000100`) · `cancel_customer_payment` (`20260902000200`) · agrégats de `customer_payments` (`20260903000100`, `20260904000200`, `20260908000100`) · LOT 27 (`20261008000100` à `0400`) |
@@ -13,11 +13,30 @@
 > Les compteurs cités (111 migrations, 238 capacités, 65 tables) sont ceux du LOT 27
 > **provisoire**. Ils ne seront acquis qu'après la validation locale du LOT 27.
 
+> 🟩 **VALIDATION DE LA DIRECTION — 8 octobre 2026.** L'ensemble des recommandations est
+> validé, **ainsi que les précautions relatives à C-2 et D-3**. Précisions apportées par la
+> Direction, qui priment sur le texte des propositions :
+>
+> - **C-2** — un seul enregistrement effectif en trésorerie par encaissement ; le règlement
+>   adossé est protégé contre les **paiements fictifs**, les **doubles rattachements** et les
+>   **incohérences d'annulation**. **Toute modification structurante non couverte est soumise
+>   à validation.**
+> - **T-2** — une écriture par paiement réel ; un paiement mixte est **réparti entre les comptes
+>   concernés**.
+> - **D-3** — la distinction des **moyens de paiement** et l'**identité des comptes** sont
+>   conservées dans les **journaux et états**.
+> - **D-1** — contrôles empêchant tout montant négatif.
+> - **B-10** — l'interdiction d'annuler une vente facturée vaut **tant que les avoirs ne sont pas gérés**.
+> - **S-1** — correction **en amont** de l'intégration au PDV.
+>
+> Le texte ci-dessous est conservé tel qu'il a été proposé ; « proposition » s'y lit désormais
+> « décision validée ».
+
 ---
 
 # 1. Synthèse
 
-| Réf. | Question | Proposition | Bloque le schéma ? |
+| Réf. | Question | Décision (🟩 validée le 08/10/2026) | Bloquait le schéma ? |
 | :-: | --- | --- | :-: |
 | **C-2** | Origine unique d'un encaissement PDV facturé | **Une seule origine de trésorerie : le paiement PDV.** La facture est soldée par un **règlement adossé, sans écriture** (§2) | 🟥 **oui — à valider en premier** |
 | **T-2** | Granularité de la 5ᵉ origine | `treasury_entries.pos_payment_id` (une écriture par paiement), au lieu de `pos_sale_id` (§2.3) | 🟥 oui (technique) |
@@ -237,15 +256,15 @@ Risque : ces migrations touchent la **facturation commune** → non-régression 
 
 ---
 
-# 9. Ce qui reste à rendre, dans l'ordre
+# 9. ~~Ce qui reste à rendre~~ — 🟩 tout est rendu (8 octobre 2026)
 
 1. **C-2 + T-2** — sans eux, aucune table.
 2. **D-3**, **P-4**, **D-1** — ils fixent les contraintes des tables.
 3. **D-2**, **B-10**, **C-28**, **S-1** — une confirmation suffit.
 4. B-11 — confirmation de l'exclusion.
 
-Une fois rendues : DEC-055 (brouillon) les consigne, et `03_Prompt_Cloud_LOT_28.md` est complété.
+✅ Rendues le 8 octobre 2026 : **DEC-055** les consigne ; `03_Prompt_Cloud_LOT_28.md` est complété.
 
 ---
 
-**PROPOSITIONS — AUCUNE DÉCISION PRISE · AUCUNE MIGRATION · BASE NON MODIFIÉE**
+**DÉCISIONS VALIDÉES LE 8 OCTOBRE 2026 (DEC-055) · AUCUNE MIGRATION · BASE NON MODIFIÉE**

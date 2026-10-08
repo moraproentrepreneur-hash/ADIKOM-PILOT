@@ -453,6 +453,8 @@ Les points 🟧 ont une recommandation écrite : une confirmation d'un mot suffi
 > nouvelle (**D-3**, compte des paiements non-espèces ; **T-2**, granularité de la 5ᵉ origine) dans
 > **`06_Decisions_LOT_28_Propositions.md`**. C-2 y est analysée sur le code réel : recommandation
 > **A — règlement adossé sans écriture**.
+>
+> 🟩 **Toutes validées par la Direction le 8 octobre 2026 — consignées sous DEC-055.**
 
 ---
 
@@ -469,7 +471,8 @@ Les points 🟧 ont une recommandation écrite : une confirmation d'un mot suffi
 
 5. ✅ LOT 27 développé dans le Cloud ; push refusé (403) ; récupéré par bundle → branche locale
    `lot-27-caisses-sessions` @ `09d9ab6` ; branche `lot-28-point-de-vente` créée au même point.
-6. Décisions du §8.2 rendues (`06_Decisions_LOT_28_Propositions.md`) — **C-2 avant tout schéma**.
+6. ✅ Décisions du §8.2 **validées par la Direction le 8 octobre 2026** — **DEC-055** ;
+   détail et précisions dans `06_Decisions_LOT_28_Propositions.md`.
 7. **Sur autorisation** : publication de `lot-27-caisses-sessions` puis de `lot-28-point-de-vente`
    (déploiements Vercel attendus : `CANCELED`). Accès en écriture GitHub rétabli pour le Cloud.
 8. Lancement Cloud du LOT 28 avec `03_Prompt_Cloud_LOT_28.md`, depuis `lot-28-point-de-vente`.
