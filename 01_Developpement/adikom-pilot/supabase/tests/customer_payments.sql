@@ -465,6 +465,60 @@ begin
 end $$;
 
 
+-- --- 12 bis. 🟥 S-1 — UN RÈGLEMENT NAÎT PAR SA FONCTION (LOT 28, migration 113) -----------
+--
+-- La section 12 éprouve qu'un règlement ne naît pas ANNULÉ. Celle-ci éprouve le
+-- cas qu'elle ne couvre pas : un règlement VALIDÉ, parfaitement formé, inséré
+-- directement — il soldait la facture sans aucune écriture de trésorerie.
+do $$
+declare
+  v_inv     uuid := (select invoice from recette_enc);
+  v_acc     uuid := (select account from recette_enc);
+  v_avant   bigint;
+  v_apres   bigint;
+  v_entrees int;
+  v_pay     uuid;
+begin
+  begin
+    insert into public.customer_payments
+      (payment_no, customer_invoice_id, account_id, amount, received_on, method)
+    values ('REG-FORGE-S1', v_inv, v_acc, 1000, current_date, 'CASH');
+    raise exception 'ÉCHEC : un règlement validé est né par écriture directe, sans écriture de trésorerie.';
+  exception when insufficient_privilege then null;
+  end;
+
+  if exists (select 1 from public.customer_payments where payment_no = 'REG-FORGE-S1') then
+    raise exception 'Un règlement forgé a été enregistré malgré le refus.';
+  end if;
+
+  -- ANTI-VACUITÉ : la fonction passe, consomme un numéro ET produit son écriture.
+  select current_value into v_avant from public.numbering_rules where entity_key = 'payment';
+  v_pay := public.record_customer_payment(v_inv, v_acc, 1000, current_date, 'CASH', null, 'Recette S-1');
+  select current_value into v_apres from public.numbering_rules where entity_key = 'payment';
+  select count(*) into v_entrees from public.treasury_entries
+   where customer_payment_id = v_pay and status = 'VALIDATED' and amount = 1000 and direction = 'IN';
+
+  if v_pay is null or v_apres <> v_avant + 1 or v_entrees <> 1 then
+    raise exception 'La création normale ne passe plus, ou sans numéro, ou sans son écriture (% → %, % écriture).',
+      v_avant, v_apres, v_entrees;
+  end if;
+
+  -- Le drapeau ne survit pas à la fonction.
+  begin
+    insert into public.customer_payments
+      (payment_no, customer_invoice_id, account_id, amount, received_on, method)
+    values ('REG-FORGE-S1-APRES', v_inv, v_acc, 1000, current_date, 'CASH');
+    raise exception 'ÉCHEC : le drapeau S-1 a survécu à `record_customer_payment`.';
+  exception when insufficient_privilege then null;
+  end;
+
+  -- On rend l'état : le règlement de recette est annulé, comme le ferait l'écran.
+  perform public.cancel_customer_payment(v_pay, 'Recette S-1');
+
+  raise notice '[OK] 12 bis. 🟥 S-1 : un règlement naît par sa fonction, avec son écriture ; l''écriture directe est refusée.';
+end $$;
+
+
 -- --- 13. UNE ÉCRITURE EST IMMUABLE, ET NE SE FORGE PAS -----------------------------------
 do $$
 declare

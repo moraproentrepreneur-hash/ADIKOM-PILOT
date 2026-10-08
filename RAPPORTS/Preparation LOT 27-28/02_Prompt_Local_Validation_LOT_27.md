@@ -13,12 +13,32 @@ Tu reprends le **LOT 27 — Caisses et sessions de caisse** livré par Claude Co
 branche `<branche>`. Le Cloud n'a eu **aucun accès** à Supabase : aucune migration n'a été
 exécutée, aucune recette SQL ni RLS n'a tourné. Tu es la première exécution réelle.
 
+> **Organisation révisée le 8 octobre 2026** : Cloud LOT 27 → Cloud LOT 28 → **Local LOT 27** →
+> Local LOT 28 → GitHub → Vercel. Quand tu reprends ce prompt, le LOT 28 a **déjà** été développé
+> dans le Cloud sur `lot-28-point-de-vente`, à partir du LOT 27 **provisoire** (`09d9ab6`).
+>
+> Le push Cloud du LOT 27 a échoué (403). La branche a été **récupérée d'un bundle Git** vérifié,
+> sous le nom **`lot-27-caisses-sessions`** (sha `09d9ab6`, 6 commits sur `32d0fcb`). `<branche>`
+> vaut donc `lot-27-caisses-sessions`.
+
 ## 0. Garde d'entrée
 
 - `git status` : aucune modification locale. Sinon, **arrête-toi** et signale-la ; n'écrase rien.
 - `git fetch origin` ; `main` local = `origin/main`. `main` n'a reçu **aucune migration** depuis
   le départ de la branche ; sinon, signale-le avant tout rebase.
 - `git switch --track origin/<branche>` ; `git merge-base --is-ancestor origin/main HEAD`.
+- **Ne touche pas** `lot-28-point-de-vente` pendant cette validation. Note seulement, pour le
+  LOT 28, chaque correction qui pourrait l'affecter.
+
+## 0 bis. Corrections du LOT 27 et branche LOT 28
+
+- Une correction de schéma est une **nouvelle** migration, horodatée dans le bloc **réservé**
+  `20261008000500` à `20261008009900` (le LOT 28 commence à `20261009000100`). L'ordre
+  d'application reste ainsi LOT 27 → corrections LOT 27 → LOT 28.
+- Si une correction change un **compteur** (238 capacités, 65 tables), un **nom** ou une
+  **signature** de fonction du LOT 27, consigne-le au Rapport 21 dans une section
+  « **Impact sur le LOT 28** » : le prompt 04 s'en servira pour adapter la branche LOT 28.
+- Le LOT 28 ne sera **jamais** rebasé en silence : son adaptation se fait au prompt 04.
 
 ## 1. Relecture
 
@@ -60,7 +80,10 @@ lecture de `financial_accounts`.
 - `db:verify:catalog` et `verify:capabilities` ;
 - **`backup_scope` change** → cycle **SAUVEGARDE → RESET → RESTAURATION obligatoire**
   (`verify:backup`), après la sauvegarde du §3 ;
-- `db:verify:treasury` **seulement** si une garde touche `financial_accounts` ;
+- `db:verify:treasury` et `db:verify:transfers` : **dus** — le LOT 27 ajoute l'index unique
+  `financial_accounts (id, kind)` et une clé étrangère composite vers ce compte ;
+- `db:verify:audit`, `db:verify:settings`, `db:verify:purchasing`, `db:verify:commerce` : liste
+  du Rapport 21 provisoire §12 (fonctions partagées relues ou réécrites par le lot) ;
 - recette Playwright du lot sur la production après déploiement ; responsive 390 / 768 / 1440.
 
 Discipline : jamais de tube vers `head`, jamais deux recettes en parallèle, profil minimal,
@@ -80,5 +103,5 @@ Sur la branche du lot, commits distincts, chaque correction justifiée dans le r
 5. **DEC-054** définitive ; `CLAUDE.md` §10 ; mémoire si une leçon nouvelle est apparue.
 6. Proposer — sans l'exécuter — la suppression de la branche distante.
 
-Termine par : **« LOT 27 — VALIDÉ ET DÉPLOYÉ À `<sha>`. LE LOT 28 PEUT PARTIR DE CE `main`. »**
+Termine par : **« LOT 27 — VALIDÉ ET DÉPLOYÉ À `<sha>`. LA BRANCHE LOT 28 PEUT ÊTRE ADAPTÉE À CE `main`. »**
 ou, sinon, par la liste précise de ce qui bloque.

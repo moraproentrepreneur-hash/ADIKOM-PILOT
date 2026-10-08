@@ -76,6 +76,8 @@ import {
   listPurchaseOrderLines,
   listPurchaseQuoteLines,
 } from '@/features/purchasing/data'
+import { SaleReceiptDocument } from '@/features/pos-sales/documents/sale-receipt'
+import { getSale } from '@/features/pos-sales/data'
 
 /**
  * Registre des documents.
@@ -878,6 +880,33 @@ export const DOCUMENTS: Record<string, DocumentDefinition> = {
         }),
         reference: payment.paymentNo,
         label: payment.direction === 'IN' ? 'Recu-encaissement' : 'Recu-decaissement',
+      }
+    },
+  },
+
+  /* ------------------------------------------- Point de vente — LOT 28 -- */
+  /*
+   * Le reçu A4 d'une vente au comptoir (Plan 01 §16.8). 🟥 La vente est chargée
+   * SANS coût copié : le reçu est remis au client, il ne porte ni coût ni marge,
+   * quel que soit le profil qui l'imprime.
+   */
+  ventes: {
+    entityType: 'pos_sales',
+    moduleCode: 'pos',
+    viewPermission: PERMISSIONS.POS_SALES_VIEW,
+    downloadPermission: PERMISSIONS.POS_SALES_DOWNLOAD,
+    printPermission: PERMISSIONS.POS_SALES_PRINT,
+
+    async build(id) {
+      const sale = await getSale(id, { canSeeEntries: false, canSeeInvoices: false, canSeeCosts: false })
+      if (!sale) return null
+
+      const identity = await getDocumentIdentity()
+
+      return {
+        element: SaleReceiptDocument({ identity, sale, issuedOn: issuedOnLabel() }),
+        reference: sale.saleNo,
+        label: 'Recu-vente',
       }
     },
   },

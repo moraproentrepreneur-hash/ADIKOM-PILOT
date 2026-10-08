@@ -111,6 +111,10 @@ const ROUTES = [
   ['/pdv/caisses', 'Caisses'],
   ['/pdv/caisses/nouvelle', 'Nouvelle caisse'],
   ['/pdv/sessions', 'Sessions de caisse'],
+  // LOT 28 : la caisse (le panier passe dessous sous 900 px, le total devient une
+  // barre collante) et l'historique. La fiche d'une vente se résout plus bas.
+  ['/pdv/caisse', 'Caisse'],
+  ['/pdv/ventes', 'Ventes au comptoir'],
   ['/tresorerie/comptes', 'Comptes'],
   ['/tresorerie/ecritures', 'Écritures'],
   ['/tresorerie/virements', 'Virements'],
@@ -416,6 +420,8 @@ async function main() {
       // LOT 27 : la fiche d'une session porte les montants gardés et la clôture.
       ['pos_registers', '/pdv/caisses', 'Caisse · fiche'],
       ['pos_sessions', '/pdv/sessions', 'Session de caisse · fiche'],
+      // LOT 28 : la fiche d'une vente — paiements, écritures, facture, reçu.
+      ['pos_sales', '/pdv/ventes', 'Vente au comptoir · fiche'],
     ]) {
       const { data } = await admin.from(table).select('id').limit(1)
 

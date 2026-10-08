@@ -67,9 +67,12 @@ begin
     raise exception 'Capacités du LOT 27 absentes : %', v_manquantes;
   end if;
 
+  -- LOT 28 : le menu `sales` a ses propres capacités, éprouvées par
+  -- `pos_sales.sql`. Ici, les menus caisses et sessions seulement.
   select array_agg(p.code) into v_inconnues
   from public.permissions p
-  where p.module_code = 'pos' and not (p.code = any (v_attendu));
+  where p.module_code = 'pos' and p.menu_code in ('registers', 'sessions')
+    and not (p.code = any (v_attendu));
   if v_inconnues is not null then
     raise exception 'Capacité créée sans fonctionnalité correspondante : %', v_inconnues;
   end if;
@@ -77,12 +80,12 @@ begin
   -- Plan 02 §10.3 : ni écart, ni document, ni vente.
   if exists (select 1 from public.permissions
              where code in ('pos.sessions.variance.view', 'pos.sessions.download',
-                            'pos.sessions.print') or code like 'pos.sales.%') then
-    raise exception 'Une capacité exclue par le Plan 02 §10.3 (ou du LOT 28) a été créée.';
+                            'pos.sessions.print')) then
+    raise exception 'Une capacité exclue par le Plan 02 §10.3 a été créée.';
   end if;
 
   if exists (select 1 from public.permissions
-             where module_code = 'pos'
+             where module_code = 'pos' and menu_code in ('registers', 'sessions')
                and is_sensitive is distinct from (code in ('pos.sessions.amounts.view', 'pos.sessions.export'))) then
     raise exception 'Sensibilité incorrecte : seules amounts.view et export sont sensibles.';
   end if;

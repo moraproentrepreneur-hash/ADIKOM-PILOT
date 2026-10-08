@@ -23,7 +23,9 @@ import {
   ListChecks,
   Network,
   Package,
+  Receipt,
   ReceiptText,
+  ScanLine,
   Settings,
   ShieldCheck,
   ShoppingCart,
@@ -373,23 +375,27 @@ export const NAVIGATION: NavEntry[] = [
     ],
   },
   /*
-   * Module 12 — ouvert par le LOT 27 (Plan 02 §7.5, Module 12).
-   *
-   * DEUX ENTRÉES, ET PAS UNE DE PLUS : les caisses et les sessions. Les VENTES
-   * arrivent au LOT 28 ; aucune entrée « à venir » ne les annonce (DEC-042 §d).
-   *
-   * Le module précède « Banques & Caisses » : une caisse S'ADOSSE à un compte de
-   * ce module-là, elle n'en est pas un — une seule trésorerie (Plan 02 §20.1).
+   * POINT DE VENTE — LOT 27 (caisses, sessions) et LOT 28 (caisse, ventes),
+   * Module 12. Une seule section : l'usage quotidien d'abord (encaisser,
+   * retrouver une vente), la tenue des sessions et des caisses ensuite. Chaque
+   * entrée reste sous SA lecture.
    */
   {
     label: 'Point de vente',
     icon: Store,
     items: [
       {
-        label: 'Caisses',
-        href: '/pdv/caisses',
-        icon: Calculator,
-        permission: PERMISSIONS.POS_REGISTERS_VIEW,
+        label: 'Caisse',
+        href: '/pdv/caisse',
+        icon: ScanLine,
+        permission: PERMISSIONS.POS_SALES_CREATE,
+        status: 'ready',
+      },
+      {
+        label: 'Ventes',
+        href: '/pdv/ventes',
+        icon: Receipt,
+        permission: PERMISSIONS.POS_SALES_VIEW,
         status: 'ready',
       },
       {
@@ -397,6 +403,13 @@ export const NAVIGATION: NavEntry[] = [
         href: '/pdv/sessions',
         icon: Clock,
         permission: PERMISSIONS.POS_SESSIONS_VIEW,
+        status: 'ready',
+      },
+      {
+        label: 'Caisses',
+        href: '/pdv/caisses',
+        icon: Calculator,
+        permission: PERMISSIONS.POS_REGISTERS_VIEW,
         status: 'ready',
       },
     ],

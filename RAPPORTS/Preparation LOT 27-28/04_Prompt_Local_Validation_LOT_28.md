@@ -14,10 +14,31 @@ ligne n'a été exécutée contre une base. Ce lot touche **trésorerie, paiemen
 commune, numérotation, capacités et sauvegarde** : la non-régression **étendue** est due
 (`CLAUDE.md` §47 bis), en commençant toujours par le ciblé.
 
+> **Organisation révisée le 8 octobre 2026** : Cloud LOT 27 → Cloud LOT 28 → Local LOT 27 →
+> **Local LOT 28** → GitHub → Vercel. La branche LOT 28 a été développée sur le LOT 27
+> **provisoire** (`09d9ab6`), **avant** sa validation Supabase.
+
 ## 0. Garde d'entrée
 
-Identique au LOT 27 : `git status` propre, `main` = `origin/main` et contient le LOT 27
-validé, branche suivie, base vérifiée (`merge-base --is-ancestor`). Toute divergence : arrêt.
+- `git status` propre ; `main` = `origin/main` ; **`main` contient le LOT 27 validé et déployé**
+  (Rapport 21 définitif présent). Sinon : **arrêt**.
+- `git merge-base --is-ancestor 09d9ab6 <branche>` : la branche LOT 28 part bien du LOT 27
+  provisoire. Sinon : arrêt.
+- Lis la section « **Impact sur le LOT 28** » du Rapport 21 définitif.
+
+## 0 bis. Adapter la branche au LOT 27 validé — avant toute relecture
+
+1. Comparer : `git log 09d9ab6..main` — ce que la validation locale a ajouté au LOT 27
+   (corrections, migrations `20261008000500`–`009900`, rapport définitif).
+2. **Intégrer `main` dans la branche par une fusion** (`git merge main`), **sans réécrire**
+   l'historique déjà publié. Un rebase suivi d'un `push --force` n'est fait **que** sur
+   autorisation explicite.
+3. Recaler ce que les corrections du LOT 27 ont pu changer : assertions de total (catalogue,
+   `backup_scope`), noms et signatures des fonctions `pos_*`, `pos_session_expected`, recettes.
+   Chaque recalage est un **commit distinct**, justifié au Rapport 22.
+4. Vérifier l'ordre : toutes les migrations du LOT 28 sont **postérieures** à la dernière
+   migration de `main`. Sinon : arrêt et signalement — jamais de renommage d'une migration déjà
+   appliquée.
 
 ## 1. Relecture — en priorité
 
@@ -31,7 +52,10 @@ validé, branche suivie, base vérifiée (`merge-base --is-ancestor`). Toute div
 - **L'écriture porte Σ encaissé, jamais Σ donné**, garanti par la base, pas par l'écran.
 - Aucune fonction de facturation réécrite ; aucun coût ni marge dans le reçu ou la facture.
 - Garde « née par sa fonction » sur `pos_sales`, `pos_payments` (et toute table numérotée).
-- Conformité aux décisions P-4, D-1, D-2, B-10, B-11, C-28.
+- Conformité aux décisions C-2, T-2, D-3, P-4, D-1, D-2, B-10, B-11, C-28, S-1
+  (`06_Decisions_LOT_28_Propositions.md`, puis DEC-055) : en particulier, **aucune** écriture
+  `CUSTOMER_PAYMENT` sur un règlement adossé, et le paiement non-espèces n'entre **jamais** sur le
+  compte de la caisse.
 
 ## 2. Contrôles hors base
 
@@ -45,7 +69,8 @@ migrations du lot) → `npm run db:push`. Migration partiellement appliquée : j
 ## 4. Recettes — escalade par niveaux
 
 1. **Lot** : `supabase/tests/pos_sales.sql`, puis `pos_sessions.sql` (le montant théorique a
-   changé). Le **test de référence de la Direction** doit passer : net 60 000, donné 100 000 →
+   changé). Si S-1 a été livrée en tête de branche : ses recettes négatives d'`INSERT` direct
+   sur `customer_invoices` et `customer_payments` d'abord. Le **test de référence de la Direction** doit passer : net 60 000, donné 100 000 →
    encaissé 60 000, monnaie 40 000, **trésorerie 60 000** ; facture sur demande → **solde du
    compte inchangé**.
 2. **Dépendances touchées** : `db:verify:treasury`, `db:verify:transfers`,

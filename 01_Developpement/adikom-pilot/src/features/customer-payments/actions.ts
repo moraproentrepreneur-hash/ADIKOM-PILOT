@@ -73,7 +73,17 @@ const ERROR_PATTERNS: readonly [RegExp, string][] = [
   ],
 ]
 
-const METHODS = ['CASH', 'BANK_TRANSFER', 'BANK_DEPOSIT', 'CHEQUE', 'OTHER'] as const
+// D-2 (DEC-055) : Mvola, Holo et Wakati sont aussi des modes de règlement.
+const METHODS = [
+  'CASH',
+  'BANK_TRANSFER',
+  'BANK_DEPOSIT',
+  'CHEQUE',
+  'MVOLA',
+  'HOLO',
+  'WAKATI',
+  'OTHER',
+] as const
 
 const schema = z.object({
   accountId: z.string().uuid('Choisissez le compte à mouvementer.'),

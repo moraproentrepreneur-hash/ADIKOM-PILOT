@@ -187,6 +187,10 @@ export const ENTITY_LABELS: Record<string, string> = {
   pos_registers: 'Caisse',
   pos_sessions: 'Session de caisse',
   pos_session_amounts: 'Montants d’une session de caisse',
+  pos_sales: 'Vente au comptoir',
+  pos_sale_lines: 'Ligne de vente',
+  pos_payments: 'Paiement au comptoir',
+  commercial_line_costs: 'Coût copié d’une ligne vendue',
 
   // Facturation & Paiement
   customer_invoices: 'Facture client',
@@ -274,7 +278,16 @@ export const ENTITIES_BY_MODULE: Record<string, readonly string[]> = {
    * Les montants figurent au filtre ; leur DÉTAIL reste fermé à qui n'a pas
    * `pos.sessions.amounts.view` (`audit_detail_permission`, migration 108).
    */
-  pos: ['pos_registers', 'pos_sessions', 'pos_session_amounts'],
+  pos: [
+    'pos_registers',
+    'pos_sessions',
+    'pos_session_amounts',
+    'pos_sales',
+    'pos_sale_lines',
+    'pos_payments',
+    // Son détail ne s'ouvre qu'à `catalog.services.cost.view` (DEC-049 §e).
+    'commercial_line_costs',
+  ],
   billing: [
     'customer_invoices',
     'customer_invoice_lines',
@@ -405,6 +418,28 @@ const FIELD_LABELS: Record<string, string> = {
   counted_amount: 'Montant compté',
   expected_amount: 'Montant théorique constaté',
   variance: 'Écart constaté',
+  // LOT 28 — ventes au comptoir
+  sale_no: 'Numéro de vente',
+  pos_sale_id: 'Vente',
+  pos_payment_id: 'Paiement au comptoir',
+  sold_at: 'Vendue le',
+  sale_date: 'Jour de la vente',
+  global_discount: 'Remise globale',
+  line_discount: 'Remise de ligne',
+  observation: 'Observation',
+  cancel_reason: 'Motif d’annulation',
+  service_price_id: 'Version de prix',
+  service_cost_id: 'Version de coût',
+  unit_cost: 'Coût unitaire copié',
+  tendered_amount: 'Montant donné',
+  applied_amount: 'Montant encaissé',
+  line_no: 'Rang',
+  // D-3 : le mode et le compte d'un paiement restent lisibles dans le journal.
+  method: 'Mode de paiement',
+  external_ref: 'Référence externe',
+  quantity: 'Quantité',
+  unit_price: 'Prix unitaire',
+  service_variant_id: 'Variante',
 }
 
 export function fieldLabel(field: string): string {

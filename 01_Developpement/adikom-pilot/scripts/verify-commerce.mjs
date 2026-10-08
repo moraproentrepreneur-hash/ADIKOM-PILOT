@@ -1054,7 +1054,7 @@ async function main() {
       check(
         Boolean(forge),
         '🟥 Un INSERT DIRECT d’une seconde commande sur le même devis est REFUSÉ',
-        forge ? 'refusé par l’index' : 'ACCEPTÉ'
+        forge ? `refusé — ${forge.message.slice(0, 80)}` : 'ACCEPTÉ'
       )
     }
 
@@ -1251,7 +1251,7 @@ async function main() {
       check(
         Boolean(forge),
         '🟥 Un INSERT DIRECT d’une seconde facture sur la même commande est REFUSÉ',
-        forge ? 'refusé par l’index' : 'ACCEPTÉ'
+        forge ? `refusé — ${forge.message.slice(0, 80)}` : 'ACCEPTÉ'
       )
     }
 

@@ -87,6 +87,7 @@ Chaque décision porte une référence stable (`DEC-xxx`) utilisable dans le cod
 | DEC-051 | Remises commerciales — montant fixe en KMF | Décision Direction — **clôt la question laissée ouverte par DEC-049 §f** | Validée — **implémentation différée** | 2026-09-23 |
 | DEC-052 | Commerce fournisseur — devis et commandes — LOT 26 | Quatre tables, **seize capacités dont deux lectures sensibles**, prix de l'offre figé, **P-5 intact** | Appliquée — **complète le Module 11** | 2026-09-23 |
 | DEC-053 | Plusieurs factures pour une commande fournisseur | Décision Direction — **clôt la question laissée ouverte par DEC-052 §g**. Aucune table, aucune capacité : une contrainte retirée | Appliquée — **acompte puis solde sur la même commande** | 2026-09-29 |
+| DEC-055 | Point de vente : ventes et encaissement — LOT 28 | Décisions Direction C-2, T-2, D-3, P-4, D-1, D-2, B-10, B-11, C-28, S-1. **Un encaissement, une seule écriture** ; facture sur demande par **règlement adossé** | Validée — **mise en œuvre provisoire (Cloud), à valider en local** | 2026-10-08 |
 
 > **DEC-045 a été consignée le 18 septembre 2026.** Le Plan 02 lui avait assigné
 > son objet — l'avenant de location — et le LOT 22 l'a livré. La réservation
@@ -6615,6 +6616,75 @@ exceptée. **Aucune fonction `SECURITY DEFINER`.**
 
 Ventes, paiements, monnaie, reçus, facture sur demande, modes Mvola/Holo/Wakati : LOT 28,
 après P-4, D-1, D-2, B-10, B-11, C-2 et C-28.
+
+---
+
+# DEC-055 — Point de vente : ventes et encaissement (LOT 28) — décisions de la Direction
+
+> 🟩 **DÉFINITIVE — 8 octobre 2026.** Décisions de la Direction (§a, et §d pour Q-10 et Q-13),
+> mises en œuvre par le LOT 28 (Cloud), complétées et validées en local : migrations 112 à 122
+> appliquées sur Supabase, recettes SQL et navigateur, cycle de sauvegarde réel. Détail : Rapport 22.
+
+**Date des décisions :** 8 octobre 2026 · **Lot :** 28 · **Module :** 12 `pos`
+**Références :** Plan 02 §3.4, §3.5, §7.5, §9.2, §10.2, §16.2 · DEC-024 · DEC-051 · DEC-054 ·
+`RAPPORTS/Preparation LOT 27-28/06_Decisions_LOT_28_Propositions.md`
+
+## a. Décisions
+
+| Réf. | Décision |
+| :-: | --- |
+| **C-2** | **Un seul enregistrement effectif en trésorerie pour chaque encaissement.** Une facture demandée après une vente déjà encaissée est soldée par un **règlement adossé**, **sans** seconde écriture de trésorerie. Le mécanisme est protégé contre les **paiements fictifs**, les **doubles rattachements** et les **incohérences d'annulation**. Toute modification structurante non couverte est soumise à validation. |
+| **T-2** | **Une écriture de trésorerie par paiement réel**, jamais une écriture globale par vente. Un paiement mixte est réparti entre les comptes concernés. |
+| **D-3** | Espèces → le compte `CASH` **actif** de la caisse. Chèque, Mvola, Holo, Wakati → un compte financier **actif sélectionné**. La distinction des **moyens de paiement** et l'**identité des comptes** sont conservées dans les journaux et les états. |
+| **P-4** | Une vente **non soldée** exige un **client enregistré**. |
+| **D-1** | Remises **fixes en KMF**, selon DEC-051 (ligne et globale, sans plafond, sous capacité indépendante), avec contrôles empêchant tout montant négatif. |
+| **D-2** | `MVOLA`, `HOLO`, `WAKATI` s'ajoutent aussi aux **règlements clients et fournisseurs** existants. |
+| **B-10** | Annulation **motivée** possible après la clôture de la session ; **interdite si la vente est déjà facturée**, tant que les avoirs ne sont pas gérés. |
+| **B-11** | Le **remboursement au comptoir** est **hors périmètre**. |
+| **C-28** | Les **huit capacités** du Plan 02 §10.2, telles quelles : catalogue **prévisionnel 238 → 246**. |
+| **S-1** | Les possibilités d'**insertion directe** dans `customer_invoices` et `customer_payments` sont corrigées **en amont** de leur intégration au PDV. |
+
+## b. Ce que la décision fixe techniquement
+
+- 5ᵉ origine de trésorerie : `treasury_entries.pos_payment_id` (T-2 ; le Plan 02 §9.2 nommait
+  `pos_sale_id`).
+- Lien documentaire `customer_invoices.pos_sale_id` ; règlement adossé
+  `customer_payments.pos_payment_id`, **sans** écriture ; **aucune** `pos_sales.customer_invoice_id`.
+- `customer_invoice_paid` et les fonctions de facturation existantes **ne sont pas réécrites**.
+
+## c. Conséquence connue
+
+Les indicateurs « encaissé clients » (Σ `customer_payments`) comptent le règlement adossé d'une
+vente **facturée**, daté du jour de la vente ; une vente **non facturée** n'y figure pas. Tout
+futur indicateur PDV devra exclure les règlements adossés.
+
+## d. Décisions complémentaires de la Direction — 8 octobre 2026
+
+| Réf. | Décision | Mise en œuvre (migrations 121, 122) |
+| :-: | --- | --- |
+| **Q-10** | Une vente **anonyme** peut être facturée plus tard : un **client enregistré** lui est rattaché **au moment de la demande de facture** — une seule fois, contrôlé, audité ; aucun montant historique modifié ; aucune seconde écriture de trésorerie ; facture par la chaîne existante ; aucun double rattachement. | `invoice_pos_sale(vente, échéance, client)` : rattachement dans la transaction de la facture, sous drapeau `adikom.pos_client_attach` ; la garde de la vente n'admet que NULL → client, sur vente validée ; policy d'UPDATE ouverte à `billing.customer_invoices.create` pour une vente encore anonyme ; journal `UPDATE` avant/après. **Aucune capacité nouvelle** : rattacher relève de qui facture. |
+| **Q-13** | Les coûts d'achat restent **strictement confidentiels** pour les caissiers. Un utilisateur **autorisé** peut **valoriser ultérieurement** les coûts manquants ; coûts historiques conservés et traçables ; prix de vente intacts ; marges calculées sur les coûts **effectivement enregistrés**, jamais fictives. | `value_pos_sale_costs(vente?)` : exige `catalog.services.cost.update` **et** `.cost.view` ; copie le coût **en vigueur le jour de la vente** aux lignes **sans** coût, n'en remplace jamais un ; une ligne sans coût ce jour-là reste « inconnue ». **Aucun `SECURITY DEFINER`**, **aucune capacité nouvelle** ; lecture des coûts toujours réservée à `.cost.view`. |
+
+Catalogue **246** et sauvegarde **69** inchangés par ces deux décisions.
+
+## Mise en œuvre
+
+| Décision | Mise en œuvre |
+| :-: | --- |
+| **S-1** | Migrations **112** et **113**, premières de la branche, commits distincts : gardes `zzz_…_born_by_function` sur `customer_invoices` et `customer_payments` ; `create_customer_invoice` et `record_customer_payment` reprises de leur dernière version, deux `set_config` ajoutés |
+| **C-2** | `customer_invoices.pos_sale_id` (posé par `invoice_pos_sale` seule) ; `customer_payments.pos_payment_id` = **règlement adossé**, né par sa fonction, **sans écriture** ; `fn_treasury_entry_source` refuse toute écriture sur un règlement adossé ; un règlement adossé ne s'annule pas seul |
+| **T-2** | `treasury_entries.pos_payment_id` (5ᵉ origine), index unique ; écriture `POS_SALE`, `IN`, **montant encaissé** ; source, immuabilité, cohérence et policies révisées ensemble |
+| **D-3** | Espèces → compte de la caisse, imposé par la garde ; autres modes → compte **`BANK`** actif (choix restrictif Q-7) ; mode et compte dans le journal, l'écriture, la fiche, le reçu, l'export |
+| **P-4** | Contrôle différé en base : non soldée ⇒ client **et** facture émise ; `pos.sales.credit` exigée dans la fonction |
+| **D-1** | Remises fixes ligne et globale, bornées par contrainte et contrôle différé ; `pos.sales.discount` exigée dans la fonction ; lignes `DISCOUNT` libellées sur la facture |
+| **D-2** | Migration isolée **114** ; formulaires de règlement clients et fournisseurs étendus |
+| **B-10** | `cancel_pos_sale` motivée, possible session close ; garde en base : refus si facture non annulée ; la facture d'une vente ne s'annule pas (Q-11) |
+| **B-11** | Aucune fonction, aucune capacité de remboursement |
+| **C-28** | Migration **119** : 8 capacités, catalogue **246** ; numérotation `VTE` |
+
+Choix techniques retenus en l'absence de décision, en vigueur jusqu'à décision contraire : Q-7
+à Q-9, Q-11, Q-12, Q-14, Q-15 (Module 12 §21, Rapport 22 §11). Navigation : une seule section
+« Point de vente » (caisse, ventes, sessions, caisses).
 
 ---
 

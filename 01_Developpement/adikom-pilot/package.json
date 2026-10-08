@@ -94,7 +94,9 @@
     "db:verify:purchasing": "node scripts/run-sql.mjs supabase/tests/purchasing.sql",
     "verify:purchasing": "node scripts/verify-purchasing.mjs",
     "db:verify:pos-sessions": "node scripts/run-sql.mjs supabase/tests/pos_sessions.sql",
+    "db:verify:pos-sales": "node scripts/run-sql.mjs supabase/tests/pos_sales.sql",
     "verify:pos-sessions": "node scripts/verify-pos-sessions.mjs",
+    "verify:pos-sales": "node scripts/verify-pos-sales.mjs",
     "verify:password-reset": "node scripts/verify-password-reset.mjs",
     "verify:ajustements": "node scripts/verify-ajustements.mjs",
     "verify:production": "node scripts/verify-production.mjs"

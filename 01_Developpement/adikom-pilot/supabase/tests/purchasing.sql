@@ -295,11 +295,19 @@ begin
       '`service_variant_costs` a reçu un `supplier_id` : P-5 aurait été tranché sans décision.';
   end if;
 
-  -- `commercial_line_costs` relève du LOT 28.
-  if exists (
-    select 1 from pg_tables where schemaname = 'public' and tablename = 'commercial_line_costs'
+  /*
+   * LOT 28 : `commercial_line_costs` existe désormais (DEC-049 §e, Plan 02
+   * §9.3). Le coût copié vit LÀ, jamais sur la ligne — et sa lecture est la
+   * sienne : `catalog.services.cost.view`, et elle seule.
+   */
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'commercial_line_costs'
+      and policyname = 'commercial_line_costs_select'
+      and qual like '%catalog.services.cost.view%'
+      and qual not like '%pos.sales.view%'
   ) then
-    raise exception '`commercial_line_costs` est créée alors qu''elle relève du LOT 28.';
+    raise exception '`commercial_line_costs` n''est pas gardée par catalog.services.cost.view seule (DEC-049 §e).';
   end if;
 
   -- AUCUNE table de produit, aucun stock : la Direction a validé « Services

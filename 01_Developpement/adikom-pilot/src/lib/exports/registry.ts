@@ -72,6 +72,9 @@ import {
 } from '@/features/purchasing/constants'
 import { listSessions, loadVariances } from '@/features/pos/data'
 import { SESSION_STATUS_LABELS, parseSessionWindow } from '@/features/pos/constants'
+import { listSales } from '@/features/pos-sales/data'
+import { SALE_STATUS_LABELS } from '@/features/pos-sales/constants'
+import { PAYMENT_METHOD_LABELS } from '@/features/treasury/constants'
 import { EXPORT_LIMIT, listAuditEventsForExport } from '@/features/audit/data'
 import {
   ACTION_LABELS as AUDIT_ACTION_LABELS,
@@ -1111,6 +1114,59 @@ export const EXPORTS: Record<string, ExportDefinition> = {
         ]
           .filter(Boolean)
           .join(' — ')
+      )
+    },
+  },
+
+  /*
+   * VENTES AU COMPTOIR — LOT 28.
+   *
+   * 🟥 D-3 : une ligne PAR PAIEMENT, qui porte son MODE et son COMPTE — la
+   * distinction des moyens de paiement et l'identité des comptes sont
+   * conservées « dans les journaux et états ». Une vente sans paiement (net
+   * nul, ou non soldée sans acompte) figure sur une ligne sans paiement.
+   *
+   * Aucun coût, aucune marge : `pos.sales.export` n'ouvre pas le coût copié.
+   */
+  ventes: {
+    title: 'Ventes au comptoir',
+    viewPermission: PERMISSIONS.POS_SALES_VIEW,
+    permission: PERMISSIONS.POS_SALES_EXPORT,
+    entityType: 'pos_sales',
+    moduleCode: 'pos',
+    async build(filters) {
+      const { sales } = await listSales({
+        day: filters.jour,
+        sessionId: filters.session,
+        status: filters.statut,
+        method: filters.mode,
+      })
+
+      type Row = {
+        sale: (typeof sales)[number]
+        payment: (typeof sales)[number]['payments'][number] | null
+      }
+      const rows: Row[] = sales.flatMap<Row>((sale) =>
+        sale.payments.length > 0
+          ? sale.payments.map((payment) => ({ sale, payment }))
+          : [{ sale, payment: null }]
+      )
+
+      return dataset(
+        rows,
+        [
+          { header: 'Vente', width: 20, value: (r) => r.sale.saleNo },
+          { header: 'Date', width: 18, format: 'datetime', value: (r) => toExcelDate(r.sale.soldAt) },
+          { header: 'Caissier', width: 26, value: (r) => r.sale.cashierLabel },
+          { header: 'Client', width: 30, value: (r) => r.sale.clientLabel },
+          { header: 'Statut', width: 12, value: (r) => SALE_STATUS_LABELS[r.sale.status] },
+          { header: 'Net de la vente', width: 16, format: 'amount', value: (r) => r.sale.net },
+          { header: 'Mode', width: 14, value: (r) => (r.payment ? PAYMENT_METHOD_LABELS[r.payment.method] : null) },
+          { header: 'Compte', width: 30, value: (r) => r.payment?.accountLabel ?? null },
+          { header: 'Donné', width: 14, format: 'amount', value: (r) => r.payment?.tendered ?? null },
+          { header: 'Encaissé', width: 14, format: 'amount', value: (r) => r.payment?.applied ?? null },
+        ],
+        filters.jour ? `Ventes du ${filters.jour}` : 'Ventes les plus récentes'
       )
     },
   },

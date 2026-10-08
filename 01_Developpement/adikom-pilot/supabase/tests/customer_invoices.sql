@@ -675,6 +675,50 @@ begin
 end $$;
 
 
+-- --- 17 bis. 🟥 S-1 — UNE FACTURE NAÎT PAR SA FONCTION (LOT 28, migration 112) ----------
+--
+-- La section 17 éprouve qu'une facture ne naît pas dans le MAUVAIS ÉTAT. Celle-ci
+-- éprouve ce que la 17 ne dit pas : une facture PARFAITEMENT FORMÉE, en
+-- brouillon, insérée directement — le numéroteur était contourné.
+do $$
+declare
+  v_cli   uuid := (select client from recette_fac);
+  v_avant bigint;
+  v_apres bigint;
+  v_id    uuid;
+begin
+  begin
+    insert into public.customer_invoices (invoice_no, client_id, invoice_date)
+    values ('FAC-C-FORGE-DIRECT', v_cli, current_date);
+    raise exception 'ÉCHEC : une facture client parfaitement formée est née par écriture directe.';
+  exception when insufficient_privilege then null;
+  end;
+
+  if exists (select 1 from public.customer_invoices where invoice_no = 'FAC-C-FORGE-DIRECT') then
+    raise exception 'Une facture forgée a été enregistrée malgré le refus.';
+  end if;
+
+  -- ANTI-VACUITÉ : la création légitime passe, et consomme un numéro.
+  select current_value into v_avant from public.numbering_rules where entity_key = 'customer_invoice';
+  v_id := public.create_customer_invoice(v_cli, current_date, null, null, 'Recette S-1');
+  select current_value into v_apres from public.numbering_rules where entity_key = 'customer_invoice';
+
+  if v_id is null or v_apres <> v_avant + 1 then
+    raise exception 'La création normale ne passe plus, ou ne consomme pas de numéro (% → %).', v_avant, v_apres;
+  end if;
+
+  -- Le drapeau ne survit pas à la fonction qui l'a ouvert.
+  begin
+    insert into public.customer_invoices (invoice_no, client_id, invoice_date)
+    values ('FAC-C-FORGE-APRES', v_cli, current_date);
+    raise exception 'ÉCHEC : le drapeau S-1 a survécu à `create_customer_invoice`.';
+  exception when insufficient_privilege then null;
+  end;
+
+  raise notice '[OK] 17 bis. 🟥 S-1 : une facture client naît par sa fonction ; l''écriture directe est refusée, avant comme après.';
+end $$;
+
+
 -- --- 18. AUCUNE SUPPRESSION ---------------------------------------------------------------
 do $$
 declare

@@ -17,6 +17,7 @@ export type TreasuryEntryKind =
   | 'SUPPLIER_PAYMENT'
   | 'CUSTOMER_PAYMENT'
   | 'MISC_PAYMENT'
+  | 'POS_SALE'
   | 'DEPOSIT'
   | 'WITHDRAWAL'
   | 'TRANSFER'
@@ -65,6 +66,7 @@ export const ENTRY_KIND_LABELS: Record<TreasuryEntryKind, string> = {
   SUPPLIER_PAYMENT: 'Paiement fournisseur',
   CUSTOMER_PAYMENT: 'Règlement client',
   MISC_PAYMENT: 'Paiement divers',
+  POS_SALE: 'Vente au comptoir',
   DEPOSIT: 'Dépôt',
   WITHDRAWAL: 'Retrait',
   TRANSFER: 'Virement interne',
@@ -129,13 +131,29 @@ export const TRANSFER_STATUS_HINTS: Record<InternalTransferStatus, string> = {
 /*  Le vocabulaire vit donc ici, et les deux domaines s'y réfèrent.            */
 /* -------------------------------------------------------------------------- */
 
-export type PaymentMethod = 'CASH' | 'BANK_TRANSFER' | 'BANK_DEPOSIT' | 'CHEQUE' | 'OTHER'
+/*
+ * LOT 28 — D-2 (DEC-055) : `MVOLA`, `HOLO`, `WAKATI` (A-9) rejoignent l'unique
+ * énumération des modes, et deviennent donc disponibles pour les règlements
+ * clients et fournisseurs comme au comptoir.
+ */
+export type PaymentMethod =
+  | 'CASH'
+  | 'BANK_TRANSFER'
+  | 'BANK_DEPOSIT'
+  | 'CHEQUE'
+  | 'MVOLA'
+  | 'HOLO'
+  | 'WAKATI'
+  | 'OTHER'
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   CASH: 'Espèces',
   BANK_TRANSFER: 'Virement bancaire',
   BANK_DEPOSIT: 'Dépôt bancaire',
   CHEQUE: 'Chèque',
+  MVOLA: 'Mvola',
+  HOLO: 'Holo',
+  WAKATI: 'Wakati',
   OTHER: 'Autre mode',
 }
 
@@ -144,6 +162,9 @@ export const PAYMENT_METHOD_ORDER: PaymentMethod[] = [
   'CASH',
   'BANK_DEPOSIT',
   'CHEQUE',
+  'MVOLA',
+  'HOLO',
+  'WAKATI',
   'OTHER',
 ]
 
