@@ -75,7 +75,17 @@ intactes »).
 
 ## V.6 Production
 
-*(complétée après déploiement)*
+Fusion `--no-ff` dans `main` → **`cece003`** (les 9 commits Cloud conservés). Vercel
+**`READY`** en production sur `cece003` ; Preview de branche `CANCELED` (O-1 tenue).
+
+| Recette (production) | Résultat |
+| --- | --- |
+| `verify:production` | ✅ 56/56 |
+| `verify:pos-sales` — sans session ; **60 000 / 100 000 → 40 000 de monnaie, 60 000 en trésorerie** ; reçu PDF ; lecteur sans reçu ni export (403) ; **facture sur demande, règlement adossé sans écriture, solde inchangé** ; écritures directes refusées (42501) ; annulation B-10 | ✅ 22/22, aucun résidu |
+| `verify:responsive` (dont Caisse et Ventes, 360 / 768 / 1440) | ✅ 539/539 |
+
+Le paiement mixte, Q-10 et Q-13 sont éprouvés sur la **même base Supabase** par `pos_sales.sql`
+(§11, §11 bis, §21, §22) ; leurs écrans ne sont pas rejoués au navigateur (dette mineure).
 
 ---
 
@@ -355,4 +365,4 @@ Après fusion de `main` (LOT 27 validé) dans la branche, recalage éventuel des
 
 ---
 
-**LOT 28 — VALIDÉ.** (SHA déployé : V.6)
+**LOT 28 — VALIDÉ ET DÉPLOYÉ À `cece003`.**
