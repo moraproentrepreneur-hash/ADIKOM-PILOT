@@ -918,8 +918,11 @@ begin
 
   -- Une session ENCORE OUVERTE recouvre toute fenêtre postérieure à son ouverture.
   -- (aucune n'est ouverte ici : les deux du jour sont closes — on le vérifie)
+  -- Sur les caisses de la recette seulement : une vraie session ouverte ailleurs
+  -- dans la base n'est pas un échec de la recette.
   if exists (select 1 from public.pos_sessions_in_window(now(), now() + interval '1 hour') s
-             where s.status = 'OPEN') then
+             where s.status = 'OPEN'
+               and s.register_id in (pg_temp.id_de('caisse1'), pg_temp.id_de('caisse2'))) then
     raise exception 'Une session ouverte a survécu à la clôture.';
   end if;
 
