@@ -23,9 +23,12 @@ import {
   ListChecks,
   Network,
   Package,
+  Receipt,
   ReceiptText,
+  ScanLine,
   Settings,
   ShieldCheck,
+  ShoppingBag,
   ShoppingCart,
   Store,
   Tags,
@@ -397,6 +400,34 @@ export const NAVIGATION: NavEntry[] = [
         href: '/pdv/sessions',
         icon: Clock,
         permission: PERMISSIONS.POS_SESSIONS_VIEW,
+        status: 'ready',
+      },
+    ],
+  },
+  /*
+   * VENTES AU COMPTOIR — LOT 28 (Module 12 §22.1).
+   *
+   * Section voisine de « Point de vente », et non fusionnée avec elle : le LOT 27
+   * est encore provisoire, et sa recette (`features/pos/pos.test.ts`) fige sa
+   * section à deux entrées. La fusion se fera à la validation locale du LOT 27
+   * (Rapport 22 §11) — elle ne change ni les routes ni les capacités.
+   */
+  {
+    label: 'Ventes au comptoir',
+    icon: ShoppingBag,
+    items: [
+      {
+        label: 'Caisse',
+        href: '/pdv/caisse',
+        icon: ScanLine,
+        permission: PERMISSIONS.POS_SALES_CREATE,
+        status: 'ready',
+      },
+      {
+        label: 'Ventes',
+        href: '/pdv/ventes',
+        icon: Receipt,
+        permission: PERMISSIONS.POS_SALES_VIEW,
         status: 'ready',
       },
     ],

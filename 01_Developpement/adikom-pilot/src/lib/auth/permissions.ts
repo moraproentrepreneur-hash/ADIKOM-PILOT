@@ -491,7 +491,7 @@ export const PERMISSIONS = {
   /* --- Point de vente — LOT 27 : caisses et sessions -----------------------
    *
    * Module `pos`, ordre 12 (Plan 02 §10.2, décision C-27 — les neuf, telles
-   * quelles). Les VENTES (`pos.sales.*`) relèvent du LOT 28.
+   * quelles). Les VENTES (`pos.sales.*`) suivent, LOT 28.
    *
    * 🟥 `POS_SESSION_AMOUNTS_VIEW` EST LA CAPACITÉ LA PLUS IMPORTANTE DU LOT :
    * `pos.sessions.view` répond à « qui était en caisse » SANS « combien il y
@@ -516,6 +516,27 @@ export const PERMISSIONS = {
   POS_SESSIONS_CLOSE: 'pos.sessions.close',
   POS_SESSIONS_EXPORT: 'pos.sessions.export',
   POS_SESSION_AMOUNTS_VIEW: 'pos.sessions.amounts.view',
+
+  /* --- Point de vente — LOT 28 : ventes et encaissement ---------------------
+   *
+   * Les huit du Plan 02 §10.2, telles quelles (C-28, DEC-055).
+   *
+   * 🟥 `discount` ET `credit` SONT DISTINCTES DE `create` (A-14) : encaisser
+   * n'est pas consentir un rabais, ni un crédit. Toutes deux sont vérifiées
+   * DANS la fonction d'encaissement, pas seulement à l'écran.
+   *
+   * AUCUNE capacité « facture sur demande » : elle réemploie la facturation
+   * client existante (`billing.customer_invoices.create` / `.issue`,
+   * `billing.customer_payments.create`). AUCUN remboursement (B-11).
+   */
+  POS_SALES_VIEW: 'pos.sales.view',
+  POS_SALES_CREATE: 'pos.sales.create',
+  POS_SALES_DISCOUNT: 'pos.sales.discount',
+  POS_SALES_CREDIT: 'pos.sales.credit',
+  POS_SALES_CANCEL: 'pos.sales.cancel',
+  POS_SALES_DOWNLOAD: 'pos.sales.download',
+  POS_SALES_PRINT: 'pos.sales.print',
+  POS_SALES_EXPORT: 'pos.sales.export',
 
   // --- Paramètres ------------------------------------------------------------
   SETTINGS_COMPANY_VIEW: 'settings.company.view',
