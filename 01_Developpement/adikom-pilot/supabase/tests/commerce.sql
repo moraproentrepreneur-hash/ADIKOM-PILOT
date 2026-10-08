@@ -1067,8 +1067,27 @@ begin
     raise exception 'La même commande a produit deux factures.';
   end if;
 
-  -- 🟥 L'INDEX FAIT AUTORITÉ HORS DE LA FONCTION.
+  -- 🟥 S-1 (LOT 28) : un INSERT direct est désormais refusé AVANT l'index —
+  -- une facture client naît par sa fonction (migration 112).
   v_ok := false;
+  begin
+    insert into public.customer_invoices
+      (invoice_no, client_id, sales_order_id, invoice_date)
+    values ('FAC-C-TEST-000001',
+            (select id from recette_obj where cle = 'client'), v_cmd,
+            (now() at time zone 'Indian/Comoro')::date);
+  exception when insufficient_privilege then
+    v_ok := true;
+  end;
+
+  if not v_ok then
+    raise exception 'Un INSERT direct a créé une seconde facture sur la même commande.';
+  end if;
+
+  -- 🟥 L'INDEX FAIT TOUJOURS AUTORITÉ HORS DE LA FONCTION. Le drapeau S-1 est
+  -- posé ici comme la fonction le pose : seul l'index reste alors pour refuser.
+  v_ok := false;
+  perform set_config('adikom.customer_invoice', 'on', true);
   begin
     insert into public.customer_invoices
       (invoice_no, client_id, sales_order_id, invoice_date)
@@ -1078,9 +1097,10 @@ begin
   exception when unique_violation then
     v_ok := true;
   end;
+  perform set_config('adikom.customer_invoice', 'off', true);
 
   if not v_ok then
-    raise exception 'Un INSERT direct a créé une seconde facture sur la même commande.';
+    raise exception 'L''index ne refuse plus une seconde facture sur la même commande.';
   end if;
 
   select count(*) into v_n from public.customer_invoices where sales_order_id = v_cmd;
