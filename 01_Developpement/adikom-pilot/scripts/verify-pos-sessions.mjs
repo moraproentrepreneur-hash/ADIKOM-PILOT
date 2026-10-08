@@ -139,7 +139,18 @@ async function signIn(browser, base, account) {
   return { context, page }
 }
 
-const text = async (page) => (await page.locator('main').innerText()).replace(/\s+/g, ' ')
+/**
+ * Le texte de la page RENDUE. `load` survient pendant que le squelette de
+ * `loading.tsx` est encore affiché (flagrant contre la production) : lu à ce
+ * moment, un contrôle positif échoue et un contrôle d'ABSENCE passe à vide.
+ */
+const text = async (page) => {
+  await page
+    .locator('[role="status"][aria-label="Chargement…"]')
+    .first()
+    .waitFor({ state: 'detached', timeout: 30000 })
+  return (await page.locator('main').innerText()).replace(/\s+/g, ' ')
+}
 
 /**
  * Ouvre une session par l'écran et rend son identifiant.
