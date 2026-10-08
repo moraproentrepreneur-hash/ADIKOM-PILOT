@@ -43,6 +43,9 @@ on conflict (entity_key) do nothing;
 
 -- =============================================================================
 -- 2. LES HUIT CAPACITÉS
+--
+-- La liste de colonnes ouvre par `(code, module_code` : c'est la forme que le
+-- contrôle de parité TS/SQL (`permissions.test.ts`) reconnaît.
 -- =============================================================================
 
 with nouvelles (
