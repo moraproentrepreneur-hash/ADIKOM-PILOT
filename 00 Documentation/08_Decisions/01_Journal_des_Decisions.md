@@ -6551,6 +6551,72 @@ inventée.
 - Les **remises fournisseurs** : toujours non modélisées.
 ---
 
+# DEC-054 — Point de vente : caisses et sessions de caisse (LOT 27)
+
+> 🟧 **PROVISOIRE — À VALIDER EN LOCAL.** Brouillon rédigé par Claude Code Cloud le
+> 8 octobre 2026. Les décisions de la Direction qu'il consigne (§a) sont **validées** ;
+> la mise en œuvre, elle, n'est **ni appliquée sur Supabase ni recettée** en conditions
+> réelles. Le texte définitif sera arrêté par la reprise locale (Rapport 21 définitif).
+
+**Date des décisions :** 8 octobre 2026 · **Lot :** 27 · **Module :** 12 `pos`
+**Références :** Plan 02 §7.5, §9.1, §9.4, §10.2, §10.3, §11.4, §12, §13.2, §18.2 ·
+Module 12 · Rapport 21 (provisoire) · DEC-017, DEC-024, DEC-038, DEC-042 §d, DEC-046
+
+## a. Décisions de la Direction — validées le 8 octobre 2026
+
+| Réf. | Décision |
+| :-: | --- |
+| **B-8** | Un utilisateur ne tient **qu'une seule session ouverte**, même s'il existe plusieurs caisses ; une caisse n'a qu'une session ouverte. **Les deux garanties sont en base.** |
+| **B-9** | **Aucun seuil d'écart, aucune écriture d'ajustement** : la clôture constate l'écart, l'affiche et l'audite ; elle ne bloque pas et ne mouvemente pas la trésorerie. |
+| **B-13** | Un caissier voit **les montants de ses propres sessions**, jamais ceux d'un autre sans `pos.sessions.amounts.view`. |
+| **C-27** | Les **9 capacités** du Plan 02 §10.2, telles quelles : catalogue **229 → 238**. |
+| **T-1** | Les montants de session vivent dans une **table sœur 1:1**, lecture gardée par `pos.sessions.amounts.view` **ou** caissier de la ligne : `backup_scope` **62 → 65**. |
+| **B-12** | Aucune affectation automatique des capacités aux groupes système. |
+
+## b. Une caisse n'est pas un compte
+
+Une caisse **s'adosse** à un compte financier de type `CASH` **actif** ; elle ne porte ni
+solde ni écriture. Une seule trésorerie (Plan 02 §20.1). Le type `CASH` est garanti par
+une **clé étrangère composite** `(account_id, account_kind)` → `financial_accounts (id,
+kind)` : le type d'un compte qui adosse une caisse ne peut plus changer.
+
+## c. La session
+
+Le caissier est **l'utilisateur qui ouvre**. Ouverture et clôture sont horodatées par la
+base. Le montant compté est **obligatoire** à la clôture ; une session close est
+**terminale et figée**. Le montant théorique (fond de caisse au LOT 27, + espèces au
+LOT 28) et l'écart sont **dérivés**, jamais stockés (D1).
+
+## d. Premier objet dont la lecture dépend de la personne inscrite sur la ligne
+
+`pos_session_amounts` : `pos.sessions.amounts.view` **ou** `cashier_id = current_actor()`.
+Le journal, qui ne sait pas appliquer cette règle, ouvre le détail des montants à
+`pos.sessions.amounts.view` seule (DEC-038).
+
+## e. Nées et modifiées par leurs fonctions
+
+Les trois tables refusent toute insertion **et toute modification** hors de leurs
+fonctions (drapeau transactionnel, garde `zzz_` en dernier — Rapport 20 §3), restauration
+exceptée. **Aucune fonction `SECURITY DEFINER`.**
+
+## f. Choix techniques retenus en l'absence de décision — 🟧 à confirmer
+
+| Réf. | Option retenue (la plus restrictive sans impasse) |
+| :-: | --- |
+| Q-1 | Ouvrir une session exige `treasury.accounts.view` |
+| Q-2 | Clôturer la session d'un autre exige `pos.sessions.close` + `pos.sessions.amounts.view` |
+| Q-3 | Ni changement de compte ni désactivation d'une caisse pendant une session ouverte |
+| Q-4 | L'observation de clôture ne se modifie plus |
+| Q-5 | L'export ne porte les montants qu'avec `pos.sessions.amounts.view` |
+| Q-6 | Le nom du caissier suit la policy d'`app_users` (`users.users.view`) |
+
+## g. Ce que la décision ne tranche pas
+
+Ventes, paiements, monnaie, reçus, facture sur demande, modes Mvola/Holo/Wakati : LOT 28,
+après P-4, D-1, D-2, B-10, B-11, C-2 et C-28.
+
+---
+
 **ADIKOM PILOT — Journal des décisions**
 
 > Une décision prise doit être retrouvable.
