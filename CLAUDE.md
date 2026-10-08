@@ -354,7 +354,11 @@ Le commerce CLIENT — devis et commandes clients — a été livré au LOT 25 (
 
 Le module \*\*Point de vente\*\* (code `pos`, ordre 12) a été ajouté au LOT 27 (Plan 02 §7.5, §10.2 · décisions B-8, B-9, B-13, C-27, T-1 du 8 octobre 2026 · DEC-054 provisoire). Référence : `00 Documentation/03_Modules/12_Point_de_Vente.md`.
 
-Le LOT 27 livre les \*\*caisses\*\* et les \*\*sessions de caisse\*\*. Les \*\*ventes au comptoir\*\* relèvent du LOT 28 : aucune entrée « à venir » n'est affichée.
+Le LOT 27 livre les \*\*caisses\*\* et les \*\*sessions de caisse\*\*. Le LOT 28 livre les \*\*ventes au comptoir et leur encaissement\*\* (DEC-055, provisoire jusqu'à la validation locale).
+
+\*\*Un encaissement, une seule écriture de trésorerie (C-2).\*\* L'unique origine de l'argent reçu au comptoir est le \*\*paiement PDV\*\* (`treasury_entries.pos_payment_id`, une écriture \*\*par paiement\*\*, du montant \*\*encaissé\*\*, jamais du montant donné). Une facture rattachée à une vente est soldée par un \*\*règlement adossé\*\* (`customer_payments.pos_payment_id`) \*\*sans aucune écriture\*\*. Ne crée jamais de seconde écriture pour un encaissement PDV.
+
+\*\*Espèces → compte de la caisse\*\* ; chèque, Mvola, Holo, Wakati → compte actif sélectionné (D-3). Une vente \*\*non soldée exige un client\*\* (P-4). Une vente \*\*facturée ne s'annule pas\*\* tant que les avoirs n'existent pas (B-10). Aucun remboursement au comptoir (B-11).
 
 \*\*Une caisse n'est pas un compte : elle en utilise un\*\* — un compte financier `CASH` actif. Une seule trésorerie : aucun solde n'est porté par une caisse.
 
